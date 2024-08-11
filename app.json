@@ -1,7 +1,7 @@
 {
-    "name": "linebot namecard helper",
-    "description": "LINEBot with Gemini Pro with Firebase",
-    "repository": "https://github.com/kkdai/linebot-namecard-python",
+    "name": "linebot Information helper",
+    "description": "LINEBo Information helper with Google Gemini",
+    "repository": "https://github.com/kkdai/inebot-helper-python",
     "keywords": [
         "python",
         "linebot",
@@ -27,10 +27,6 @@
         },
         "ChannelSecret": {
             "description": "Channel Secret",
-            "required": true
-        },
-        "FIREBASE_URL": {
-            "description": "FIREBASE URL",
             "required": true
         }
     }
