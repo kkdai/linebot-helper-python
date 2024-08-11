@@ -17,6 +17,8 @@ from io import BytesIO
 import aiohttp
 import PIL.Image
 
+from langtools import summarize_with_sherpa, summarize_text
+
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
 channel_access_token = os.getenv('ChannelAccessToken', None)
@@ -68,6 +70,18 @@ async def handle_callback(request: Request):
 
         user_id = event.source.user_id
         if event.message.type == "text":
+            # check if text is url
+            if event.message.text.startswith("http"):
+                result = summarize_with_sherpa(event.message.text)
+                if len(result) > 2000:
+                    result = summarize_text(result)
+                reply_msg = TextSendMessage(text=result)
+                await line_bot_api.reply_message(
+                    event.reply_token,
+                    [reply_msg],
+                )
+                return 'OK'
+
             msg = event.message.text
             reply_msg = TextSendMessage(text=f'uid: {user_id}, msg: {msg}')
             await line_bot_api.reply_message(
