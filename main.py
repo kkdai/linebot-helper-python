@@ -1,4 +1,3 @@
-from linebot.models import FlexSendMessage
 from linebot.models import (
     MessageEvent, TextSendMessage
 )
@@ -14,13 +13,9 @@ import google.generativeai as genai
 import os
 import sys
 from io import BytesIO
-import json
 
 import aiohttp
 import PIL.Image
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import db
 
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
@@ -39,19 +34,6 @@ query_prompt = '''
 這是所有的名片資料，請根據輸入文字來查詢相關的名片資料 {all_cards}，
 例如: 名字, 職稱, 公司名稱。 查詢問句為： {msg}, 只要回覆我找到的 JSON Data 就好。
 '''
-
-# firebase URL
-firebase_url = os.environ['FIREBASE_URL']
-# 从环境变量中读取服务账户密钥 JSON 内容
-# service_account_info = json.loads(os.environ['GOOGLE_CREDENTIALS'])
-# 使用服务账户密钥 JSON 内容初始化 Firebase Admin SDK
-# cred = credentials.Certificate(service_account_info)
-cred = credentials.ApplicationDefault()
-
-firebase_admin.initialize_app(
-    cred, {'databaseURL': firebase_url})
-
-print('Firebase Admin SDK initialized successfully.')
 
 if channel_secret is None:
     print('Specify ChannelSecret as environment variable.')
