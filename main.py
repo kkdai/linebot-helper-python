@@ -20,14 +20,10 @@ import PIL.Image
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
 channel_access_token = os.getenv('ChannelAccessToken', None)
-gemini_key = os.getenv('GEMINI_API_KEY')
+gemini_key = os.getenv('GOOGLE_API_KEY')
 
-imgage_prompt = '''
-這是一張名片，你是一個名片秘書。請將以下資訊整理成 json 給我。
-如果看不出來的，幫我填寫 N/A
-只好 json 就好:
-name, title, address, email, phone, company.
-其中 phone 的內容格式為 #886-0123-456-789,1234. 沒有分機就忽略 ,1234
+imgage_prompt = ''' 
+Describe all the information from the image in JSON format.
 '''
 
 query_prompt = '''
