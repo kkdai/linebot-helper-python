@@ -1,0 +1,12 @@
+line-bot-sdk==3.5.0
+fastapi
+uvicorn[standard]
+google.generativeai
+pydantic
+tiktoken
+Pillow
+firebase-admin
+langchain
+langchain_core
+langchain_google_genai
+langchain_community
