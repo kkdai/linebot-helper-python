@@ -5,7 +5,6 @@ google.generativeai
 pydantic
 tiktoken
 Pillow
-firebase-admin
 langchain
 langchain_core
 langchain_google_genai
