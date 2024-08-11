@@ -95,58 +95,12 @@ async def handle_callback(request: Request):
 
         user_id = event.source.user_id
         if event.message.type == "text":
-            if event.message.text == "test":
-                test_namecard = generate_sample_namecard()
-                reply_card_msg = get_namecard_flex_msg(test_namecard)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [reply_card_msg]
-                )
-                return 'OK'
-            elif event.message.text == "list":
-                all_cards = get_all_cards(user_id)
-                total_cards = len(all_cards)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [TextSendMessage(
-                        text=f"總共有  {total_cards} 張名片資料。")]
-
-                )
-                return 'OK'
-            elif event.message.text == "remove":
-                remove_redundant_data(user_id)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [TextSendMessage(
-                        text="Redundant data removal complete.")]
-                )
-                return 'OK'
-            else:
-                print(f"User ID: {user_id}")
-
-                # 讀取 'users' 集合中的所有文件
-                all_cards = get_all_cards(user_id)
-                # Provide a default value for reply_msg
-                reply_msg = TextSendMessage(text='No message to reply with')
-
-                msg = event.message.text
-                # fmt: off
-                prompt_msg = query_prompt.format(
-                    all_cards=all_cards,
-                    msg=msg
-                )
-
-                # fmt: on
-                messages = []
-                messages.append(
-                    {"role": "user", "parts": prompt_msg})
-                response = generate_gemini_text_complete(messages)
-                card_obj = load_json_string_to_object(response.text)
-                reply_card_msg = get_namecard_flex_msg(card_obj)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [reply_card_msg],
-                )
+            msg = event.message.text
+            reply_msg = TextSendMessage(text=f'uid: {user_id}, msg: {msg}')
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [reply_msg],
+            )
         elif event.message.type == "image":
             message_content = await line_bot_api.get_message_content(
                 event.message.id)
@@ -157,39 +111,10 @@ async def handle_callback(request: Request):
             result = generate_json_from_image(img, imgage_prompt)
             print("------------IMAGE---------------")
             print(result.text)
-            card_obj = parse_gemini_result_to_json(result.text)
-            # check card_obj is json obj
-            if card_obj is None:
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [TextSendMessage(
-                        text=f"無法解析這張名片，請再試一次。 錯誤資訊: {result.text}")]
-                )
-                return 'OK'
-
-            print(card_obj)
-            card_obj = {k.lower(): v for k, v in card_obj.items()}
-            print(card_obj)
-
-            # Check if receipt exists, skip if it does
-            exist = check_if_card_exists(card_obj, user_id)
-            if exist:
-                reply_msg = get_namecard_flex_msg(card_obj)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [TextSendMessage(
-                        text="這個名片已經存在資料庫中。"), reply_msg]
-                )
-                return 'OK'
-
-            add_namecard(card_obj, user_id)
-            reply_msg = get_namecard_flex_msg(card_obj)
-            chinese_reply_msg = TextSendMessage(
-                text="名片資料已經成功加入資料庫。")
-
+            reply_msg = TextSendMessage(text=result.text)
             await line_bot_api.reply_message(
                 event.reply_token,
-                [reply_msg, chinese_reply_msg])
+                [reply_msg])
             return 'OK'
         else:
             continue
@@ -197,51 +122,11 @@ async def handle_callback(request: Request):
     return 'OK'
 
 
-def get_all_cards(u_id):
-    try:
-        # 引用 "namecard" 路径
-        ref = db.reference(f'{namecard_path}/{u_id}')
-
-        # 获取数据
-        namecard_data = ref.get()
-        if namecard_data:
-            for key, value in namecard_data.items():
-                print(f'{key}: {value}')
-            return namecard_data
-    except Exception as e:
-        print(f"Error fetching namecards: {e}")
-
-
-def load_json_string_to_object(json_str):
-    """
-    Load a JSON string into a Python object.
-    """
-    try:
-        json_str = json_str.replace("'", '"')
-        json_obj = json.loads(json_str)
-        json_obj = {k.lower(): v for k, v in json_obj.items()}
-        return json_obj
-    except json.JSONDecodeError as e:
-        print(f"Error loading JSON string: {e}")
-        return None
-
-
-def generate_sample_namecard():
-    return {
-        "name": "Kevin Dai",
-        "title": "Software Engineer",
-        "address": "Taipei, Taiwan",
-        "email": "aa@bbb.cc",
-        "phone": "+886-123-456-789",
-        "company": "LINE Taiwan"
-    }
-
-
 def generate_gemini_text_complete(prompt):
     """
     Generate a text completion using the generative model.
     """
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     response = model.generate_content(prompt)
     return response
 
@@ -263,182 +148,3 @@ def generate_json_from_image(img, prompt):
     except ValueError as e:
         print("Error:", e)
     return response
-
-
-def add_namecard(namecard_obj, u_id):
-    """
-    将名片数据添加到 Firebase Realtime Database 的 "namecard" 路径下。
-
-    :param namecard_obj: 包含名片信息的字典对象
-    """
-    try:
-        # 引用 "namecard" 路径
-        ref = db.reference(f'{namecard_path}/{u_id}')
-
-        # 推送新的名片数据
-        new_ref = ref.push(namecard_obj)
-
-        print(f'Namecard added with key: {new_ref.key}')
-    except Exception as e:
-        print(f'Error adding namecard: {e}')
-
-
-def remove_redundant_data(u_id):
-    """
-    删除 "namecard" 路径下具有相同电子邮件地址的冗余数据。
-    """
-    try:
-        # 引用 "namecard" 路径
-        ref = db.reference(f'{namecard_path}/{u_id}')
-
-        # 获取所有名片数据
-        namecard_data = ref.get()
-
-        if namecard_data:
-            email_map = {}
-            for key, value in namecard_data.items():
-                email = value.get('email')
-                if email:
-                    if email in email_map:
-                        # 如果电子邮件已经存在于 email_map 中，则删除该名片数据
-                        ref.child(key).delete()
-                        print(f'Deleted redundant namecard with key: {key}')
-                    else:
-                        # 如果电子邮件不存在于 email_map 中，则添加到 email_map
-                        email_map[email] = key
-        else:
-            print('No data found in "namecard"')
-    except Exception as e:
-        print(f'Error removing redundant data: {e}')
-
-
-def parse_gemini_result_to_json(card_json_str):
-    '''
-    Parse the Gemini Image JSON string from the receipt data.
-    '''
-    try:
-        receipt_data = json.loads(card_json_str)
-        return receipt_data
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON: {e}")
-        return None
-
-
-def check_if_card_exists(namecard_obj, u_id):
-    """
-    检查名片数据是否已经存在于 "namecard" 路径下。
-
-    :param namecard_obj: 包含名片信息的字典对象
-    :return: 如果名片存在返回 True, 否则返回 False
-    """
-    try:
-        # 获取名片对象中的电子邮件地址
-        email = namecard_obj.get('email')
-        if not email:
-            print('No email provided in the namecard object.')
-            return False
-
-        # 引用 "namecard" 路径
-        ref = db.reference(f'{namecard_path}/{u_id}')
-
-        # 获取所有名片数据
-        namecard_data = ref.get()
-
-        if namecard_data:
-            for key, value in namecard_data.items():
-                if value.get('email') == email:
-                    print(
-                        f'Namecard with email {email} already exists: {key}')
-                    return True
-        print(f'Namecard with email {email} does not exist.')
-        return False
-    except Exception as e:
-        print(f'Error checking if namecard exists: {e}')
-        return False
-
-
-def get_namecard_flex_msg(card_data):
-    # Using Template
-
-    flex_msg = {
-        "type": "bubble",
-        "size": "giga",
-        "body": {
-            "type": "box",
-            "layout": "horizontal",
-            "spacing": "md",
-            "contents": [
-                {
-                    "type": "image",
-                    "aspectMode": "cover",
-                    "aspectRatio": "1:1",
-                    "flex": 1,
-                    "size": "full",
-                    "url": "https://raw.githubusercontent.com/kkdai/linebot-smart-namecard/main/img/logo.jpeg"
-                },
-                {
-                    "type": "box",
-                    "flex": 4,
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "size": "xxl",
-                            "text": f"{card_data.get('name')}",
-                            "weight": "bold"
-                        },
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "size": "sm",
-                            "text": f"{card_data.get('title')}",
-                        },
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "margin": "xxl",
-                            "size": "lg",
-                            "text":  f"{card_data.get('company')}",
-                            "weight": "bold"
-                        },
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "size": "sm",
-                            "text": f"{card_data.get('address')}",
-                        },
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "margin": "xxl",
-                            "text": f"{card_data.get('phone')}",
-                        },
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "text": f"{card_data.get('email')}",
-                        },
-                        {
-                            "type": "text",
-                            "align": "end",
-                            "text": "更多資訊",
-                            "action": {
-                                "type": "uri",
-                                "uri": "https://github.com/kkdai/linebot-namecard-python"
-                            }
-                        }
-                    ]
-                }
-            ]
-        },
-        "styles": {
-            "footer": {
-                "separator": True,
-            }
-        }
-    }
-
-    print("flex:", flex_msg)
-    return FlexSendMessage(
-        alt_text="Receipt Data", contents=flex_msg)
