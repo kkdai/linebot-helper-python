@@ -26,11 +26,6 @@ imgage_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
-query_prompt = '''
-這是所有的名片資料，請根據輸入文字來查詢相關的名片資料 {all_cards}，
-例如: 名字, 職稱, 公司名稱。 查詢問句為： {msg}, 只要回覆我找到的 JSON Data 就好。
-'''
-
 if channel_secret is None:
     print('Specify ChannelSecret as environment variable.')
     sys.exit(1)
