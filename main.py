@@ -18,6 +18,7 @@ import aiohttp
 import PIL.Image
 
 from langtools import summarize_with_sherpa, summarize_text
+from gh_tools import summarized_yesterday_github_issues
 
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
@@ -75,6 +76,14 @@ async def handle_callback(request: Request):
                 result = summarize_with_sherpa(event.message.text)
                 if len(result) > 2000:
                     result = summarize_text(result)
+                reply_msg = TextSendMessage(text=result)
+                await line_bot_api.reply_message(
+                    event.reply_token,
+                    [reply_msg],
+                )
+                return 'OK'
+            elif event.message.text == "@g":
+                result = summarized_yesterday_github_issues()
                 reply_msg = TextSendMessage(text=result)
                 await line_bot_api.reply_message(
                     event.reply_token,
