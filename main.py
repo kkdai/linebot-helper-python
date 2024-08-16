@@ -71,11 +71,11 @@ async def handle_callback(request: Request):
                 if event.postback.data == "gen_tweet":
                     result = generate_twitter_post(event.postback.data)
                     reply_msg = TextSendMessage(text=result)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [reply_msg],
-                )
-                return 'OK'
+                    await line_bot_api.reply_message(
+                        event.reply_token,
+                        [reply_msg],
+                    )
+                    return 'OK'
             continue
 
         user_id = event.source.user_id
