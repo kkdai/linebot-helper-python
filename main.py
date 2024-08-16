@@ -1,5 +1,5 @@
 from linebot.models import (
-    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, MessageAction, DatetimePickerAction, CameraAction, CameraRollAction, LocationAction
+    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent
 )
 from linebot.exceptions import (
     InvalidSignatureError
@@ -67,6 +67,15 @@ async def handle_callback(request: Request):
 
     for event in events:
         if not isinstance(event, MessageEvent):
+            if isinstance(event, PostbackEvent):
+                if event.postback.data == "gen_tweet":
+                    result = generate_twitter_post(event.postback.data)
+                    reply_msg = TextSendMessage(text=result)
+                await line_bot_api.reply_message(
+                    event.reply_token,
+                    [reply_msg],
+                )
+                return 'OK'
             continue
 
         user_id = event.source.user_id
@@ -113,19 +122,8 @@ async def handle_callback(request: Request):
                 event.reply_token,
                 [reply_msg])
             return 'OK'
-        # check with postback
-        elif event.message.type == "postback":
-            if event.postback.data == "gen_tweet":
-                result = generate_twitter_post(event.postback.data)
-                reply_msg = TextSendMessage(text=result)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [reply_msg],
-                )
-                return 'OK'
         else:
             continue
-
     return 'OK'
 
 
