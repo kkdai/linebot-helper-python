@@ -1,5 +1,5 @@
 from linebot.models import (
-    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent
+    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent, ImageEvent
 )
 from linebot.exceptions import (
     InvalidSignatureError
@@ -66,20 +66,18 @@ async def handle_callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
-        if not isinstance(event, MessageEvent):
-            if isinstance(event, PostbackEvent):
-                if event.postback.data == "gen_tweet":
-                    result = generate_twitter_post(event.postback.data)
-                    reply_msg = TextSendMessage(text=result)
-                    await line_bot_api.reply_message(
-                        event.reply_token,
-                        [reply_msg],
-                    )
-                    return 'OK'
-            continue
+        if isinstance(event, PostbackEvent):
+            if event.postback.label == "gen_tweet":
+                result = generate_twitter_post(event.postback.data)
+                reply_msg = TextSendMessage(text=result)
+                await line_bot_api.reply_message(
+                    event.reply_token,
+                    [reply_msg],
+                )
+                return 'OK'
+        elif isinstance(event, MessageEvent):
+            user_id = event.source.user_id
 
-        user_id = event.source.user_id
-        if event.message.type == "text":
             # check if text is url
             if event.message.text.startswith("http"):
                 result = summarize_with_sherpa(event.message.text)
@@ -107,7 +105,7 @@ async def handle_callback(request: Request):
                 event.reply_token,
                 [reply_msg],
             )
-        elif event.message.type == "image":
+        elif isinstance(event, ImageEvent):
             message_content = await line_bot_api.get_message_content(
                 event.message.id)
             image_content = b''
