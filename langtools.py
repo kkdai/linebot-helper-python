@@ -36,7 +36,7 @@ def summarize_with_sherpa(url: str) -> str:
     return docs[0].page_content
 
 
-def generate_twitter_post(text: str) -> str:
+def generate_twitter_post(input_text: str) -> str:
     '''
     Generate a Twitter post using the Google Generative AI model.
     '''
@@ -56,7 +56,7 @@ def generate_twitter_post(text: str) -> str:
 
     chain = prompt | model
     tweet = chain.invoke(
-        {"messages": [HumanMessage(content=text)]})
+        {"text": input_text})
     return tweet.content
 
 
