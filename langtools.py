@@ -6,6 +6,7 @@ from langchain_community.document_loaders.llmsherpa import LLMSherpaFileLoader
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage
 
 os.environ["USER_AGENT"] = "myagent"
 
@@ -33,6 +34,30 @@ def summarize_with_sherpa(url: str) -> str:
     ) if content_type in allowed_types else WebBaseLoader(url)
     docs = loader.load()
     return docs[0].page_content
+
+
+def generate_twitter_post(text: str) -> str:
+    '''
+    Generate a Twitter post using the Google Generative AI model.
+    '''
+    model = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0.5,
+        max_tokens=None,
+        timeout=None,
+        max_retries=2,
+    )
+
+    prompt_template = """
+    Provide a tweet base on provided text.:
+    "{text}"
+    Reply in ZH-TW"""
+    prompt = PromptTemplate.from_template(prompt_template)
+
+    chain = prompt | model
+    tweet = chain.invoke(
+        {"messages": [HumanMessage(content=text)]})
+    return tweet.content
 
 
 def summarize_text(text: str, max_tokens: int = 100) -> str:

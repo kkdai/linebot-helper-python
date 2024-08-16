@@ -1,5 +1,5 @@
 from linebot.models import (
-    MessageEvent, TextSendMessage
+    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, MessageAction, DatetimePickerAction, CameraAction, CameraRollAction, LocationAction
 )
 from linebot.exceptions import (
     InvalidSignatureError
@@ -17,7 +17,7 @@ from io import BytesIO
 import aiohttp
 import PIL.Image
 
-from langtools import summarize_with_sherpa, summarize_text
+from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post
 from gh_tools import summarized_yesterday_github_issues
 
 # get channel_secret and channel_access_token from your environment variable
@@ -25,7 +25,7 @@ channel_secret = os.getenv('ChannelSecret', None)
 channel_access_token = os.getenv('ChannelAccessToken', None)
 gemini_key = os.getenv('GOOGLE_API_KEY')
 
-imgage_prompt = ''' 
+imgage_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
@@ -76,7 +76,8 @@ async def handle_callback(request: Request):
                 result = summarize_with_sherpa(event.message.text)
                 if len(result) > 2000:
                     result = summarize_text(result)
-                reply_msg = TextSendMessage(text=result)
+                reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
+                    items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=result))]))
                 await line_bot_api.reply_message(
                     event.reply_token,
                     [reply_msg],
@@ -112,6 +113,16 @@ async def handle_callback(request: Request):
                 event.reply_token,
                 [reply_msg])
             return 'OK'
+        # check with postback
+        elif event.message.type == "postback":
+            if event.postback.data == "gen_tweet":
+                result = generate_twitter_post(event.postback.data)
+                reply_msg = TextSendMessage(text=result)
+                await line_bot_api.reply_message(
+                    event.reply_token,
+                    [reply_msg],
+                )
+                return 'OK'
         else:
             continue
 
