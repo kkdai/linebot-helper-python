@@ -19,6 +19,7 @@ import PIL.Image
 
 from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post
 from gh_tools import summarized_yesterday_github_issues
+from urllib.parse import parse_qs
 
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
@@ -67,9 +68,17 @@ async def handle_callback(request: Request):
 
     for event in events:
         if isinstance(event, PostbackEvent):
-            return 'OK'
-            if event.postback.label == "gen_tweet":
-                result = generate_twitter_post(event.postback.data)
+            # url parse query data from event.postback.data
+            query_params = parse_qs(event.postback.data)
+            print(f"query_params={query_params}")
+
+            if query_params["action"] == "gen_tweet":
+                # Get Msg ID
+                message_id = query_params["m_id"]
+                # Get message content
+                message_content = line_bot_api.get_message_content(message_id)
+                print(f"message_content={message_content}")
+                result = generate_twitter_post(message_content)
                 reply_msg = TextSendMessage(text=result)
                 await line_bot_api.reply_message(
                     event.reply_token,
@@ -85,7 +94,7 @@ async def handle_callback(request: Request):
                 if len(result) > 2000:
                     result = summarize_text(result)
                 reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
-                    items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=result))]))
+                    items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data="action=gen_tweet&m_id={event.message.id}"))]))
                 await line_bot_api.reply_message(
                     event.reply_token,
                     [reply_msg],
