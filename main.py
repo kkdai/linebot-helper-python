@@ -93,8 +93,9 @@ async def handle_callback(request: Request):
                 result = summarize_with_sherpa(event.message.text)
                 if len(result) > 2000:
                     result = summarize_text(result)
+                m_id = event.message.id
                 reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
-                    items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data="action=gen_tweet&m_id={event.message.id}"))]))
+                    items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}"))]))
                 await line_bot_api.reply_message(
                     event.reply_token,
                     [reply_msg],
@@ -115,21 +116,21 @@ async def handle_callback(request: Request):
                 event.reply_token,
                 [reply_msg],
             )
-        # elif isinstance(event, ImageEvent):
-        #     message_content = await line_bot_api.get_message_content(
-        #         event.message.id)
-        #     image_content = b''
-        #     async for s in message_content.iter_content():
-        #         image_content += s
-        #     img = PIL.Image.open(BytesIO(image_content))
-        #     result = generate_json_from_image(img, imgage_prompt)
-        #     print("------------IMAGE---------------")
-        #     print(result.text)
-        #     reply_msg = TextSendMessage(text=result.text)
-        #     await line_bot_api.reply_message(
-        #         event.reply_token,
-        #         [reply_msg])
-        #     return 'OK'
+        elif event.message.type == "image":
+            message_content = await line_bot_api.get_message_content(
+                event.message.id)
+            image_content = b''
+            async for s in message_content.iter_content():
+                image_content += s
+            img = PIL.Image.open(BytesIO(image_content))
+            result = generate_json_from_image(img, imgage_prompt)
+            print("------------IMAGE---------------")
+            print(result.text)
+            reply_msg = TextSendMessage(text=result.text)
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [reply_msg])
+            return 'OK'
         else:
             continue
     return 'OK'
