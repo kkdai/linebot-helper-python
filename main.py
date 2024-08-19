@@ -67,6 +67,7 @@ async def handle_callback(request: Request):
 
     for event in events:
         if isinstance(event, PostbackEvent):
+            return 'OK'
             if event.postback.label == "gen_tweet":
                 result = generate_twitter_post(event.postback.data)
                 reply_msg = TextSendMessage(text=result)
