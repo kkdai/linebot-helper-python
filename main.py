@@ -48,7 +48,7 @@ line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 
 namecard_path = "namecard"
-
+msg_memory_store = {}
 # Initialize the Gemini Pro API
 genai.configure(api_key=gemini_key)
 
@@ -78,10 +78,11 @@ async def handle_callback(request: Request):
                 # Get Msg ID
                 m_id = query_params.get('m_id', [None])[0]
                 print(f"m_id={m_id}")
+
                 # Get message content
-                message_content = line_bot_api.get_message_content(m_id)
-                print(f"message_content={message_content}")
-                result = generate_twitter_post(message_content)
+                stored_message = msg_memory_store[m_id]
+                print(f"message_content={stored_message}")
+                result = generate_twitter_post(stored_message)
                 reply_msg = TextSendMessage(text=result)
                 await line_bot_api.reply_message(
                     event.reply_token,
@@ -97,6 +98,7 @@ async def handle_callback(request: Request):
                 if len(result) > 2000:
                     result = summarize_text(result)
                 m_id = event.message.id
+                msg_memory_store[m_id] = result
                 reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
                     items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}"))]))
                 await line_bot_api.reply_message(
