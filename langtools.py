@@ -49,7 +49,33 @@ def generate_twitter_post(input_text: str) -> str:
     )
 
     prompt_template = """
-    Provide a tweet base on provided text.:
+    Provide a tweet base on provided text.
+    自動加上一些 hastags, 然後口氣輕鬆一點的推廣:
+    "{text}"
+    Reply in ZH-TW"""
+    prompt = PromptTemplate.from_template(prompt_template)
+
+    chain = prompt | model
+    tweet = chain.invoke(
+        {"text": input_text})
+    return tweet.content
+
+
+def generate_slack_post(input_text: str) -> str:
+    '''
+    Generate a Slack post using the Google Generative AI model.
+    '''
+    model = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0.5,
+        max_tokens=None,
+        timeout=None,
+        max_retries=2,
+    )
+
+    prompt_template = """
+    Provide a slack post base on provided text.
+    多一點條例式，然後多一些 slack emoji:
     "{text}"
     Reply in ZH-TW"""
     prompt = PromptTemplate.from_template(prompt_template)
