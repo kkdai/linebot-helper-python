@@ -40,6 +40,13 @@ if gemini_key is None:
     print('Specify GEMINI_API_KEY as environment variable.')
     sys.exit(1)
 
+
+class Store_Message:
+    def __init__(self, text, url):
+        self.text = text
+        self.url = url
+
+
 # Initialize the FastAPI app for LINEBot
 app = FastAPI()
 session = aiohttp.ClientSession()
@@ -67,30 +74,7 @@ async def handle_callback(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
-        if isinstance(event, PostbackEvent):
-            # url parse query data from event.postback.data
-            query_params = parse_qs(event.postback.data)
-            print(f"query_params={query_params}")
-
-            action_value = query_params.get('action', [None])[0]
-            print(f"action_value={action_value}")
-            if action_value == "gen_tweet":
-                # Get Msg ID
-                m_id = query_params.get('m_id', [None])[0]
-                print(f"m_id={m_id}")
-
-                # Get message content
-                stored_message = msg_memory_store[m_id]
-                source_string = f"message_content={stored_message['text']}, url={stored_message['url']}"
-                print(source_string)
-                result = generate_twitter_post(source_string)
-                reply_msg = TextSendMessage(text=result)
-                await line_bot_api.reply_message(
-                    event.reply_token,
-                    [reply_msg],
-                )
-                return 'OK'
-        elif isinstance(event, MessageEvent):
+        if isinstance(event, MessageEvent):
             user_id = event.source.user_id
 
             # check if text is url
@@ -100,12 +84,8 @@ async def handle_callback(request: Request):
                 if len(result) > 2000:
                     result = summarize_text(result)
                 m_id = event.message.id
-                msg_memory_store[m_id] = {
-                    'text': result,
-                    'url': url
-                }
-
-                msg_memory_store[m_id] = result
+                # 假设 msg_memory_store 是一个字典，存储了 Message 类的实例
+                msg_memory_store = {m_id: Store_Message(result, url)}
                 reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
                     items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}"))]))
                 await line_bot_api.reply_message(
@@ -128,6 +108,30 @@ async def handle_callback(request: Request):
                 event.reply_token,
                 [reply_msg],
             )
+
+        elif isinstance(event, PostbackEvent):
+            # url parse query data from event.postback.data
+            query_params = parse_qs(event.postback.data)
+            print(f"query_params={query_params}")
+
+            action_value = query_params.get('action', [None])[0]
+            print(f"action_value={action_value}")
+            if action_value == "gen_tweet":
+                # Get Msg ID
+                m_id = query_params.get('m_id', [None])[0]
+                print(f"m_id={m_id}")
+
+                # Get message content
+                stored_message = msg_memory_store[m_id]
+                source_string = f"message_content={stored_message.text}, url={stored_message.url}"
+                print(source_string)
+                result = generate_twitter_post(source_string)
+                reply_msg = TextSendMessage(text=result)
+                await line_bot_api.reply_message(
+                    event.reply_token,
+                    [reply_msg],
+                )
+                return 'OK'
         elif event.message.type == "image":
             message_content = await line_bot_api.get_message_content(
                 event.message.id)
