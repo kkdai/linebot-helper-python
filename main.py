@@ -1,4 +1,4 @@
-import logging
+from loguru import logger
 from typing import Dict, Any
 
 from linebot.models import (
@@ -18,10 +18,12 @@ import PIL.Image
 from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post, generate_slack_post
 from gh_tools import summarized_yesterday_github_issues
 from urllib.parse import parse_qs
+import sys
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger.add(
+    sys.stdout, format="{time} - {name} - {level} - {message}", level="INFO")
+
 
 # Get environment variables
 channel_secret = os.getenv('ChannelSecret')
