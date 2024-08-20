@@ -15,7 +15,7 @@ from io import BytesIO
 import aiohttp
 import PIL.Image
 
-from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post
+from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post, generate_slack_post
 from gh_tools import summarized_yesterday_github_issues
 from urllib.parse import parse_qs
 
@@ -59,10 +59,6 @@ imgage_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
-# @app.on_event("shutdown")
-# async def shutdown_event():
-#     await session.close()
-
 
 @app.post("/")
 async def handle_callback(request: Request):
@@ -103,7 +99,8 @@ async def handle_url_message(event: MessageEvent):
     m_id = event.message.id
     msg_memory_store[m_id] = StoreMessage(result, url)
     reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
-        items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}"))]))
+        items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}")),
+               QuickReplyButton(action=PostbackAction(label="gen_slack", data=f"action=gen_slack&m_id={m_id}"))]))
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
@@ -135,17 +132,25 @@ async def handle_image_message(event: MessageEvent):
 async def handle_postback_event(event: PostbackEvent):
     query_params = parse_qs(event.postback.data)
     action_value = query_params.get('action', [None])[0]
+    m_id = query_params.get('m_id', [None])[0]
+
+    if m_id is None or m_id not in msg_memory_store:
+        logger.error("Invalid message ID or message ID not found in store.")
+        return
+
+    stored_message = msg_memory_store[m_id]
+    source_string = f"message_content={stored_message.text}, url={stored_message.url}"
+
     if action_value == "gen_tweet":
-        m_id = query_params.get('m_id', [None])[0]
-        if m_id is not None and m_id in msg_memory_store:
-            stored_message = msg_memory_store[m_id]
-            source_string = f"message_content={stored_message.text}, url={stored_message.url}"
-            result = generate_twitter_post(source_string)
-            reply_msg = TextSendMessage(text=result)
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        else:
-            logger.error(
-                "Invalid message ID or message ID not found in store.")
+        await generate_and_reply(event, source_string, generate_twitter_post)
+    elif action_value == "gen_slack":
+        await generate_and_reply(event, source_string, generate_slack_post)
+
+
+async def generate_and_reply(event: PostbackEvent, source_string: str, generate_func):
+    result = generate_func(source_string)
+    reply_msg = TextSendMessage(text=result)
+    await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
 def generate_gemini_text_complete(prompt: str) -> Any:
