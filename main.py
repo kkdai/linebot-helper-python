@@ -81,9 +81,9 @@ async def handle_callback(request: Request):
 
                 # Get message content
                 stored_message = msg_memory_store[m_id]
-                print(
-                    f"message_content={stored_message['text']}, url={stored_message['url']}")
-                result = generate_twitter_post(f'{stored_message["text"]}, url from {stored_message['url']}')
+                source_string = f"message_content={stored_message['text']}, url={stored_message['url']}"
+                print(source_string)
+                result = generate_twitter_post(source_string)
                 reply_msg = TextSendMessage(text=result)
                 await line_bot_api.reply_message(
                     event.reply_token,
