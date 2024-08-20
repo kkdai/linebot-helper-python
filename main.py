@@ -10,7 +10,6 @@ from linebot import AsyncLineBotApi, WebhookParser
 from fastapi import Request, FastAPI, HTTPException
 import google.generativeai as genai
 import os
-import sys
 from io import BytesIO
 
 import aiohttp
