@@ -81,8 +81,9 @@ async def handle_callback(request: Request):
 
                 # Get message content
                 stored_message = msg_memory_store[m_id]
-                print(f"message_content={stored_message}")
-                result = generate_twitter_post(stored_message)
+                print(
+                    f"message_content={stored_message['text']}, url={stored_message['url']}")
+                result = generate_twitter_post(f'{stored_message["text"]}, url from {stored_message['url']}')
                 reply_msg = TextSendMessage(text=result)
                 await line_bot_api.reply_message(
                     event.reply_token,
@@ -94,10 +95,16 @@ async def handle_callback(request: Request):
 
             # check if text is url
             if event.message.text.startswith("http"):
-                result = summarize_with_sherpa(event.message.text)
+                url = event.message.text
+                result = summarize_with_sherpa(url)
                 if len(result) > 2000:
                     result = summarize_text(result)
                 m_id = event.message.id
+                msg_memory_store[m_id] = {
+                    'text': result,
+                    'url': url
+                }
+
                 msg_memory_store[m_id] = result
                 reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
                     items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}"))]))
