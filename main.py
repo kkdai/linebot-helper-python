@@ -56,9 +56,9 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 genai.configure(api_key=gemini_key)
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    await session.close()
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     await session.close()
 
 
 @app.post("/")
