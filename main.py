@@ -72,11 +72,14 @@ async def handle_callback(request: Request):
             query_params = parse_qs(event.postback.data)
             print(f"query_params={query_params}")
 
-            if query_params["action"] == "gen_tweet":
+            action_value = query_params.get('action', [None])[0]
+            print(f"action_value={action_value}")
+            if action_value == "gen_tweet":
                 # Get Msg ID
-                message_id = query_params["m_id"]
+                m_id = query_params.get('m_id', [None])[0]
+                print(f"m_id={m_id}")
                 # Get message content
-                message_content = line_bot_api.get_message_content(message_id)
+                message_content = line_bot_api.get_message_content(m_id)
                 print(f"message_content={message_content}")
                 result = generate_twitter_post(message_content)
                 reply_msg = TextSendMessage(text=result)
