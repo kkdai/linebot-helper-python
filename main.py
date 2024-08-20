@@ -55,6 +55,9 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 # Initialize the Gemini Pro API
 genai.configure(api_key=gemini_key)
 
+imgage_prompt = '''
+Describe all the information from the image in JSON format.
+'''
 
 # @app.on_event("shutdown")
 # async def shutdown_event():
@@ -134,11 +137,15 @@ async def handle_postback_event(event: PostbackEvent):
     action_value = query_params.get('action', [None])[0]
     if action_value == "gen_tweet":
         m_id = query_params.get('m_id', [None])[0]
-        stored_message = msg_memory_store[m_id]
-        source_string = f"message_content={stored_message.text}, url={stored_message.url}"
-        result = generate_twitter_post(source_string)
-        reply_msg = TextSendMessage(text=result)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        if m_id is not None and m_id in msg_memory_store:
+            stored_message = msg_memory_store[m_id]
+            source_string = f"message_content={stored_message.text}, url={stored_message.url}"
+            result = generate_twitter_post(source_string)
+            reply_msg = TextSendMessage(text=result)
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        else:
+            logger.error(
+                "Invalid message ID or message ID not found in store.")
 
 
 def generate_gemini_text_complete(prompt: str) -> Any:
