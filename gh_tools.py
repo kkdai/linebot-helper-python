@@ -8,7 +8,7 @@ from langchain_community.document_loaders import GitHubIssuesLoader
 
 prompt_template = """
 這些資料是我昨天搜集的文章，我想要總結這些資料，請幫我總結一下。 寫成一篇短文來分享我昨天有學到哪些內容，
-幫我在每一段最後加上原有的 URL 連結，這樣我可以隨時回去查看原文。 
+幫我在每一段最後加上原有的 URL 連結(url 不要使用 markdown, 直接給 url)，這樣我可以隨時回去查看原文。 
 請去除掉所有的 tags, links, 和其他不必要的資訊，只保留文章的主要內容，我的角色是 Evan ，喜歡 LLM 跟 AI 相關的技術。:
 "{text}"
 CONCISE SUMMARY:
