@@ -108,6 +108,22 @@ async def handle_callback(request: Request):
                 event.reply_token,
                 [reply_msg],
             )
+            return 'OK'
+        elif event.message.type == "image":
+            message_content = await line_bot_api.get_message_content(
+                event.message.id)
+            image_content = b''
+            async for s in message_content.iter_content():
+                image_content += s
+            img = PIL.Image.open(BytesIO(image_content))
+            result = generate_json_from_image(img, imgage_prompt)
+            print("------------IMAGE---------------")
+            print(result.text)
+            reply_msg = TextSendMessage(text=result.text)
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [reply_msg])
+            return 'OK'
 
         elif isinstance(event, PostbackEvent):
             # url parse query data from event.postback.data
@@ -132,21 +148,6 @@ async def handle_callback(request: Request):
                     [reply_msg],
                 )
                 return 'OK'
-        elif event.message.type == "image":
-            message_content = await line_bot_api.get_message_content(
-                event.message.id)
-            image_content = b''
-            async for s in message_content.iter_content():
-                image_content += s
-            img = PIL.Image.open(BytesIO(image_content))
-            result = generate_json_from_image(img, imgage_prompt)
-            print("------------IMAGE---------------")
-            print(result.text)
-            reply_msg = TextSendMessage(text=result.text)
-            await line_bot_api.reply_message(
-                event.reply_token,
-                [reply_msg])
-            return 'OK'
         else:
             continue
     return 'OK'
