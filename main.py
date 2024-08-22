@@ -19,6 +19,7 @@ from langtools import summarize_with_sherpa, summarize_text, generate_twitter_po
 from gh_tools import summarized_yesterday_github_issues
 from urllib.parse import parse_qs
 import sys
+import re
 
 # Configure logging
 logger.add(
@@ -83,7 +84,7 @@ async def handle_callback(request: Request):
 async def handle_message_event(event: MessageEvent):
     user_id = event.source.user_id
 
-    if event.message.text.startswith("http"):
+    if find_url(event.message.text) != '':
         await handle_url_message(event)
     elif event.message.text == "@g":
         await handle_github_summary(event)
@@ -178,3 +179,17 @@ def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
     except ValueError as e:
         logger.error("Error:", e)
     return response
+
+
+def find_url(input_string):
+    # Regular expression pattern to match URLs
+    url_pattern = r'https?://[^\s]+'
+
+    # Search for the pattern in the input string
+    match = re.search(url_pattern, input_string)
+
+    # If a match is found, return the URL, otherwise return an empty string
+    if match:
+        return match.group(0)
+    else:
+        return ''
