@@ -1,5 +1,4 @@
 # Adjust the import as necessary
-from some_module import LLMSherpaFileLoader, WebBaseLoader
 import os
 import requests
 from langchain.chains.summarize import load_summarize_chain
@@ -8,7 +7,6 @@ from langchain_community.document_loaders.llmsherpa import LLMSherpaFileLoader
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from langchain_core.messages import HumanMessage
 
 os.environ["USER_AGENT"] = "myagent"
 
