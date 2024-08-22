@@ -84,6 +84,8 @@ async def handle_callback(request: Request):
 async def handle_message_event(event: MessageEvent):
     user_id = event.source.user_id
 
+    url = find_url(event.message.text)
+    logger.info(f"URL: {url}")
     if find_url(event.message.text) != '':
         await handle_url_message(event)
     elif event.message.text == "@g":
