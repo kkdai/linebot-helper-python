@@ -99,8 +99,17 @@ async def handle_message_event(event: MessageEvent):
 async def handle_url_message(event: MessageEvent):
     url = event.message.text
     result = summarize_with_sherpa(url)
-    if len(result) > 2000:
+    if not result:
+        # Handle the error case, e.g., log the error or set a default message
+        result = "An error occurred while summarizing the document."
+        logger.error(result)
+        reply_msg = TextSendMessage(text=result)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        return
+
+    elif len(result) > 2000:
         result = summarize_text(result)
+
     m_id = event.message.id
     msg_memory_store[m_id] = StoreMessage(result, url)
     reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
