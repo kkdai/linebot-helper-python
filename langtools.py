@@ -1,3 +1,5 @@
+# Adjust the import as necessary
+from some_module import LLMSherpaFileLoader, WebBaseLoader
 import os
 import requests
 from langchain.chains.summarize import load_summarize_chain
@@ -15,25 +17,31 @@ def summarize_with_sherpa(url: str) -> str:
     '''
     Summarize a document from a URL using the LLM Sherpa API.
     '''
-    response = requests.head(url)
-    content_type = response.headers.get("content-type")
-    allowed_types = [
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "text/html",
-        "text/plain",
-        "application/xml",
-        "application/pdf",
-    ]
-    loader = LLMSherpaFileLoader(
-        file_path=url,
-        new_indent_parser=True,
-        apply_ocr=True,
-        strategy="text",
-        llmsherpa_api_url="https://readers.llmsherpa.com/api/document/developer/parseDocument?renderFormat=all",
-    ) if content_type in allowed_types else WebBaseLoader(url)
-    docs = loader.load()
-    return docs[0].page_content
+    try:
+        response = requests.head(url)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
+        content_type = response.headers.get("content-type")
+        allowed_types = [
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "text/html",
+            "text/plain",
+            "application/xml",
+            "application/pdf",
+        ]
+        loader = LLMSherpaFileLoader(
+            file_path=url,
+            new_indent_parser=True,
+            apply_ocr=True,
+            strategy="text",
+            llmsherpa_api_url="https://readers.llmsherpa.com/api/document/developer/parseDocument?renderFormat=all",
+        ) if content_type in allowed_types else WebBaseLoader(url)
+        docs = loader.load()
+        return docs[0].page_content
+    except Exception as e:
+        # Log the exception if needed
+        print(f"An error occurred: {e}")
+        return ""
 
 
 def generate_twitter_post(input_text: str) -> str:
