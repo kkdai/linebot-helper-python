@@ -85,7 +85,7 @@ async def handle_message_event(event: MessageEvent):
     user_id = event.source.user_id
 
     url = find_url(event.message.text)
-    logger.info(f"URL: {url}")
+    logger.info(f"URL: >{url}<")
     if find_url(event.message.text) != '':
         await handle_url_message(event)
     elif event.message.text == "@g":
@@ -97,7 +97,7 @@ async def handle_message_event(event: MessageEvent):
 
 
 async def handle_url_message(event: MessageEvent):
-    url = event.message.text
+    url = find_url(event.message.text)
     result = summarize_with_sherpa(url)
     if not result:
         # Handle the error case, e.g., log the error or set a default message
