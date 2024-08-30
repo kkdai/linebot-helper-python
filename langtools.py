@@ -1,5 +1,6 @@
 # Adjust the import as necessary
 import os
+import re
 import requests
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
@@ -16,6 +17,7 @@ def summarize_with_sherpa(url: str) -> str:
     Summarize a document from a URL using the LLM Sherpa API.
     '''
     try:
+        url = find_url(url)
         response = requests.head(url)
         response.raise_for_status()  # Raise an HTTPError for bad responses
         content_type = response.headers.get("content-type")
@@ -115,3 +117,17 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     document = Document(page_content=text)
     summary = summarize_chain.invoke([document])
     return summary["output_text"]
+
+
+def find_url(input_string):
+    # Regular expression pattern to match URLs
+    url_pattern = r'https?://[^\s]+'
+
+    # Search for the pattern in the input string
+    match = re.search(url_pattern, input_string)
+
+    # If a match is found, return the URL, otherwise return an empty string
+    if match:
+        return match.group(0)
+    else:
+        return ''
