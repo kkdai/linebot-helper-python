@@ -111,7 +111,8 @@ async def handle_url_message(event: MessageEvent):
 
     m_id = event.message.id
     msg_memory_store[m_id] = StoreMessage(result, url)
-    reply_msg = TextSendMessage(text=result, quick_reply=QuickReply(
+    out_text = f"{url}  \n{result}"
+    reply_msg = TextSendMessage(text=out_text, quick_reply=QuickReply(
         items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}")),
                QuickReplyButton(action=PostbackAction(label="gen_slack", data=f"action=gen_slack&m_id={m_id}"))]))
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
