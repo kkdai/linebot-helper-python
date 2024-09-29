@@ -13,3 +13,4 @@ beautifulsoup4
 llmsherpa
 loguru
 youtube-transcript-api
+pytube
