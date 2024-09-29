@@ -15,7 +15,7 @@ from io import BytesIO
 import aiohttp
 import PIL.Image
 
-from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post, generate_slack_post, find_url
+from langtools import summarize_with_sherpa, summarize_text, generate_twitter_post, generate_slack_post, find_url, summarized_from_youtube
 from gh_tools import summarized_yesterday_github_issues
 from urllib.parse import parse_qs
 import sys
@@ -97,7 +97,13 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent):
     url = find_url(event.message.text)
-    result = summarize_with_sherpa(url)
+
+    # Check if the URL is a YouTube URL
+    if "youtube.com" in url or "youtu.be" in url:
+        result = summarized_from_youtube(url)
+    else:
+        result = summarize_with_sherpa(url)
+
     if not result:
         # Handle the error case, e.g., log the error or set a default message
         result = "An error occurred while summarizing the document."
