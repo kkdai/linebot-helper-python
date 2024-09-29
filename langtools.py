@@ -20,7 +20,8 @@ def summarized_from_youtube(youtube_url: str) -> str:
     """
     try:
         # Load the video content using YoutubeLoader
-        loader = YoutubeLoader(youtube_url)
+        loader = YoutubeLoader.from_youtube_url(
+            youtube_url, add_video_info=True, language=["zh-Hant", "zh-Hans", "ja", "en"])
         docs = loader.load()
 
         # Extract the text content from the loaded documents
