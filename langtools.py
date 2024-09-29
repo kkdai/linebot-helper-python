@@ -6,10 +6,34 @@ from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 from langchain_community.document_loaders.llmsherpa import LLMSherpaFileLoader
 from langchain_community.document_loaders import WebBaseLoader
+from langchain_community.document_loaders import YoutubeLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 
+
 os.environ["USER_AGENT"] = "myagent"
+
+
+def summarized_from_youtube(youtube_url: str) -> str:
+    """
+    Summarize a YouTube video using the YoutubeLoader and Google Generative AI model.
+    """
+    try:
+        # Load the video content using YoutubeLoader
+        loader = YoutubeLoader(youtube_url)
+        docs = loader.load()
+
+        # Extract the text content from the loaded documents
+        text_content = docs[0].page_content
+
+        # Summarize the extracted text
+        summary = summarize_text(text_content)
+
+        return summary
+    except Exception as e:
+        # Log the exception if needed
+        print(f"An error occurred: {e}")
+        return ""
 
 
 def summarize_with_sherpa(url: str) -> str:
