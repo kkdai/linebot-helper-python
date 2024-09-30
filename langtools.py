@@ -14,6 +14,10 @@ from langchain_core.prompts import PromptTemplate
 os.environ["USER_AGENT"] = "myagent"
 
 
+def docs_to_str(docs: list[Document]) -> str:
+    return "\n".join([doc.page_content for doc in docs])
+
+
 def summarized_from_youtube(youtube_url: str) -> str:
     """
     Summarize a YouTube video using the YoutubeLoader and Google Generative AI model.
@@ -24,8 +28,11 @@ def summarized_from_youtube(youtube_url: str) -> str:
             youtube_url, add_video_info=True, language=["zh-Hant", "zh-Hans", "ja", "en"])
         docs = loader.load()
 
+        print("Pages of  Docs: ", len(docs))
         # Extract the text content from the loaded documents
-        text_content = docs[0].page_content
+        text_content = docs_to_str(docs)
+        print("Words: ", len(text_content.split()),
+              "First 1000 chars: ", text_content[:1000])
 
         # Summarize the extracted text
         summary = summarize_text(text_content)
@@ -62,7 +69,12 @@ def summarize_with_sherpa(url: str) -> str:
             llmsherpa_api_url="https://readers.llmsherpa.com/api/document/developer/parseDocument?renderFormat=all",
         ) if content_type in allowed_types else WebBaseLoader(url)
         docs = loader.load()
-        return docs[0].page_content
+        print("Pages of  Docs: ", len(docs))
+        # Extract the text content from the loaded documents
+        text_content = docs_to_str(docs)
+        print("Words: ", len(text_content.split()),
+              "First 1000 chars: ", text_content[:1000])
+        return text_content
     except Exception as e:
         # Log the exception if needed
         print(f"An error occurred: {e}")
