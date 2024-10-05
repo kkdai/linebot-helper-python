@@ -33,7 +33,7 @@ def summarized_from_youtube(youtube_url: str) -> str:
         # get YouTube video ID from url using regex
         youtube_id = re.search(r"(?<=v=)[a-zA-Z0-9_-]+", youtube_url).group(0)
         logging.debug(
-            "Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
+            f"Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
 
         logging.debug("Init Google API Client")
         google_api_client = init_google_api_client()
