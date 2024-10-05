@@ -1,6 +1,6 @@
 langchain
 langchain_core
-langchain-community
+langchain-community==0.3.1
 langchain_google_genai
 youtube-transcript-api
 google-cloud-secret-manager
