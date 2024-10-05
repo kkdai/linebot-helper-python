@@ -14,3 +14,6 @@ llmsherpa
 loguru
 youtube-transcript-api
 pytube
+google-cloud-secret-manager==2.16.1
+google-api-python-client==2.86.0
+google-auth-oauthlib==1.0.0
