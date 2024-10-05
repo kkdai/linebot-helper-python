@@ -2,6 +2,8 @@ line-bot-sdk==3.13.0
 fastapi
 uvicorn[standard]
 google.generativeai
+tiktoken
+Pillow
 langchain
 langchain_core
 langchain-community
