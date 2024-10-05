@@ -1,4 +1,3 @@
-line-bot-sdk==3.13.0
 langchain
 langchain_core
 langchain-community
@@ -15,3 +14,4 @@ fastapi
 uvicorn[standard]
 tiktoken
 Pillow
+line-bot-sdk==3.13.0
