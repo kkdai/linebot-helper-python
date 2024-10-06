@@ -1,18 +1,14 @@
 # Adjust the import as necessary
 import re
 import os
-import tempfile
 import logging
 import requests
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 from langchain_community.document_loaders.llmsherpa import LLMSherpaFileLoader
 from langchain_community.document_loaders import WebBaseLoader
-from langchain_community.document_loaders import GoogleApiClient, GoogleApiYoutubeLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from pathlib import Path
-from google.cloud import secretmanager
 
 
 # Configure logging
@@ -175,45 +171,6 @@ def find_url(input_string):
         return match.group(0)
     else:
         return ''
-
-
-def get_secret(secret_id):
-    logging.debug(f"Fetching secret for: {secret_id}")
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{os.environ['PROJECT_ID']}/secrets/{secret_id}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    secret_data = response.payload.data.decode("UTF-8")
-    logging.debug(
-        f"Secret fetched successfully for: {secret_id}, {secret_data[:50]}")
-    return secret_data
-
-
-def init_google_api_client():
-    logging.debug("Initializing GoogleApiClient")
-    creds_content = get_secret("youtube_api_credentials")
-
-    # Create a temporary file to store the credentials
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_creds_file:
-        logging.debug("Writing credentials to temporary file")
-        temp_creds_file.write(creds_content.encode("utf-8"))
-        temp_creds_file.flush()
-        temp_creds_file_path = temp_creds_file.name
-
-    logging.debug(
-        f"Temporary credentials file created at: {temp_creds_file_path}")
-
-    # Convert the file path to a Path object
-    temp_creds_file_path = Path(temp_creds_file_path)
-
-    # Initialize GoogleApiClient with the path to the temporary credentials file
-    google_api_client = GoogleApiClient(
-        service_account_path=temp_creds_file_path)
-
-    # Clean up the temporary file after use
-    os.unlink(temp_creds_file_path)
-    logging.debug("Temporary credentials file deleted")
-
-    return google_api_client
 
 
 def fetch_youtube_data(video_id):
