@@ -38,16 +38,28 @@ def summarized_from_youtube(youtube_url: str) -> str:
         logging.debug("Init Google API Client")
         google_api_client = init_google_api_client()
 
+        # Use a Channel
+        youtube_loader_channel = GoogleApiYoutubeLoader(
+            google_api_client=google_api_client,
+            channel_name="Reducible",
+            captions_language="en",
+        )
+
         # Use Youtube Ids
         youtube_loader_ids = GoogleApiYoutubeLoader(
             google_api_client=google_api_client,
-            video_ids=[youtube_id],
+            video_ids=["TrdevFK_am4"],
             add_video_info=True,
         )
 
         # Load data
+        logging.debug("Loading data from channel")
+        channel_data = youtube_loader_channel.load()
+        logging.debug(f"channel_data loaded successfully: {channel_data[:50]}")
+
         logging.debug("Loading data from video IDs")
         ids_data = youtube_loader_ids.load()
+        logging.debug(f"ids_data loaded successfully: {ids_data[:50]}")
         logging.debug("Data loaded successfully")
         # Summarize the extracted text
         summary = summarize_text(str(ids_data))
