@@ -32,6 +32,7 @@ def summarized_from_youtube(youtube_url: str) -> str:
             f"Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
 
         result = fetch_youtube_data(youtube_id)
+        logging.debug(f"Result from fetch_youtube_data: {result}")
         summary = ""
         # Extract ids_data from the result
         if 'ids_data' in result:
@@ -40,7 +41,8 @@ def summarized_from_youtube(youtube_url: str) -> str:
                 f"ids_data data: {ids_data[:50]}")
             summary = summarize_text(ids_data)
         else:
-            summary = "Error or ids_data not found:" + result
+            logging.error("ids_data not found in result:", result)
+            summary = "Error or ids_data not found..."
         return summary
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}", exc_info=True)
