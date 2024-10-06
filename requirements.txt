@@ -1,11 +1,7 @@
 langchain
 langchain_core
-langchain-community==0.2.17
+langchain-community
 langchain_google_genai
-youtube-transcript-api==0.6.1
-google-cloud-secret-manager==2.16.1
-google-api-python-client==2.86.0
-google-auth-oauthlib==1.0.0
 google.generativeai
 beautifulsoup4
 llmsherpa
