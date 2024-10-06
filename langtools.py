@@ -35,34 +35,16 @@ def summarized_from_youtube(youtube_url: str) -> str:
         logging.debug(
             f"Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
 
-        logging.debug("Init Google API Client")
-        google_api_client = init_google_api_client()
-
-        # Use a Channel
-        youtube_loader_channel = GoogleApiYoutubeLoader(
-            google_api_client=google_api_client,
-            channel_name="Reducible",
-            captions_language="en",
-        )
-
-        # Use Youtube Ids
-        youtube_loader_ids = GoogleApiYoutubeLoader(
-            google_api_client=google_api_client,
-            video_ids=["TrdevFK_am4"],
-            add_video_info=True,
-        )
-
-        # Load data
-        logging.debug("Loading data from channel")
-        channel_data = youtube_loader_channel.load()
-        logging.debug(f"channel_data loaded successfully: {channel_data[:50]}")
-
-        logging.debug("Loading data from video IDs")
-        ids_data = youtube_loader_ids.load()
-        logging.debug(f"ids_data loaded successfully: {ids_data[:50]}")
-        logging.debug("Data loaded successfully")
-        # Summarize the extracted text
-        summary = summarize_text(str(ids_data))
+        result = fetch_youtube_data(youtube_id)
+        summary = ""
+        # Extract ids_data from the result
+        if 'ids_data' in result:
+            ids_data = result['ids_data']
+            logging.debug(
+                f"ids_data data: {ids_data[:50]}")
+            summary = summarize_text(ids_data)
+        else:
+            summary = "Error or ids_data not found:" + result
         return summary
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}", exc_info=True)
@@ -232,3 +214,28 @@ def init_google_api_client():
     logging.debug("Temporary credentials file deleted")
 
     return google_api_client
+
+
+def fetch_youtube_data(video_id):
+    try:
+        # Read the URL from the environment variable
+        url = os.environ.get('GCP_LOADER_URL')
+        if not url:
+            return {"error": "Environment variable 'GCP_LOADER_URL' is not set"}
+
+        # Define the parameters
+        params = {'v_id': video_id}
+
+        # Make the GET request
+        response = requests.get(url, params=params)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            # Parse the JSON response
+            data = response.json()
+            return data
+        else:
+            # Handle errors
+            return {"error": f"Request failed with status code {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
