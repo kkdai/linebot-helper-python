@@ -198,3 +198,33 @@ def fetch_youtube_data(video_id):
             return {"error": f"Request failed with status code {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
+
+
+def fetch_singlefile_content(url):
+    # Read the URL from the environment variable
+    api_url = os.environ.get('GCP_SINGLEFILE_URL')
+    if not url:
+        return {"error": "Environment variable 'GCP_SINGLEFILE_URL' is not set"}
+
+    headers = {"Content-Type": "application/json"}
+
+    # 定義請求的數據
+    data = {"url": url}
+
+    try:
+        # 發送 POST 請求
+        response = requests.post(api_url, json=data, headers=headers)
+
+        # 檢查請求是否成功
+        if response.status_code == 200:
+            # 解析 JSON 響應
+            json_response = response.json()
+            # 提取 "content" 字段的值
+            content = json_response.get("content", "")
+            return content
+        else:
+            print(f"Request failed with status code: {response.status_code}")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred: {e}")
+        return None
