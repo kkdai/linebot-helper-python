@@ -49,7 +49,7 @@ def summarized_from_youtube(youtube_url: str) -> str:
         return "error:"+str(e)
 
 
-def summarize_with_sherpa(url: str) -> str:
+def summarize_url_with_sherpa(url: str) -> str:
     '''
     Summarize a document from a URL using the LLM Sherpa API.
     '''
@@ -78,7 +78,7 @@ def summarize_with_sherpa(url: str) -> str:
         # Extract the text content from the loaded documents
         text_content = docs_to_str(docs)
         print("Words: ", len(text_content.split()),
-              "First 1000 chars: ", text_content[:1000])
+              "First 50 chars: ", text_content[:50])
         return text_content
     except Exception as e:
         # Log the exception if needed
