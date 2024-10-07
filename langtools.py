@@ -82,8 +82,9 @@ def summarize_url_with_sherpa(url: str) -> str:
         return text_content
     except Exception as e:
         # Log the exception if needed
-        print(f"An error occurred: {e}")
-        return ""
+        print(f"An error occurred: {e}, calling singlefile API")
+        # Fallback to SingleFile API
+        return fetch_singlefile_content(url) if url else "Error: No URL found"
 
 
 def generate_twitter_post(input_text: str) -> str:
