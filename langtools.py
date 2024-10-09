@@ -103,6 +103,7 @@ def generate_twitter_post(input_text: str) -> str:
     Provide a tweet base on provided text.
     自動加上一些 hastags, 然後口氣輕鬆一點的推廣:
     "{text}"
+    Remove all markdown.
     Reply in ZH-TW"""
     prompt = PromptTemplate.from_template(prompt_template)
 
@@ -128,6 +129,7 @@ def generate_slack_post(input_text: str) -> str:
     Provide a slack post base on provided text.
     多一點條例式，然後多一些 slack emoji:
     "{text}"
+    Remove all markdown.
     Reply in ZH-TW"""
     prompt = PromptTemplate.from_template(prompt_template)
 
@@ -152,6 +154,7 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     prompt_template = """
     "{text}"
     CONCISE SUMMARY:
+    Remove all markdown.
     Reply in ZH-TW"""
     prompt = PromptTemplate.from_template(prompt_template)
 
