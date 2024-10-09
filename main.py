@@ -51,9 +51,8 @@ session = aiohttp.ClientSession()
 async_http_client = AiohttpAsyncHttpClient(session)
 line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
-
-namecard_path = "namecard"
 msg_memory_store: Dict[str, StoreMessage] = {}
+
 # Initialize the Gemini Pro API
 genai.configure(api_key=gemini_key)
 
@@ -112,8 +111,8 @@ async def handle_url_message(event: MessageEvent):
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
         return
 
-    elif len(result) > 2000:
-        result = summarize_text(result)
+    # summarized original web content.
+    result = summarize_text(result)
 
     m_id = event.message.id
     msg_memory_store[m_id] = StoreMessage(result, url)
