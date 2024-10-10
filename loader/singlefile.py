@@ -77,16 +77,7 @@ async def load_singlefile_html(url: str) -> str:
     return text
 
 
-async def download_html(url: str) -> str:
-    data = request.json
-    url = data.get("url")
-
-    if not url:
-        return Response(
-            json.dumps({"error": "URL is required"}, ensure_ascii=False),
-            mimetype="application/json",
-        ), 400
-
+async def loader_singlefile(url: str) -> str:
     try:
         content = await load_singlefile_html(url)
         text = markdownify(content)
