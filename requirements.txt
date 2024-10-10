@@ -10,5 +10,5 @@ fastapi
 tiktoken
 Pillow
 line-bot-sdk==3.13.0
-gunicorn
+uvicorn[standard]
 markdownify

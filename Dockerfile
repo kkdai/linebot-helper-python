@@ -21,5 +21,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 設置環境變量
 ENV PORT 8080
 
-# 2個 worker，以充分利用 2vCPU, 避免长时间的请求阻塞。可以使用 --timeout 30. 设置适当的线程数。可以从 4 开始
-CMD exec gunicorn --bind :$PORT --workers 2 --threads 4 --timeout 30 main:app
+CMD uvicorn main:app --host=0.0.0.0 --port=$PORT
