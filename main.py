@@ -20,7 +20,7 @@ import sys
 # local files
 from langtools import summarize_text, generate_twitter_post, generate_slack_post, find_url, summarized_from_youtube
 from gh_tools import summarized_yesterday_github_issues
-from singlefile import loader_singlefile
+from loader.singlefile import loader_singlefile
 
 # Configure logging
 logger.add(
