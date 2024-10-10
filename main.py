@@ -14,14 +14,13 @@ from io import BytesIO
 
 import aiohttp
 import PIL.Image
-
-from langtools import summarize_text, generate_twitter_post, generate_slack_post, find_url, summarized_from_youtube, fetch_singlefile_content
-from gh_tools import summarized_yesterday_github_issues
 from urllib.parse import parse_qs
 import sys
 
 # local files
-from .loader.singlefile import loader_singlefile
+from langtools import summarize_text, generate_twitter_post, generate_slack_post, find_url, summarized_from_youtube
+from gh_tools import summarized_yesterday_github_issues
+from singlefile import loader_singlefile
 
 # Configure logging
 logger.add(
