@@ -20,6 +20,9 @@ from gh_tools import summarized_yesterday_github_issues
 from urllib.parse import parse_qs
 import sys
 
+# local files
+from .loader.singlefile import loader_singlefile
+
 # Configure logging
 logger.add(
     sys.stdout, format="{time} - {name} - {level} - {message}", level="INFO")
@@ -101,7 +104,7 @@ async def handle_url_message(event: MessageEvent):
     if "youtube.com" in url or "youtu.be" in url:
         result = summarized_from_youtube(url)
     else:
-        result = fetch_singlefile_content(url)
+        result = loader_singlefile(url)
 
     if not result:
         # Handle the error case, e.g., log the error or set a default message
