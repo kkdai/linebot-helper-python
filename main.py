@@ -113,6 +113,7 @@ async def handle_url_message(event: MessageEvent):
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
         return
 
+    logger.info(f"URL: content: >{result[:50]}<")
     # summarized original web content.
     result = summarize_text(result)
 
