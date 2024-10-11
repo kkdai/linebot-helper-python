@@ -103,7 +103,7 @@ async def handle_url_message(event: MessageEvent):
     if "youtube.com" in url or "youtu.be" in url:
         result = summarized_from_youtube(url)
     else:
-        result = loader_singlefile(url)
+        result = await loader_singlefile(url)
 
     if not result:
         # Handle the error case, e.g., log the error or set a default message
