@@ -4,7 +4,7 @@ import logging
 import requests
 
 
-def load_from_youtube(youtube_url: str) -> str:
+def load_transcript_from_youtube(youtube_url: str) -> str:
     """
     Summarize a YouTube video using the YoutubeLoader and Google Generative AI model.
     """
