@@ -5,11 +5,8 @@ import logging
 import requests
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
-from langchain_community.document_loaders.llmsherpa import LLMSherpaFileLoader
-from langchain_community.document_loaders import WebBaseLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from ..loader.utils import find_url
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -46,44 +43,6 @@ def summarized_from_youtube(youtube_url: str) -> str:
         return summary
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}", exc_info=True)
-        return "error:"+str(e)
-
-
-def summarize_url_with_sherpa(url: str) -> str:
-    '''
-    Summarize a document from a URL using the LLM Sherpa API.
-    '''
-    try:
-        url = find_url(url)
-        response = requests.head(url)
-        response.raise_for_status()  # Raise an HTTPError for bad responses
-        content_type = response.headers.get("content-type")
-        allowed_types = [
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "text/html",
-            "text/plain",
-            "application/xml",
-            "application/pdf",
-        ]
-        loader = LLMSherpaFileLoader(
-            file_path=url,
-            new_indent_parser=True,
-            apply_ocr=True,
-            strategy="text",
-            llmsherpa_api_url="https://readers.llmsherpa.com/api/document/developer/parseDocument?renderFormat=all",
-        ) if content_type in allowed_types else WebBaseLoader(url)
-        docs = loader.load()
-        print("Pages of  Docs: ", len(docs))
-        # Extract the text content from the loaded documents
-        text_content = docs_to_str(docs)
-        print("Words: ", len(text_content.split()),
-              "First 50 chars: ", text_content[:50])
-        return text_content
-    except Exception as e:
-        # Log the exception if needed
-        print(f"An error occurred: {e}, calling singlefile API")
-        # Fallback to SingleFile API
         return "error:"+str(e)
 
 
