@@ -1,5 +1,7 @@
 from loguru import logger
 from typing import Dict, Any
+from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
 from linebot.models import (
     MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent
@@ -108,9 +110,11 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent):
     url = find_url(event.message.text)
+    parsed_url = urlparse(url)
+    logger.info(f"URL: parsed: >{parsed_url.netloc}<")
 
     # Check if the URL is a YouTube URL
-    if url in ALLOWED_NETLOCS:
+    if parsed_url.netloc not in ALLOWED_NETLOCS:
         result = load_transcript_from_youtube(url)
     else:
         result = await load_html_with_singlefile(url)
