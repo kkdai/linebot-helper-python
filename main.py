@@ -62,6 +62,14 @@ imgage_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
+ALLOWED_NETLOCS = {
+    "youtu.be",
+    "m.youtube.com",
+    "youtube.com",
+    "www.youtube.com",
+    "www.youtube-nocookie.com",
+}
+
 
 @app.post("/")
 async def handle_callback(request: Request):
@@ -100,7 +108,7 @@ async def handle_url_message(event: MessageEvent):
     url = find_url(event.message.text)
 
     # Check if the URL is a YouTube URL
-    if "youtube.com" in url or "youtu.be" in url:
+    if url in ALLOWED_NETLOCS:
         result = summarized_from_youtube(url)
     else:
         result = await loader_singlefile(url)
@@ -161,7 +169,8 @@ async def handle_postback_event(event: PostbackEvent):
         return
 
     stored_message = msg_memory_store[m_id]
-    source_string = f"message_content={stored_message.text}, url={stored_message.url}"
+    source_string = f"message_content={
+        stored_message.text}, url={stored_message.url}"
 
     if action_value == "gen_tweet":
         await generate_and_reply(event, source_string, generate_twitter_post)
