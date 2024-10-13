@@ -114,7 +114,7 @@ async def handle_url_message(event: MessageEvent):
     logger.info(f"URL: parsed: >{parsed_url.netloc}<")
 
     # Check if the URL is a YouTube URL
-    if parsed_url.netloc not in ALLOWED_NETLOCS:
+    if parsed_url.netloc in ALLOWED_NETLOCS:
         result = load_transcript_from_youtube(url)
     else:
         result = await load_html_with_singlefile(url)
