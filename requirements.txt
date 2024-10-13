@@ -12,3 +12,6 @@ Pillow
 line-bot-sdk==3.13.0
 uvicorn[standard]
 markdownify
+httpx
+urllib3
+cloudscraper

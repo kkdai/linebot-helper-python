@@ -7,43 +7,15 @@ from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
+# Set the user agent
 os.environ["USER_AGENT"] = "myagent"
 
 
 def docs_to_str(docs: list[Document]) -> str:
     return "\n".join([doc.page_content for doc in docs])
-
-
-def summarized_from_youtube(youtube_url: str) -> str:
-    """
-    Summarize a YouTube video using the YoutubeLoader and Google Generative AI model.
-    """
-    try:
-        # get YouTube video ID from url using regex
-        youtube_id = re.search(r"(?<=v=)[a-zA-Z0-9_-]+", youtube_url).group(0)
-        logging.debug(
-            f"Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
-
-        result = fetch_youtube_data(youtube_id)
-        logging.debug(f"Result from fetch_youtube_data: {result}")
-        summary = ""
-        # Extract ids_data from the result
-        if 'ids_data' in result:
-            ids_data = result['ids_data']
-            logging.debug(
-                f"ids_data data: {ids_data[:50]}")
-            summary = summarize_text(ids_data)
-        else:
-            logging.error("ids_data not found in result:", result)
-            summary = "Error or ids_data not found..."
-        return summary
-    except Exception as e:
-        logging.error(f"An error occurred: {str(e)}", exc_info=True)
-        return "error:"+str(e)
 
 
 def generate_twitter_post(input_text: str) -> str:
@@ -148,7 +120,7 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     return summary["output_text"]
 
 
-def fetch_youtube_data(video_id):
+def fetch_youtube_data_from_gcp(video_id):
     try:
         # Read the URL from the environment variable
         url = os.environ.get('GCP_LOADER_URL')

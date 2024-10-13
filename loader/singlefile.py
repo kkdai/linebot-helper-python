@@ -75,7 +75,7 @@ async def load_singlefile_html(url: str) -> str:
     return text
 
 
-async def loader_singlefile(url: str) -> str:
+async def load_html_with_singlefile(url: str) -> str:
     try:
         content = await load_singlefile_html(url)
         text = markdownify(content)
