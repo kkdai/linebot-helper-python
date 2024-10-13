@@ -1,8 +1,6 @@
 # Adjust the import as necessary
-import re
 import os
 import logging
-import requests
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -118,28 +116,3 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     document = Document(page_content=text)
     summary = summarize_chain.invoke([document])
     return summary["output_text"]
-
-
-def fetch_youtube_data_from_gcp(video_id):
-    try:
-        # Read the URL from the environment variable
-        url = os.environ.get('GCP_LOADER_URL')
-        if not url:
-            return {"error": "Environment variable 'GCP_LOADER_URL' is not set"}
-
-        # Define the parameters
-        params = {'v_id': video_id}
-
-        # Make the GET request
-        response = requests.get(url, params=params)
-
-        # Check if the request was successful
-        if response.status_code == 200:
-            # Parse the JSON response
-            data = response.json()
-            return data
-        else:
-            # Handle errors
-            return {"error": f"Request failed with status code {response.status_code}"}
-    except Exception as e:
-        return {"error": str(e)}
