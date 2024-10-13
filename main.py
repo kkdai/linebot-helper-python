@@ -19,9 +19,10 @@ import sys
 
 # local files
 from gh_tools.gh_tools import summarized_yesterday_github_issues
-from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post, load_from_youtube
+from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post
 from loader.singlefile import load_html_with_singlefile
 from loader.utils import find_url
+from loader.youtube_gcp import load_transcript_from_youtube
 
 # Configure logging
 logger.add(
@@ -110,7 +111,7 @@ async def handle_url_message(event: MessageEvent):
 
     # Check if the URL is a YouTube URL
     if url in ALLOWED_NETLOCS:
-        result = load_from_youtube(url)
+        result = load_transcript_from_youtube(url)
     else:
         result = await load_html_with_singlefile(url)
 
