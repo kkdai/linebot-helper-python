@@ -19,8 +19,9 @@ import sys
 
 # local files
 from gh_tools.gh_tools import summarized_yesterday_github_issues
-from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post, find_url, summarized_from_youtube
+from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post, summarized_from_youtube
 from loader.singlefile import loader_singlefile
+from loader.utils import find_url
 
 # Configure logging
 logger.add(
