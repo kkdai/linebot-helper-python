@@ -22,6 +22,7 @@ def load_transcript_from_youtube(youtube_url: str) -> str:
             ids_data = result['ids_data']
             logging.debug(
                 f"ids_data data: {ids_data[:50]}")
+            summary = ids_data
         else:
             logging.error("ids_data not found in result:", result)
             summary = "Error or ids_data not found..."
