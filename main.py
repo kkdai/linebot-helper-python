@@ -168,9 +168,8 @@ async def handle_postback_event(event: PostbackEvent):
         logger.error("Invalid message ID or message ID not found in store.")
         return
 
-    stored_message = msg_memory_store[m_id]
-    source_string = f"message_content={
-        stored_message.text}, url={stored_message.url}"
+    stored_msg = msg_memory_store[m_id]
+    source_string = f"message_content={stored_msg.text}, url={stored_msg.url}"
 
     if action_value == "gen_tweet":
         await generate_and_reply(event, source_string, generate_twitter_post)
