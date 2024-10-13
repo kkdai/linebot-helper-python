@@ -19,8 +19,8 @@ import sys
 
 # local files
 from gh_tools.gh_tools import summarized_yesterday_github_issues
-from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post, summarized_from_youtube
-from loader.singlefile import loader_singlefile
+from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post, load_from_youtube
+from loader.singlefile import load_html_with_singlefile
 from loader.utils import find_url
 
 # Configure logging
@@ -110,9 +110,9 @@ async def handle_url_message(event: MessageEvent):
 
     # Check if the URL is a YouTube URL
     if url in ALLOWED_NETLOCS:
-        result = summarized_from_youtube(url)
+        result = load_from_youtube(url)
     else:
-        result = await loader_singlefile(url)
+        result = await load_html_with_singlefile(url)
 
     if not result:
         # Handle the error case, e.g., log the error or set a default message
@@ -182,12 +182,6 @@ async def generate_and_reply(event: PostbackEvent, source_string: str, generate_
     result = generate_func(source_string)
     reply_msg = TextSendMessage(text=result)
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-
-def generate_gemini_text_complete(prompt: str) -> Any:
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(prompt)
-    return response
 
 
 def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
