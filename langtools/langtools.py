@@ -9,7 +9,7 @@ from langchain_community.document_loaders.llmsherpa import LLMSherpaFileLoader
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-
+from ..loader.utils import find_url
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -84,7 +84,7 @@ def summarize_url_with_sherpa(url: str) -> str:
         # Log the exception if needed
         print(f"An error occurred: {e}, calling singlefile API")
         # Fallback to SingleFile API
-        return fetch_singlefile_content(url) if url else "Error: No URL found"
+        return "error:"+str(e)
 
 
 def generate_twitter_post(input_text: str) -> str:
@@ -189,20 +189,6 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     return summary["output_text"]
 
 
-def find_url(input_string):
-    # Regular expression pattern to match URLs
-    url_pattern = r'https?://[^\s]+'
-
-    # Search for the pattern in the input string
-    match = re.search(url_pattern, input_string)
-
-    # If a match is found, return the URL, otherwise return an empty string
-    if match:
-        return match.group(0)
-    else:
-        return ''
-
-
 def fetch_youtube_data(video_id):
     try:
         # Read the URL from the environment variable
@@ -226,33 +212,3 @@ def fetch_youtube_data(video_id):
             return {"error": f"Request failed with status code {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
-
-
-def fetch_singlefile_content(url):
-    # Read the URL from the environment variable
-    api_url = os.environ.get('GCP_SINGLEFILE_URL')
-    if not url:
-        return {"error": "Environment variable 'GCP_SINGLEFILE_URL' is not set"}
-
-    headers = {"Content-Type": "application/json"}
-
-    # 定義請求的數據
-    data = {"url": url}
-
-    try:
-        # 發送 POST 請求
-        response = requests.post(api_url, json=data, headers=headers)
-
-        # 檢查請求是否成功
-        if response.status_code == 200:
-            # 解析 JSON 響應
-            json_response = response.json()
-            # 提取 "content" 字段的值
-            content = json_response.get("content", "")
-            return content
-        else:
-            print(f"Request failed with status code: {response.status_code}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
-        return None
