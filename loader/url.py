@@ -8,7 +8,7 @@ from .html import load_html_with_cloudscraper
 from .html import load_html_with_httpx
 from singlefile import load_html_with_singlefile
 from pdf import load_pdf
-from .video_transcript import load_video_transcript
+# from .video_transcript import load_video_transcript
 # from .youtube_transcript import load_youtube_transcript
 
 
@@ -57,16 +57,16 @@ async def load_url(url: str) -> str:
     url = replace_domain(url)
 
     if is_youtube_url(url):
-        transcript = load_youtube_transcript(url)
-        if transcript:
-            return transcript
-        logger.info("No transcript found for YouTube video: {}", url)
+        # transcript = load_youtube_transcript(url)
+        # if transcript:
+        #     return transcript
+        # logger.info("No transcript found for YouTube video: {}", url)
 
-        # if the video has no transcripts
-        # download the video and transcribe it by whisper
-        transcript = load_video_transcript(url)
-        if transcript:
-            return transcript
+        # # if the video has no transcripts
+        # # download the video and transcribe it by whisper
+        # transcript = load_video_transcript(url)
+        # if transcript:
+        #     return transcript
         logger.info(
             "Unable to load video transcript for YouTube video: {}", url)
 
