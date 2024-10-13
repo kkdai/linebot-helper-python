@@ -18,8 +18,8 @@ from urllib.parse import parse_qs
 import sys
 
 # local files
-from gh_tools.gh_tools import summarized_yesterday_github_issues
-from langtools.langtools import summarize_text, generate_twitter_post, generate_slack_post
+from loader.gh_tools import summarized_yesterday_github_issues
+from loader.langtools import summarize_text, generate_twitter_post, generate_slack_post
 from loader.singlefile import load_html_with_singlefile
 from loader.utils import find_url
 from loader.youtube_gcp import load_transcript_from_youtube
