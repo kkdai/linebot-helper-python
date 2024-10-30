@@ -6,9 +6,9 @@ from loguru import logger
 
 from .html import load_html_with_cloudscraper
 from .html import load_html_with_httpx
-from singlefile import load_html_with_singlefile
-from pdf import load_pdf
-from youtube_gcp import load_transcript_from_youtube
+from .singlefile import load_html_with_singlefile
+from .pdf import load_pdf
+from .youtube_gcp import load_transcript_from_youtube
 # from .video_transcript import load_video_transcript
 # from .youtube_transcript import load_youtube_transcript
 
