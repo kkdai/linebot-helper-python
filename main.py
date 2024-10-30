@@ -119,7 +119,7 @@ async def handle_url_message(event: MessageEvent):
     #     result = load_transcript_from_youtube(url)
     # else:
     #     result = await load_html_with_singlefile(url)
-    result = load_url(url)
+    result = await load_url(url)
 
     if not result:
         # Handle the error case, e.g., log the error or set a default message
