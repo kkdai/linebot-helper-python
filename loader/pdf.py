@@ -4,7 +4,7 @@ import tempfile
 import httpx
 from langchain_community.document_loaders.pdf import PyPDFLoader
 from loguru import logger
-from utils import docs_to_str
+from .utils import docs_to_str
 
 
 def load_pdf(url: str) -> str:
