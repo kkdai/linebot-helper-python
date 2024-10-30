@@ -22,6 +22,7 @@ import sys
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
 from loader.langtools import summarize_text, generate_twitter_post, generate_slack_post
+from loader.url import load_url
 from loader.singlefile import load_html_with_singlefile
 from loader.utils import find_url
 from loader.youtube_gcp import load_transcript_from_youtube
@@ -66,13 +67,13 @@ imgage_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
-ALLOWED_NETLOCS = {
-    "youtu.be",
-    "m.youtube.com",
-    "youtube.com",
-    "www.youtube.com",
-    "www.youtube-nocookie.com",
-}
+# ALLOWED_NETLOCS = {
+#     "youtu.be",
+#     "m.youtube.com",
+#     "youtube.com",
+#     "www.youtube.com",
+#     "www.youtube-nocookie.com",
+# }
 
 
 @app.post("/")
@@ -110,14 +111,15 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent):
     url = find_url(event.message.text)
-    parsed_url = urlparse(url)
-    logger.info(f"URL: parsed: >{parsed_url.netloc}<")
+    # parsed_url = urlparse(url)
+    # logger.info(f"URL: parsed: >{parsed_url.netloc}<")
 
-    # Check if the URL is a YouTube URL
-    if parsed_url.netloc in ALLOWED_NETLOCS:
-        result = load_transcript_from_youtube(url)
-    else:
-        result = await load_html_with_singlefile(url)
+    # # Check if the URL is a YouTube URL
+    # if parsed_url.netloc in ALLOWED_NETLOCS:
+    #     result = load_transcript_from_youtube(url)
+    # else:
+    #     result = await load_html_with_singlefile(url)
+    result = load_url(url)
 
     if not result:
         # Handle the error case, e.g., log the error or set a default message
