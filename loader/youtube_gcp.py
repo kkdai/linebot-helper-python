@@ -4,7 +4,7 @@ import logging
 import requests
 
 
-def load_transcript_from_youtube(youtube_url: str) -> str:
+async def load_transcript_from_youtube(youtube_url: str) -> str:
     """
     Summarize a YouTube video using the YoutubeLoader and Google Generative AI model.
     """
@@ -17,7 +17,7 @@ def load_transcript_from_youtube(youtube_url: str) -> str:
         logging.debug(
             f"Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
 
-        result = fetch_youtube_data_from_gcp(youtube_id)
+        result = await fetch_youtube_data_from_gcp(youtube_id)
         logging.debug(f"Result from fetch_youtube_data: {result}")
         summary = ""
         # Extract ids_data from the result
@@ -35,7 +35,7 @@ def load_transcript_from_youtube(youtube_url: str) -> str:
         return "error:"+str(e)
 
 
-def fetch_youtube_data_from_gcp(video_id):
+async def fetch_youtube_data_from_gcp(video_id):
     try:
         # Read the URL from the environment variable
         url = os.environ.get('GCP_LOADER_URL')
