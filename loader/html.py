@@ -7,8 +7,10 @@ from pathlib import Path
 import cloudscraper
 import httpx
 from bs4 import BeautifulSoup
-from loguru import logger
+import logging
 from markdownify import markdownify
+
+logger = logging.getLogger(__name__)
 
 
 def remove_base64_image(markdown_text: str) -> str:

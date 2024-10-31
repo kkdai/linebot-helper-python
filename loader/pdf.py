@@ -1,10 +1,11 @@
-
 import tempfile
 
 import httpx
 from langchain_community.document_loaders.pdf import PyPDFLoader
-from loguru import logger
+import logging
 from .utils import docs_to_str
+
+logger = logging.getLogger(__name__)
 
 
 def load_pdf(url: str) -> str:
