@@ -1,31 +1,26 @@
-from loguru import logger
+import os
+import sys
+from io import BytesIO
 from typing import Dict, Any
 from urllib.parse import parse_qs
-from urllib.parse import urlparse
-
-from linebot.models import (
-    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent
-)
-from linebot.exceptions import InvalidSignatureError
-from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
-from linebot import AsyncLineBotApi, WebhookParser
-from fastapi import Request, FastAPI, HTTPException
-import google.generativeai as genai
-import os
-from io import BytesIO
 
 import aiohttp
 import PIL.Image
-from urllib.parse import parse_qs
-import sys
+from fastapi import Request, FastAPI, HTTPException
+from loguru import logger
+from linebot import AsyncLineBotApi, WebhookParser
+from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import (
+    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent
+)
+import google.generativeai as genai
 
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
 from loader.langtools import summarize_text, generate_twitter_post, generate_slack_post
 from loader.url import load_url
-from loader.singlefile import load_html_with_singlefile
 from loader.utils import find_url
-from loader.youtube_gcp import load_transcript_from_youtube
 
 # Configure logging
 logger.add(
