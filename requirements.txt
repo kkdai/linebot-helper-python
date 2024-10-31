@@ -5,7 +5,6 @@ langchain_google_genai
 google.generativeai
 beautifulsoup4
 llmsherpa
-loguru
 fastapi
 tiktoken
 Pillow

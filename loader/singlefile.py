@@ -4,9 +4,13 @@ import asyncio
 import re
 from pathlib import Path
 from bs4 import BeautifulSoup
-from loguru import logger
+import logging
 from typing import Optional
 from markdownify import markdownify
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def get_singlefile_path_from_env() -> str:
@@ -21,7 +25,7 @@ def remove_base64_image(markdown_text: str) -> str:
 
 
 async def singlefile_download(url: str, cookies_file: Optional[str] = None) -> str:
-    logger.info("Downloading HTML by SingleFile: {}", url)
+    logger.info("Downloading HTML by SingleFile: %s", url)
 
     filename = tempfile.mktemp(suffix=".html")
     singlefile_path = get_singlefile_path_from_env()
@@ -55,13 +59,13 @@ async def singlefile_download(url: str, cookies_file: Optional[str] = None) -> s
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            logger.error("SingleFile failed with error: {}", stderr.decode())
+            logger.error("SingleFile failed with error: %s", stderr.decode())
             return ""
 
-        logger.info("SingleFile output: {}", stdout.decode())
+        logger.info("SingleFile output: %s", stdout.decode())
         return filename
     except Exception as e:
-        logger.error("Failed to execute SingleFile: {}", e)
+        logger.error("Failed to execute SingleFile: %s", e)
         return ""
 
 
@@ -82,5 +86,5 @@ async def load_html_with_singlefile(url: str) -> str:
         clean_text = remove_base64_image(text)
         return clean_text
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
-        return "error:"+str(e)
+        logger.error("An error occurred: %s", str(e))
+        return "error:" + str(e)

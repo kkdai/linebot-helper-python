@@ -7,7 +7,7 @@ from urllib.parse import parse_qs
 import aiohttp
 import PIL.Image
 from fastapi import Request, FastAPI, HTTPException
-from loguru import logger
+import logging
 from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
@@ -23,8 +23,9 @@ from loader.url import load_url
 from loader.utils import find_url
 
 # Configure logging
-logger.add(
-    sys.stdout, format="{time} - {name} - {level} - {message}", level="INFO")
+logging.basicConfig(
+    stream=sys.stdout, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # Get environment variables

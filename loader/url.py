@@ -2,7 +2,7 @@ from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
 import httpx
-from loguru import logger
+import logging
 
 from .html import load_html_with_cloudscraper
 from .html import load_html_with_httpx
@@ -11,6 +11,8 @@ from .pdf import load_pdf
 from .youtube_gcp import load_transcript_from_youtube
 # from .video_transcript import load_video_transcript
 # from .youtube_transcript import load_youtube_transcript
+
+logger = logging.getLogger(__name__)
 
 
 def is_pdf_url(url: str) -> bool:
