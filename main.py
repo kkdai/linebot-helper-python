@@ -111,18 +111,9 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent):
     url = find_url(event.message.text)
-    # parsed_url = urlparse(url)
-    # logger.info(f"URL: parsed: >{parsed_url.netloc}<")
-
-    # # Check if the URL is a YouTube URL
-    # if parsed_url.netloc in ALLOWED_NETLOCS:
-    #     result = load_transcript_from_youtube(url)
-    # else:
-    #     result = await load_html_with_singlefile(url)
     result = await load_url(url)
 
     if not result:
-        # Handle the error case, e.g., log the error or set a default message
         result = "An error occurred while summarizing the document."
         logger.error(result)
         reply_msg = TextSendMessage(text=result)
@@ -130,7 +121,6 @@ async def handle_url_message(event: MessageEvent):
         return
 
     logger.info(f"URL: content: >{result[:50]}<")
-    # summarized original web content.
     result = summarize_text(result)
 
     m_id = event.message.id
