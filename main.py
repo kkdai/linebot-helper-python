@@ -27,7 +27,6 @@ logging.basicConfig(
     stream=sys.stdout, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 # Get environment variables
 channel_secret = os.getenv('ChannelSecret')
 channel_access_token = os.getenv('ChannelAccessToken')
@@ -63,14 +62,6 @@ imgage_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
-# ALLOWED_NETLOCS = {
-#     "youtu.be",
-#     "m.youtube.com",
-#     "youtube.com",
-#     "www.youtube.com",
-#     "www.youtube-nocookie.com",
-# }
-
 
 @app.post("/")
 async def handle_callback(request: Request):
@@ -95,7 +86,7 @@ async def handle_message_event(event: MessageEvent):
     logger.info(f"UID: {user_id}")
     url = find_url(event.message.text)
     logger.info(f"URL: >{url}<")
-    if find_url(event.message.text) != '':
+    if url:
         await handle_url_message(event)
     elif event.message.text == "@g":
         await handle_github_summary(event)

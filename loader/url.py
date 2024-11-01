@@ -1,16 +1,11 @@
-from urllib.parse import urlparse
-from urllib.parse import urlunparse
-
+from urllib.parse import urlparse, urlunparse
 import httpx
 import logging
 
-from .html import load_html_with_cloudscraper
-from .html import load_html_with_httpx
+from .html import load_html_with_cloudscraper, load_html_with_httpx
 from .singlefile import load_html_with_singlefile
 from .pdf import load_pdf
 from .youtube_gcp import load_transcript_from_youtube
-# from .video_transcript import load_video_transcript
-# from .youtube_transcript import load_youtube_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +32,6 @@ def is_youtube_url(url: str) -> bool:
 
 def replace_domain(url: str) -> str:
     replacements = {
-        # "twitter.com": "vxtwitter.com",
-        # "x.com": "fixvx.com",
-        # "twitter.com": "twittpr.com",
-        # "x.com": "fixupx.com",
         "twitter.com": "api.fxtwitter.com",
         "x.com": "api.fxtwitter.com",
     }
@@ -55,15 +46,11 @@ def replace_domain(url: str) -> str:
 
 
 async def load_url(url: str) -> str:
-    # https://python.langchain.com/docs/integrations/document_loaders/
-
-    # replace domain
     url = replace_domain(url)
 
     if is_youtube_url(url):
         return await load_transcript_from_youtube(url)
 
-    # check and load PDF
     try:
         if is_pdf_url(url):
             return load_pdf(url)
@@ -85,12 +72,10 @@ async def load_url(url: str) -> str:
 
     cloudscraper_domains = [
         "https://blog.tripplus.cc",
-        # "https://cloudflare.net",
     ]
     for domain in cloudscraper_domains:
         if url.startswith(domain):
             return load_html_with_cloudscraper(url)
 
-    # download the page by singlefile and convert it to text
     text = await load_html_with_singlefile(url)
     return text
