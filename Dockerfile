@@ -1,28 +1,44 @@
-FROM python:3.10.12
+# 使用具體的 tag 而不是 latest
+FROM python:3.10.12-slim
 
-# Install Node.js, npm, git, and Chromium in a single RUN command
-RUN apt-get update && apt-get install -y nodejs npm git chromium && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install single-file-cli
-RUN npm install -g single-file-cli
-
-# Set working directory
+# 設定 WORKDIR 早一點，這樣後續命令的工作目錄都會一致
 WORKDIR /app
 
-# Copy only requirements.txt first to leverage Docker cache
+# 設定環境變數
+ENV PORT=8080 \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# 複製 requirements.txt 用於緩存 Python 依賴
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# 安裝系統依賴和 Python 依賴
+# 1. 使用 --mount=type=cache 來緩存 apt 和 pip
+# 2. 合併 RUN 命令減少層數
+# 3. 清理不必要的檔案減少映像大小
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        nodejs \
+        npm \
+        git \
+        chromium \
+    && npm install -g single-file-cli \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the project
+# 複製應用程式代碼
+# 將經常變動的文件放在最後
 COPY . .
 
-# Set environment variable
-ENV PORT 8080
+# 使用 EXPOSE 聲明容器會監聽的端口
+EXPOSE $PORT
 
-# Command to run the application
-CMD uvicorn main:app --host=0.0.0.0 --port=$PORT
+# 使用 ENTRYPOINT 和 CMD 的組合
+ENTRYPOINT ["uvicorn"]
+CMD ["main:app", "--host=0.0.0.0", "--port=8080"]
