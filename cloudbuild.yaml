@@ -1,5 +1,7 @@
 steps:
-- name: gcr.io/cloud-builders/docker
-  args: ['build', '-t', '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}', '.']
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    args:
+      - --destination=gcr.io/$PROJECT_ID/$IMAGE_NAME:$COMMIT_SHA
+      - --cache=true
 images:
-- '${_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}'
+  - 'gcr.io/$PROJECT_ID/$IMAGE_NAME:$COMMIT_SHA'
