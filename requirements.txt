@@ -14,3 +14,4 @@ markdownify
 httpx
 urllib3
 cloudscraper
+pypdf
