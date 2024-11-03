@@ -14,12 +14,9 @@ ENV PORT=8080 \
 COPY requirements.txt .
 
 # 安裝系統依賴和 Python 依賴
-# 1. 使用 --mount=type=cache 來緩存 apt 和 pip
-# 2. 合併 RUN 命令減少層數
-# 3. 清理不必要的檔案減少映像大小
-RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
-    apt-get update && \
+# 1. 合併 RUN 命令減少層數
+# 2. 清理不必要的檔案減少映像大小
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         nodejs \
         npm \
@@ -28,8 +25,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     && npm install -g single-file-cli \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip \
+    && pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # 複製應用程式代碼
