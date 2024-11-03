@@ -90,11 +90,42 @@ def generate_slack_post(input_text: str) -> str:
     )
 
     prompt_template = """
-    Provide a slack post base on provided text.
-    多一點條例式，然後多一些 slack emoji:
-    "{text}"
-    Remove all markdown.
-    Reply in ZH-TW"""
+將提供的文章摘要轉化為適合 Slack 上宣傳的格式，使其更吸引人並鼓勵讀者點擊。請使用台灣地區常用的表達方式，並加入 Slack 表情符號來增加趣味性和吸引力。
+"{text}"
+
+# 步驟 [選填]
+- 運用條列式列出關鍵重點，保持簡潔有力。
+- 加入 Slack 的 emoji 表現情感，例如🔥、👉、💡等。
+
+# Steps [optional]
+
+1. 將提供的文章摘要中的主要重點提取出來。
+2. 重新組織摘要，以清晰的條列式呈現。
+3. 運用台灣用語，使內容更具有親切感和接地氣。
+4. 加入 Slack emoji 以增強趣味性和吸引力，並吸引讀者進一步點擊。
+
+# Output Format
+
+- 摘要應採用條列式格式。
+- 標點符號和 Emoji 需要平衡使用，以增加趣味但不過度。
+- 使用台灣常見用語，讓讀者感到親切並增加共鳴。
+
+# Example
+
+**輸入文章摘要：**  
+「隨著疫情結束，企業對於混合式工作的需求逐漸增加。許多員工希望能彈性於家裡和辦公室之間切換，以追求更好的工作生活平衡。」
+
+**輸出 Slack 宣傳格式：**  
+🚀 **混合式工作來啦！這裡有你不能錯過的亮點：**  
+👉 疫情結束後，混合式工作越來越受歡迎！  
+🏠💼 居家辦公和辦公室自由切換，彈性工作更滿足生活需求！  
+🌟 員工說：這是促進工作生活平衡的最好方式之一～  
+👉 想更多了解混合式工作的優勢？快點擊👇  
+
+🔗 [了解更多詳細資訊]
+
+*(實際案例應更精簡，具體化，並添加文章的链接等細節！)*
+    """
     prompt = PromptTemplate.from_template(prompt_template)
 
     chain = prompt | model
