@@ -1,7 +1,0 @@
-steps:
-  - name: 'gcr.io/kaniko-project/executor:latest'
-    args:
-      - --destination=gcr.io/$PROJECT_ID/$IMAGE_NAME:$COMMIT_SHA
-      - --cache=true
-images:
-  - 'gcr.io/$PROJECT_ID/$IMAGE_NAME:$COMMIT_SHA'
