@@ -165,8 +165,9 @@ async def handle_postback_event(event: PostbackEvent):
 async def generate_and_reply(event: PostbackEvent, source_string: str, generate_func):
     result = generate_func(source_string)
     # replace [link] with url in source_string
-    result = result.replace(
-        "[link]", msg_memory_store[event.postback.data].url)
+    m_id = parse_qs(event.postback.data).get('m_id', [None])[0]
+    if m_id and m_id in msg_memory_store:
+        result = result.replace("[link]", msg_memory_store[m_id].url)
     reply_msg = TextSendMessage(text=result)
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
