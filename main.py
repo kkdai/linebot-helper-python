@@ -81,6 +81,24 @@ async def handle_callback(request: Request):
     return 'OK'
 
 
+@app.get("/")
+def health_check():
+    print("Health Check! Ok!")
+    return "OK"
+
+
+@app.get("/hn")
+def hacker_news_endpoint():
+    # Implement your logic here
+    return "Hacker News Endpoint"
+
+
+@app.get("/hf")
+def huggingface_endpoint():
+    # Implement your logic here
+    return "huggingface_endpoint"
+
+
 async def handle_message_event(event: MessageEvent):
     user_id = event.source.user_id
     logger.info(f"UID: {user_id}")
