@@ -97,7 +97,7 @@ def health_check():
     return "OK"
 
 
-@app.get("/hn")
+@app.post("/hn")
 async def hacker_news_summarization(request: Request):
     data = await request.json()
     title = data.get("title")
@@ -105,7 +105,7 @@ async def hacker_news_summarization(request: Request):
     return await handle_url_push_message(title, url, linebot_user_id, channel_access_token)
 
 
-@app.get("/hf")
+@app.post("/hf")
 async def huggingface_paper_summarization(request: Request):
     data = await request.json()
     title = data.get("title")
