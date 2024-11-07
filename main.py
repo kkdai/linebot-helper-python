@@ -8,6 +8,7 @@ import aiohttp
 import PIL.Image
 from fastapi import Request, FastAPI, HTTPException
 import logging
+from linebot import LineBotApi
 from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
@@ -29,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 # Get environment variables
 channel_secret = os.getenv('ChannelSecret')
+linebot_user_id = os.getenv("LINE_USER_ID")
 channel_access_token = os.getenv('ChannelAccessToken')
+channel_access_token_hf = os.getenv('ChannelAccessTokenHF')
 gemini_key = os.getenv('GOOGLE_API_KEY')
 
 if not channel_secret:
@@ -39,6 +42,13 @@ if not channel_access_token:
         'Specify ChannelAccessToken as environment variable.')
 if not gemini_key:
     raise EnvironmentError('Specify GEMINI_API_KEY as environment variable.')
+
+# Push Notification
+if not linebot_user_id:
+    raise EnvironmentError('Specify LINE_USER_ID as environment variable.')
+if not channel_access_token_hf:
+    raise EnvironmentError(
+        'Specify HuggingFace ChannelAccessToken as environment variable.')
 
 
 class StoreMessage:
@@ -88,15 +98,21 @@ def health_check():
 
 
 @app.get("/hn")
-def hacker_news_endpoint():
-    # Implement your logic here
-    return "Hacker News Endpoint"
+async def hacker_news_summarization(request: Request):
+    data = await request.json()
+    title = data.get("title")
+    url = data.get("url")
+    return await handle_url_push_message(title, url, linebot_user_id, channel_access_token)
 
 
 @app.get("/hf")
-def huggingface_endpoint():
-    # Implement your logic here
-    return "huggingface_endpoint"
+async def huggingface_paper_summarization(request: Request):
+    data = await request.json()
+    title = data.get("title")
+    papertocode_url = data.get("url")
+    url = replace_domain(
+        papertocode_url, "paperswithcode.com", "huggingface.co")
+    return await handle_url_push_message(title, url, linebot_user_id, channel_access_token_hf)
 
 
 async def handle_message_event(event: MessageEvent):
@@ -188,6 +204,32 @@ async def generate_and_reply(event: PostbackEvent, source_string: str, generate_
         result = result.replace("[link]", msg_memory_store[m_id].url)
     reply_msg = TextSendMessage(text=result)
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
+
+async def handle_url_push_message(title: str, url: str, linebot_user_id: str, linebot_token: str):
+    result = await load_url(url)
+
+    if not result:
+        result = "An error occurred while summarizing the document."
+        logger.error(result)
+        return
+    elif title:
+        result = f"{title}  \n{result}"
+
+    logger.info(f"URL: content: >{result[:50]}<")
+    result = summarize_text(result)
+    send_msg(linebot_user_id, linebot_token, result)
+
+
+def replace_domain(url, old_domain, new_domain):
+    return url.replace(old_domain, new_domain)
+
+
+def send_msg(linebot_user_id, linebot_token, text):
+    if linebot_user_id and linebot_token:
+        line_bot_api = LineBotApi(linebot_token)
+        line_bot_api.push_message(linebot_user_id, TextSendMessage(text=text))
+    return "OK"
 
 
 def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
