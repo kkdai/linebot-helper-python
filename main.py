@@ -68,7 +68,7 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 # Initialize the Gemini Pro API
 genai.configure(api_key=gemini_key)
 
-imgage_prompt = '''
+image_prompt = '''
 Describe all the information from the image in JSON format.
 '''
 
@@ -171,7 +171,7 @@ async def handle_image_message(event: MessageEvent):
     async for s in message_content.iter_content():
         image_content += s
     img = PIL.Image.open(BytesIO(image_content))
-    result = generate_json_from_image(img, imgage_prompt)
+    result = generate_json_from_image(img, image_prompt)
     logger.info("------------IMAGE---------------")
     logger.info(result.text)
     reply_msg = TextSendMessage(text=result.text)
