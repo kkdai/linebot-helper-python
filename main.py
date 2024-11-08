@@ -210,14 +210,12 @@ async def handle_url_push_message(title: str, url: str, linebot_user_id: str, li
     result = await load_url(url)
 
     if not result:
-        result = "An error occurred while summarizing the document."
+        result = "An error occurred while fetch HTML data."
         logger.error(result)
         return
-    elif title:
-        result = f"{title}  \n{result}"
 
-    logger.info(f"URL: content: >{result[:50]}<")
     result = summarize_text(result)
+    result = f"{url}\n{title} \n\n{result}"
     send_msg(linebot_user_id, linebot_token, result)
 
 
