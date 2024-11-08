@@ -15,6 +15,7 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent
 )
+from linebot.v3.messaging import TextMessage, ImageMessage
 import google.generativeai as genai
 
 # local files
@@ -74,7 +75,7 @@ Describe all the information from the image in JSON format.
 
 
 @app.post("/")
-async def handle_callback(request: Request):
+async def handle_webhook_callback(request: Request):
     signature = request.headers['X-Line-Signature']
     body = (await request.body()).decode()
 
@@ -116,18 +117,20 @@ async def huggingface_paper_summarization(request: Request):
 
 
 async def handle_message_event(event: MessageEvent):
-    user_id = event.source.user_id
-    logger.info(f"UID: {user_id}")
-    url = find_url(event.message.text)
-    logger.info(f"URL: >{url}<")
-    if url:
-        await handle_url_message(event)
-    elif event.message.text == "@g":
-        await handle_github_summary(event)
-    elif event.message.type == "image":
+    # separate handle TextMessage and ImageMessage
+    if isinstance(event.message, TextMessage):
+        user_id = event.source.user_id
+        logger.info(f"UID: {user_id}")
+        url = find_url(event.message.text)
+        logger.info(f"URL: >{url}<")
+        if url:
+            await handle_url_message(event)
+        elif event.message.text == "@g":
+            await handle_github_summary(event)
+        else:
+            await handle_text_message(event, user_id)
+    elif isinstance(event.message, ImageMessage):
         await handle_image_message(event)
-    else:
-        await handle_text_message(event, user_id)
 
 
 async def handle_url_message(event: MessageEvent):
