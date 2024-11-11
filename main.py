@@ -16,6 +16,7 @@ from linebot.models import (
     MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent, TextMessage, ImageMessage, GroupSource, RoomSource, UserSource
 )
 import google.generativeai as genai
+from httpx import HTTPStatusError
 
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
@@ -100,18 +101,28 @@ def health_check():
 @app.post("/hn")
 async def hacker_news_summarization(request: Request):
     data = await request.json()
+    logger.info(f"/hn data={data}")
     title = data.get("title")
     url = data.get("url")
+    logger.info(f"title={title}, url={url}")
+    if not url.startswith(('http://', 'https://')):
+        raise HTTPException(status_code=400, detail="Invalid URL protocol")
     return await handle_url_push_message(title, url, linebot_user_id, channel_access_token)
 
 
 @app.post("/hf")
 async def huggingface_paper_summarization(request: Request):
     data = await request.json()
+    logger.info(f"/hf data={data}")
+
     title = data.get("title")
     papertocode_url = data.get("url")
+    logger.info(f"title={title}, url={papertocode_url}")
+
     url = replace_domain(
         papertocode_url, "paperswithcode.com", "huggingface.co")
+    if not url.startswith(('http://', 'https://')):
+        raise HTTPException(status_code=400, detail="Invalid URL protocol")
     return await handle_url_push_message(title, url, linebot_user_id, channel_access_token_hf)
 
 
@@ -145,7 +156,11 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent):
     url = find_url(event.message.text)
-    result = await load_url(url)
+    try:
+        result = await load_url(url)
+    except HTTPStatusError as e:
+        logger.error(f"HTTP error occurred: {e}")
+        result = "An error occurred while summarizing the document."
 
     if not result:
         result = "An error occurred while summarizing the document."
@@ -220,10 +235,14 @@ async def generate_and_reply(event: PostbackEvent, source_string: str, generate_
 
 
 async def handle_url_push_message(title: str, url: str, linebot_user_id: str, linebot_token: str):
-    result = await load_url(url)
+    try:
+        result = await load_url(url)
+    except HTTPStatusError as e:
+        logger.error(f"HTTP error occurred: {e}")
+        result = "An error occurred while fetching HTML data."
 
     if not result:
-        result = "An error occurred while fetch HTML data."
+        result = "An error occurred while fetching HTML data."
         logger.error(result)
         return
 
