@@ -10,10 +10,10 @@ async def load_transcript_from_youtube(youtube_url: str) -> str:
     """
     try:
         # get YouTube video ID from url using regex
-        match = re.search(r"(?<=v=)[a-zA-Z0-9_-]+", youtube_url)
+        match = re.search(r"(?:v=|\/)([a-zA-Z0-9_-]{11})", youtube_url)
         if not match:
             raise ValueError("Invalid YouTube URL")
-        youtube_id = match.group(0)
+        youtube_id = match.group(1)
         logging.debug(
             f"Extracting YouTube video ID, url: {youtube_url} v_id: {youtube_id}")
 
