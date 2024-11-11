@@ -13,8 +13,9 @@ from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent, TextMessage, ImageMessage, GroupSource, RoomSource, UserSource
+    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent, TextMessage, ImageMessage
 )
+from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 import google.generativeai as genai
 from httpx import HTTPStatusError
 
@@ -130,13 +131,13 @@ async def handle_message_event(event: MessageEvent):
     # 先判断消息来源
     source_id = "unknown"
 
-    if isinstance(event.source, GroupSource):
+    if isinstance(event.source, SourceGroup):
         source_id = event.source.group_id
         logger.info(f"Group ID: {source_id}")
-    elif isinstance(event.source, RoomSource):
+    elif isinstance(event.source, SourceRoom):
         source_id = event.source.room_id
         logger.info(f"Room ID: {source_id}")
-    elif isinstance(event.source, UserSource):
+    elif isinstance(event.source, SourceUser):
         # 1:1 chat
         # separate handle TextMessage and ImageMessage
         if isinstance(event.message, TextMessage):
