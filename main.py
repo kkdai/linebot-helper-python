@@ -143,10 +143,10 @@ async def handle_message_event(event: MessageEvent):
         if isinstance(event.message, TextMessage):
             user_id = event.source.user_id
             logger.info(f"UID: {user_id}")
-            url = find_url(event.message.text)
-            logger.info(f"URL: >{url}<")
-            if url:
-                await handle_url_message(event)
+            urls = find_url(event.message.text)
+            logger.info(f"URLs: >{urls}<")
+            if urls:
+                await handle_url_message(event, urls[0])
             elif event.message.text == "@g":
                 await handle_github_summary(event)
             else:
@@ -155,8 +155,7 @@ async def handle_message_event(event: MessageEvent):
             await handle_image_message(event)
 
 
-async def handle_url_message(event: MessageEvent):
-    url = find_url(event.message.text)
+async def handle_url_message(event: MessageEvent, url: str):
     try:
         result = await load_url(url)
     except HTTPStatusError as e:

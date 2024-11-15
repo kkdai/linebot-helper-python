@@ -10,11 +10,8 @@ def find_url(input_string):
     # Regular expression pattern to match URLs
     url_pattern = r'https?://[^\s]+'
 
-    # Search for the pattern in the input string
-    match = re.search(url_pattern, input_string)
+    # Find all matches in the input string
+    matches = re.findall(url_pattern, input_string)
 
-    # If a match is found, return the URL, otherwise return an empty string
-    if match:
-        return match.group(0)
-    else:
-        return ''
+    # Return the list of URLs
+    return matches
