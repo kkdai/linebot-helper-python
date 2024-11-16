@@ -101,14 +101,19 @@ def health_check():
 
 @app.post("/hn")
 async def hacker_news_summarization(request: Request):
+    urls = []
     data = await request.json()
     logger.info(f"/hn data={data}")
     title = data.get("title")
     url = data.get("url")
     logger.info(f"title={title}, url={url}")
-    if not url.startswith(('http://', 'https://')):
-        raise HTTPException(status_code=400, detail="Invalid URL protocol")
-    return await handle_url_push_message(title, url, linebot_user_id, channel_access_token)
+    urls.append(url)
+    # check if "StoryUrl" is exist
+    story_url = data.get("StoryUrl")
+    if story_url:
+        logger.info(f"StoryUrl={story_url}")
+        urls.append(url)
+    return await handle_url_push_message(title, urls, linebot_user_id, channel_access_token)
 
 
 @app.post("/hf")
@@ -124,7 +129,8 @@ async def huggingface_paper_summarization(request: Request):
         papertocode_url, "paperswithcode.com", "huggingface.co")
     if not url.startswith(('http://', 'https://')):
         raise HTTPException(status_code=400, detail="Invalid URL protocol")
-    return await handle_url_push_message(title, url, linebot_user_id, channel_access_token_hf)
+    urls = [url]
+    return await handle_url_push_message(title, urls, linebot_user_id, channel_access_token_hf)
 
 
 async def handle_message_event(event: MessageEvent):
@@ -219,29 +225,29 @@ async def handle_postback_event(event: PostbackEvent):
         return
 
 
-async def handle_url_push_message(title: str, url: str, linebot_user_id: str, linebot_token: str):
-    try:
-        result = await load_url(url)
-    except HTTPStatusError as e:
-        logger.error(f"HTTP error occurred: {e}")
-        result = "An error occurred while fetching HTML data."
+async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, linebot_token: str):
+    results = []
+    for url in urls:
+        try:
+            result = await load_url(url)
+        except HTTPStatusError as e:
+            logger.error(f"HTTP error occurred: {e}")
+            result = "An error occurred while fetching HTML data."
 
-    if not result:
-        result = "An error occurred while fetching HTML data."
-        logger.error(result)
-        return
+        if not result:
+            result = "An error occurred while fetching HTML data."
+            logger.error(result)
+            return
+        result = summarize_text(result)
+        result = f"{url}\n{title} \n\n{result}"
+        result = TextSendMessage(result)
+        results.append(result)
 
-    result = summarize_text(result)
-    result = f"{url}\n{title} \n\n{result}"
-    send_msg(linebot_user_id, linebot_token, result)
+    if linebot_user_id and linebot_token:
+        line_bot_api = LineBotApi(linebot_token)
+        line_bot_api.push_message(linebot_user_id, results)
+    return "OK"
 
 
 def replace_domain(url, old_domain, new_domain):
     return url.replace(old_domain, new_domain)
-
-
-def send_msg(linebot_user_id, linebot_token, text):
-    if linebot_user_id and linebot_token:
-        line_bot_api = LineBotApi(linebot_token)
-        line_bot_api.push_message(linebot_user_id, TextSendMessage(text=text))
-    return "OK"
