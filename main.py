@@ -175,7 +175,7 @@ async def handle_url_message(event: MessageEvent, urls: list):
         result = summarize_text(result)
         reply_msg = TextSendMessage(text=result)
         results.append(reply_msg)
-    await line_bot_api.reply_message(event.reply_token, [results])
+    await line_bot_api.reply_message(event.reply_token, results)
 
 
 async def handle_github_summary(event: MessageEvent):
