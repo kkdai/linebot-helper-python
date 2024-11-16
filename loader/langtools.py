@@ -1,6 +1,8 @@
 # Adjust the import as necessary
 import os
 import logging
+import PIL.Image
+from typing import Any
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -182,3 +184,30 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     document = Document(page_content=text)
     summary = summarize_chain.invoke([document])
     return summary["output_text"]
+
+
+def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
+    model = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0.5,
+        max_tokens=None,
+        timeout=None,
+        max_retries=2,
+    )
+
+    prompt_template = PromptTemplate.from_template(prompt)
+    chain = prompt_template | model
+    response = chain.invoke({"image": img})
+
+    try:
+        if response.parts:
+            logging.info(f">>>>{response.text}")
+            return response
+        else:
+            logging.warning("No valid parts found in the response.")
+            for candidate in response.candidates:
+                logging.warning("!!!!Safety Ratings:",
+                                candidate.safety_ratings)
+    except ValueError as e:
+        logging.error("Error:", e)
+    return response

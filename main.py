@@ -1,7 +1,7 @@
 import os
 import sys
 from io import BytesIO
-from typing import Dict, Any
+from typing import Dict
 from urllib.parse import parse_qs
 
 import aiohttp
@@ -21,7 +21,7 @@ from httpx import HTTPStatusError
 
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
-from loader.langtools import summarize_text
+from loader.langtools import summarize_text, generate_json_from_image
 from loader.url import load_url
 from loader.utils import find_url
 
@@ -71,7 +71,7 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 genai.configure(api_key=gemini_key)
 
 image_prompt = '''
-Describe all the information from the image in JSON format.
+Describe all the information from the image, reply in zh_tw.
 '''
 
 
@@ -153,25 +153,6 @@ async def handle_message_event(event: MessageEvent):
                 await handle_text_message(event, user_id)
         elif isinstance(event.message, ImageMessage):
             await handle_image_message(event)
-
-
-def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
-    model = genai.GenerativeModel(
-        'gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
-    response = model.generate_content([prompt, img], stream=True)
-    response.resolve()
-
-    try:
-        if response.parts:
-            logger.info(f">>>>{response.text}")
-            return response
-        else:
-            logger.warning("No valid parts found in the response.")
-            for candidate in response.candidates:
-                logger.warning("!!!!Safety Ratings:", candidate.safety_ratings)
-    except ValueError as e:
-        logger.error("Error:", e)
-    return response
 
 
 async def handle_url_message(event: MessageEvent, urls: list):
