@@ -13,7 +13,7 @@ from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextSendMessage, QuickReply, QuickReplyButton, PostbackAction, PostbackEvent, TextMessage, ImageMessage
+    MessageEvent, TextSendMessage, PostbackEvent, TextMessage, ImageMessage
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 import google.generativeai as genai
@@ -21,7 +21,7 @@ from httpx import HTTPStatusError
 
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
-from loader.langtools import summarize_text, generate_twitter_post, generate_slack_post
+from loader.langtools import summarize_text
 from loader.url import load_url
 from loader.utils import find_url
 
@@ -146,7 +146,7 @@ async def handle_message_event(event: MessageEvent):
             urls = find_url(event.message.text)
             logger.info(f"URLs: >{urls}<")
             if urls:
-                await handle_url_message(event, urls[0])
+                await handle_url_message(event, urls)
             elif event.message.text == "@g":
                 await handle_github_summary(event)
             else:
@@ -155,28 +155,46 @@ async def handle_message_event(event: MessageEvent):
             await handle_image_message(event)
 
 
-async def handle_url_message(event: MessageEvent, url: str):
+def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
+    model = genai.GenerativeModel(
+        'gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
+    response = model.generate_content([prompt, img], stream=True)
+    response.resolve()
+
     try:
-        result = await load_url(url)
-    except HTTPStatusError as e:
-        logger.error(f"HTTP error occurred: {e}")
-        result = "An error occurred while summarizing the document."
+        if response.parts:
+            logger.info(f">>>>{response.text}")
+            return response
+        else:
+            logger.warning("No valid parts found in the response.")
+            for candidate in response.candidates:
+                logger.warning("!!!!Safety Ratings:", candidate.safety_ratings)
+    except ValueError as e:
+        logger.error("Error:", e)
+    return response
 
-    if not result:
-        result = "An error occurred while summarizing the document."
-        logger.error(result)
-        reply_msg = TextSendMessage(text=result)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        return
 
-    logger.info(f"URL: content: >{result[:50]}<")
-    result = summarize_text(result)
+async def handle_url_message(event: MessageEvent, urls: list):
+    results = []
+    for url in urls:
+        try:
+            result = await load_url(url)
+        except HTTPStatusError as e:
+            logger.error(f"HTTP error occurred: {e}")
+            result = "An error occurred while summarizing the document."
 
-    m_id = event.message.id
-    msg_memory_store[m_id] = StoreMessage(result, url)
-    out_text = f"{url}  \n{result}"
-    reply_msg = TextSendMessage(text=out_text)
-    await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        if not result:
+            result = "An error occurred while summarizing the document."
+            logger.error(result)
+            reply_msg = TextSendMessage(text=result)
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
+            return
+
+        logger.info(f"URL: content: >{result[:50]}<")
+        result = summarize_text(result)
+        reply_msg = TextSendMessage(text=reply_msg)
+        results.append(reply_msg)
+    await line_bot_api.reply_message(event.reply_token, [results])
 
 
 async def handle_github_summary(event: MessageEvent):
@@ -245,22 +263,3 @@ def send_msg(linebot_user_id, linebot_token, text):
         line_bot_api = LineBotApi(linebot_token)
         line_bot_api.push_message(linebot_user_id, TextSendMessage(text=text))
     return "OK"
-
-
-def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
-    model = genai.GenerativeModel(
-        'gemini-1.5-flash', generation_config={"response_mime_type": "application/json"})
-    response = model.generate_content([prompt, img], stream=True)
-    response.resolve()
-
-    try:
-        if response.parts:
-            logger.info(f">>>>{response.text}")
-            return response
-        else:
-            logger.warning("No valid parts found in the response.")
-            for candidate in response.candidates:
-                logger.warning("!!!!Safety Ratings:", candidate.safety_ratings)
-    except ValueError as e:
-        logger.error("Error:", e)
-    return response
