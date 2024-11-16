@@ -175,9 +175,7 @@ async def handle_url_message(event: MessageEvent, url: str):
     m_id = event.message.id
     msg_memory_store[m_id] = StoreMessage(result, url)
     out_text = f"{url}  \n{result}"
-    reply_msg = TextSendMessage(text=out_text, quick_reply=QuickReply(
-        items=[QuickReplyButton(action=PostbackAction(label="gen_tweet", data=f"action=gen_tweet&m_id={m_id}")),
-               QuickReplyButton(action=PostbackAction(label="gen_slack", data=f"action=gen_slack&m_id={m_id}"))]))
+    reply_msg = TextSendMessage(text=out_text)
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
@@ -215,23 +213,10 @@ async def handle_postback_event(event: PostbackEvent):
         logger.error("Invalid message ID or message ID not found in store.")
         return
 
-    stored_msg = msg_memory_store[m_id]
-    source_string = f"message_content={stored_msg.text}, url={stored_msg.url}"
-
-    if action_value == "gen_tweet":
-        await generate_and_reply(event, source_string, generate_twitter_post)
-    elif action_value == "gen_slack":
-        await generate_and_reply(event, source_string, generate_slack_post)
-
-
-async def generate_and_reply(event: PostbackEvent, source_string: str, generate_func):
-    result = generate_func(source_string)
-    # replace [link] with url in source_string
-    m_id = parse_qs(event.postback.data).get('m_id', [None])[0]
-    if m_id and m_id in msg_memory_store:
-        result = result.replace("[link]", msg_memory_store[m_id].url)
-    reply_msg = TextSendMessage(text=result)
-    await line_bot_api.reply_message(event.reply_token, [reply_msg])
+    # Remove gen_tweet and gen_slack actions
+    if action_value not in ["gen_tweet", "gen_slack"]:
+        logger.error("Invalid action value.")
+        return
 
 
 async def handle_url_push_message(title: str, url: str, linebot_user_id: str, linebot_token: str):
