@@ -173,6 +173,7 @@ async def handle_url_message(event: MessageEvent, urls: list):
 
         logger.info(f"URL: content: >{result[:50]}<")
         result = summarize_text(result)
+        result = f"{url}\n{result}"
         reply_msg = TextSendMessage(text=result)
         results.append(reply_msg)
     await line_bot_api.reply_message(event.reply_token, results)
