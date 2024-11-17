@@ -112,7 +112,7 @@ async def hacker_news_summarization(request: Request):
     story_url = data.get("StoryUrl")
     if story_url:
         logger.info(f"StoryUrl={story_url}")
-        urls.append(url)
+        urls.append(story_url)
     return await handle_url_push_message(title, urls, linebot_user_id, channel_access_token)
 
 
