@@ -12,6 +12,8 @@ from markdownify import markdownify
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+PERSISTENT_TEMP_DIR = "/path/to/persistent/temp/dir"
+
 
 def get_singlefile_path_from_env() -> str:
     # 直接返回 'single-file'，因為它應該在 PATH 中
@@ -27,7 +29,11 @@ def remove_base64_image(markdown_text: str) -> str:
 async def singlefile_download(url: str, cookies_file: Optional[str] = None) -> str:
     logger.info("Downloading HTML by SingleFile: %s", url)
 
-    filename = tempfile.mktemp(suffix=".html")
+    if not os.path.exists(PERSISTENT_TEMP_DIR):
+        os.makedirs(PERSISTENT_TEMP_DIR)
+
+    filename = os.path.join(PERSISTENT_TEMP_DIR, os.path.basename(
+        tempfile.mktemp(suffix=".html")))
     singlefile_path = get_singlefile_path_from_env()
 
     # 指定 Chromium 的可執行路徑
