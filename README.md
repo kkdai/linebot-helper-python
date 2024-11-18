@@ -8,6 +8,10 @@ This project provides a set of tools to help load and process various types of w
 - Load PDF content.
 - Load YouTube transcripts.
 - Replace domains in URLs for specific services.
+- Summarize Hacker News articles.
+- Summarize Hugging Face papers.
+- Handle text and image messages from LINE Bot.
+- Push LINE message to LINE users.
 
 ## License
 
