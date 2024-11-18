@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 import aiohttp
 import PIL.Image
 from fastapi import Request, FastAPI, HTTPException
+from fastapi.background import BackgroundTasks
 import logging
 from linebot import LineBotApi
 from linebot import AsyncLineBotApi, WebhookParser
@@ -100,37 +101,34 @@ def health_check():
 
 
 @app.post("/hn")
-async def hacker_news_summarization(request: Request):
-    urls = []
+async def hacker_news_summarization(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
     logger.info(f"/hn data={data}")
     title = data.get("title")
     url = data.get("url")
-    logger.info(f"title={title}, url={url}")
-    urls.append(url)
-    # check if "StoryUrl" is exist
     story_url = data.get("StoryUrl")
+    urls = [url]
     if story_url:
-        logger.info(f"StoryUrl={story_url}")
         urls.append(story_url)
-    return await handle_url_push_message(title, urls, linebot_user_id, channel_access_token)
+    background_tasks.add_task(
+        handle_url_push_message, title, urls, linebot_user_id, channel_access_token)
+    return {"status": "ok"}
 
 
 @app.post("/hf")
-async def huggingface_paper_summarization(request: Request):
+async def huggingface_paper_summarization(request: Request, background_tasks: BackgroundTasks):
     data = await request.json()
     logger.info(f"/hf data={data}")
-
     title = data.get("title")
     papertocode_url = data.get("url")
-    logger.info(f"title={title}, url={papertocode_url}")
-
     url = replace_domain(
         papertocode_url, "paperswithcode.com", "huggingface.co")
     if not url.startswith(('http://', 'https://')):
         raise HTTPException(status_code=400, detail="Invalid URL protocol")
     urls = [url]
-    return await handle_url_push_message(title, urls, linebot_user_id, channel_access_token_hf)
+    background_tasks.add_task(
+        handle_url_push_message, title, urls, linebot_user_id, channel_access_token_hf)
+    return {"status": "ok"}
 
 
 async def handle_message_event(event: MessageEvent):
