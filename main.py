@@ -7,7 +7,6 @@ from urllib.parse import parse_qs
 import aiohttp
 import PIL.Image
 from fastapi import Request, FastAPI, HTTPException
-from fastapi.background import BackgroundTasks
 import logging
 from linebot import LineBotApi
 from linebot import AsyncLineBotApi, WebhookParser
@@ -101,7 +100,7 @@ def health_check():
 
 
 @app.post("/hn")
-async def hacker_news_summarization(request: Request, background_tasks: BackgroundTasks):
+async def hacker_news_summarization(request: Request):
     data = await request.json()
     logger.info(f"/hn data={data}")
     title = data.get("title")
@@ -110,13 +109,12 @@ async def hacker_news_summarization(request: Request, background_tasks: Backgrou
     urls = [url]
     if story_url:
         urls.append(story_url)
-    background_tasks.add_task(
-        handle_url_push_message, title, urls, linebot_user_id, channel_access_token)
+    await handle_url_push_message(title, urls, linebot_user_id, channel_access_token)
     return {"status": "ok"}
 
 
 @app.post("/hf")
-async def huggingface_paper_summarization(request: Request, background_tasks: BackgroundTasks):
+async def huggingface_paper_summarization(request: Request):
     data = await request.json()
     logger.info(f"/hf data={data}")
     title = data.get("title")
@@ -126,8 +124,7 @@ async def huggingface_paper_summarization(request: Request, background_tasks: Ba
     if not url.startswith(('http://', 'https://')):
         raise HTTPException(status_code=400, detail="Invalid URL protocol")
     urls = [url]
-    background_tasks.add_task(
-        handle_url_push_message, title, urls, linebot_user_id, channel_access_token_hf)
+    await handle_url_push_message(title, urls, linebot_user_id, channel_access_token_hf)
     return {"status": "ok"}
 
 
