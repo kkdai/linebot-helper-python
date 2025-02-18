@@ -145,6 +145,11 @@ async def handle_message_event(event: MessageEvent):
         # 1:1 chat
         # separate handle TextMessage and ImageMessage
         if isinstance(event.message, TextMessage):
+            # log if  event.message.quoted_message_id  is not None
+            if event.message.quoted_message_id:
+                logger.info(
+                    f"Quoted message ID: {event.message.quoted_message_id}")
+
             user_id = event.source.user_id
             logger.info(f"UID: {user_id}")
             urls = find_url(event.message.text)
