@@ -109,6 +109,26 @@ async def load_url(url: str) -> str:
                 logger.error(f"All methods failed for PTT URL: {e}")
                 raise
 
+        # For OpenAI, try SingleFile as fallback
+        elif url.startswith("https://openai.com"):
+            try:
+                logger.info(
+                    f"Firecrawl failed for OpenAI URL, using SingleFile: {url}")
+                return await load_html_with_singlefile(url)
+            except Exception as e:
+                logger.error(f"All methods failed for OpenAI URL: {e}")
+                raise
+
+        # For Medium, try httpx as fallback
+        elif url.startswith("https://medium.com"):
+            try:
+                logger.info(
+                    f"Firecrawl failed for Medium URL, using httpx: {url}")
+                return load_html_with_httpx(url)
+            except Exception as e:
+                logger.error(f"All methods failed for Medium URL: {e}")
+                raise
+
     # Handle non-Firecrawl URLs
     try:
         if is_pdf_url(url):
