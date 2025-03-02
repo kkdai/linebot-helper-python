@@ -137,16 +137,30 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         # Initialize the Firecrawl app with API key
         app = FirecrawlApp(api_key=firecrawl_key)
 
-        # Set parameters - for PTT we need "over18=1" cookie
+        # Default parameters
         params = {
             'formats': ['markdown'] if markdown else ['html'],
             'custom_headers': {
-                'Cookie': 'over18=1',  # For PTT age verification
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
             },
-            'timeout': 60000,  # Longer timeout (60s) for PTT
+            'timeout': 60000,  # 60 seconds
             'wait_until': 'networkidle2'  # Wait until network is idle
         }
+
+        # Site-specific parameters
+        if url.startswith("https://www.ptt.cc/bbs"):
+            # PTT requires over18 cookie
+            params['custom_headers']['Cookie'] = 'over18=1'
+
+        elif url.startswith("https://medium.com"):
+            # Medium has a lot of dynamic content and cookie banners
+            params['wait_for'] = 'article, .story, .post'
+            params['block_resources'] = ['image', 'font', 'media']
+
+        elif url.startswith("https://openai.com"):
+            # OpenAI has complex JavaScript and animations
+            params['wait_for'] = 'main, article, .content'
+            params['javascript'] = True  # Ensure JavaScript execution
 
         # Make the request
         result = app.scrape_url(url, params=params)
