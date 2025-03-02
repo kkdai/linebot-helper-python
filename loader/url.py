@@ -53,6 +53,13 @@ def is_youtube_url(url: str) -> bool:
     )
 
 
+def is_firecrawl_url(url: str) -> bool:
+    """Check if the URL should be processed using Firecrawl"""
+    return (url.startswith("https://www.ptt.cc/bbs") or
+            url.startswith("https://medium.com") or
+            url.startswith("https://openai.com"))
+
+
 def replace_domain(url: str) -> str:
     replacements = {
         "twitter.com": "api.fxtwitter.com",
@@ -74,40 +81,42 @@ async def load_url(url: str) -> str:
     if is_youtube_url(url):
         return await load_transcript_from_youtube(url)
 
-    # Handle PTT URLs with special care to avoid 403 errors
-    if is_ptt_url(url):
-        logger.info(f"Handling PTT URL: {url}")
+    # Handle URLs that should use Firecrawl
+    if is_firecrawl_url(url):
+        logger.info(f"Handling URL with Firecrawl: {url}")
 
         # Try Firecrawl first if available
         if FIRECRAWL_AVAILABLE and os.environ.get('firecrawl_key'):
             try:
-                logger.info(f"Using Firecrawl for PTT URL: {url}")
+                logger.info(f"Using Firecrawl for URL: {url}")
                 return load_html_with_firecrawl(url)
             except Exception as e:
-                logger.warning(f"Firecrawl failed for PTT, falling back: {e}")
+                logger.warning(f"Firecrawl failed, falling back: {e}")
 
-        # Try cloudscraper as a reliable fallback for PTT
-        try:
-            logger.info(f"Using cloudscraper for PTT URL: {url}")
-            return load_html_with_cloudscraper(url)
-        except Exception as e:
-            logger.warning(f"Cloudscraper failed for PTT, trying httpx: {e}")
+        # For PTT, use cloudscraper as the first fallback
+        if url.startswith("https://www.ptt.cc/bbs"):
+            try:
+                logger.info(f"Using cloudscraper for PTT URL: {url}")
+                return load_html_with_cloudscraper(url)
+            except Exception as e:
+                logger.warning(
+                    f"Cloudscraper failed for PTT, trying httpx: {e}")
 
-        # Last resort for PTT - try httpx with proper cookies
-        try:
-            return load_html_with_httpx(url)
-        except Exception as e:
-            logger.error(f"All methods failed for PTT URL: {e}")
-            raise
+            # Last resort for PTT - try httpx with proper cookies
+            try:
+                return load_html_with_httpx(url)
+            except Exception as e:
+                logger.error(f"All methods failed for PTT URL: {e}")
+                raise
 
-    # Handle non-PTT URLs
+    # Handle non-Firecrawl URLs
     try:
         if is_pdf_url(url):
             return load_pdf(url)
     except Exception as e:
         logger.error(f"Error checking/loading PDF: {e}")
 
-    # Domain-specific handling for non-PTT URLs
+    # Domain-specific handling for other URLs
     httpx_domains = [
         "https://ncode.syosetu.com",
         "https://pubmed.ncbi.nlm.nih.gov",

@@ -56,9 +56,11 @@ if not channel_access_token_hf:
 
 # Log Firecrawl availability but don't require it
 if firecrawl_key:
-    logger.info('Firecrawl API key detected - will use for PTT URLs')
+    logger.info(
+        'Firecrawl API key detected - will use for PTT, Medium, and OpenAI URLs')
 else:
-    logger.info('No Firecrawl API key - using standard web scraping methods')
+    logger.info(
+        'No Firecrawl API key - using standard web scraping methods for all sites')
 
 
 class StoreMessage:
