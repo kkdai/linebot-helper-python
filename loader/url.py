@@ -16,15 +16,32 @@ from .youtube_gcp import load_transcript_from_youtube
 logger = logging.getLogger(__name__)
 
 
+def is_ptt_url(url: str) -> bool:
+    """Check if the URL is from PTT"""
+    return url.startswith("https://www.ptt.cc/bbs")
+
+
 def is_pdf_url(url: str) -> bool:
+    """
+    Check if URL points to a PDF.
+    Skip check for PTT URLs to avoid 403 errors.
+    """
+    # Skip PDF check for PTT URLs
+    if is_ptt_url(url):
+        return False
+
     headers = {
         "Accept-Language": "zh-TW,zh;q=0.9,ja;q=0.8,en-US;q=0.7,en;q=0.6",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",  # noqa
     }
 
-    resp = httpx.head(url=url, headers=headers, follow_redirects=True)
-    resp.raise_for_status()
-    return resp.headers.get("content-type") == "application/pdf"
+    try:
+        resp = httpx.head(url=url, headers=headers, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.headers.get("content-type") == "application/pdf"
+    except httpx.HTTPStatusError as e:
+        logger.warning(f"HTTP error checking for PDF: {e}")
+        return False
 
 
 def is_youtube_url(url: str) -> bool:
@@ -57,26 +74,41 @@ async def load_url(url: str) -> str:
     if is_youtube_url(url):
         return await load_transcript_from_youtube(url)
 
-    try:
-        if is_pdf_url(url):
-            return load_pdf(url)
-    except httpx.HTTPStatusError as e:
-        logger.error("Unable to load PDF: {} ({})", url, e)
+    # Handle PTT URLs with special care to avoid 403 errors
+    if is_ptt_url(url):
+        logger.info(f"Handling PTT URL: {url}")
 
-    # Special case for PTT using Firecrawl
-    if url.startswith("https://www.ptt.cc/bbs") and FIRECRAWL_AVAILABLE:
-        firecrawl_key = os.environ.get('firecrawl_key')
-        if firecrawl_key:
+        # Try Firecrawl first if available
+        if FIRECRAWL_AVAILABLE and os.environ.get('firecrawl_key'):
             try:
                 logger.info(f"Using Firecrawl for PTT URL: {url}")
                 return load_html_with_firecrawl(url)
             except Exception as e:
-                logger.error(f"Error using Firecrawl for PTT: {e}")
-                # Fall back to standard methods
+                logger.warning(f"Firecrawl failed for PTT, falling back: {e}")
 
-    # Continue with existing domain-specific handling
+        # Try cloudscraper as a reliable fallback for PTT
+        try:
+            logger.info(f"Using cloudscraper for PTT URL: {url}")
+            return load_html_with_cloudscraper(url)
+        except Exception as e:
+            logger.warning(f"Cloudscraper failed for PTT, trying httpx: {e}")
+
+        # Last resort for PTT - try httpx with proper cookies
+        try:
+            return load_html_with_httpx(url)
+        except Exception as e:
+            logger.error(f"All methods failed for PTT URL: {e}")
+            raise
+
+    # Handle non-PTT URLs
+    try:
+        if is_pdf_url(url):
+            return load_pdf(url)
+    except Exception as e:
+        logger.error(f"Error checking/loading PDF: {e}")
+
+    # Domain-specific handling for non-PTT URLs
     httpx_domains = [
-        "https://www.ptt.cc/bbs",  # Keep this as fallback if Firecrawl fails
         "https://ncode.syosetu.com",
         "https://pubmed.ncbi.nlm.nih.gov",
         "https://www.bnext.com.tw",
@@ -95,5 +127,6 @@ async def load_url(url: str) -> str:
         if url.startswith(domain):
             return load_html_with_cloudscraper(url)
 
+    # Default to singlefile for complex sites
     text = await load_html_with_singlefile(url)
     return text

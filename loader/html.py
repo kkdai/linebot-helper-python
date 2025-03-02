@@ -82,12 +82,12 @@ async def load_html_with_singlefile(url: str, markdown: bool = True) -> str:
 
 
 def load_html_with_httpx(url: str, markdown: bool = True) -> str:
-    logger.info("Loading HTML: {}", url)
+    logger.info(f"Loading HTML with httpx: {url}")
 
     headers = {
         "Accept-Language": "zh-TW,zh;q=0.9,ja;q=0.8,en-US;q=0.7,en;q=0.6",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",  # noqa
-        "Cookie": "over18=1",  # ptt
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "Cookie": "over18=1",  # PTT age verification
     }
 
     resp = httpx.get(url=url, headers=headers, follow_redirects=True)
@@ -97,10 +97,16 @@ def load_html_with_httpx(url: str, markdown: bool = True) -> str:
 
 
 def load_html_with_cloudscraper(url: str, markdown: bool = True) -> str:
-    logger.info("Loading HTML: {}", url)
+    logger.info(f"Loading HTML with cloudscraper: {url}")
 
     scraper = cloudscraper.create_scraper()
-    resp = scraper.get(url)
+    headers = {
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "Cookie": "over18=1",  # Important for PTT age verification
+    }
+
+    resp = scraper.get(url, headers=headers)
     resp.raise_for_status()
 
     return parse_html(resp.text, markdown=markdown)
@@ -135,8 +141,11 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         params = {
             'formats': ['markdown'] if markdown else ['html'],
             'custom_headers': {
-                'Cookie': 'over18=1'  # For PTT age verification
-            }
+                'Cookie': 'over18=1',  # For PTT age verification
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
+            },
+            'timeout': 60000,  # Longer timeout (60s) for PTT
+            'wait_until': 'networkidle2'  # Wait until network is idle
         }
 
         # Make the request
