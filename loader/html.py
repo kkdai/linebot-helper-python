@@ -141,10 +141,14 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         params = {
             'formats': ['markdown'] if markdown else ['html'],
             'custom_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
             },
             'timeout': 60000,  # 60 seconds
-            'wait_until': 'networkidle2'  # Wait until network is idle
+            'wait_until': 'networkidle2',  # Wait until network is idle
+            'javascript': True,  # Enable JavaScript by default
+            'cookies_enabled': True  # Enable cookies by default
         }
 
         # Site-specific parameters
@@ -158,20 +162,54 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
             params['block_resources'] = ['image', 'font', 'media']
 
         elif url.startswith("https://openai.com"):
-            # OpenAI has complex JavaScript and animations
-            params['wait_for'] = 'main, article, .content'
-            params['javascript'] = True  # Ensure JavaScript execution
+            # Enhanced settings for OpenAI sites
+            params.update({
+                'wait_for': 'main, article, .content, h1, h2, p',  # Wait for content elements
+                'javascript': True,  # Ensure JavaScript is enabled
+                'cookies_enabled': True,  # Enable cookies
+                'emulate_device': 'desktop',  # Use desktop mode
+                'timeout': 120000,  # Longer timeout (120 seconds)
+                'wait_until': 'networkidle0',  # Wait until completely loaded
+                # Block non-essential resources
+                'block_resources': ['image', 'font', 'stylesheet'],
+                'bypass_bot_protection': True,  # Try to bypass bot protection
+                'save_cookies': True,  # Save and use cookies across requests
+            })
+            # Add specific cookies that might be needed
+            params['custom_headers']['Cookie'] = 'cookieConsent=true; OptanonAlertBoxClosed=true'
 
         # Make the request
         result = app.scrape_url(url, params=params)
 
         # If we requested markdown and it's available, use it directly
         if markdown and 'markdown' in result and result['markdown']:
-            return result['markdown']
+            markdown_content = result['markdown']
+            # Check if we got a message about enabling JavaScript/cookies
+            if "enable javascript" in markdown_content.lower() or "enable cookies" in markdown_content.lower():
+                logger.warning(
+                    "JavaScript/Cookie warning detected in response. Trying alternative approach...")
+
+                # Fall back to single file approach for OpenAI
+                if url.startswith("https://openai.com"):
+                    from .singlefile import load_html_with_singlefile
+                    return load_html_with_singlefile(url)
+
+            return markdown_content
 
         # Otherwise parse the HTML content
         elif 'html' in result and result['html']:
-            return parse_html(result['html'], markdown=markdown)
+            html_content = result['html']
+            # Check if we got a message about enabling JavaScript/cookies
+            if "enable javascript" in html_content.lower() or "enable cookies" in html_content.lower():
+                logger.warning(
+                    "JavaScript/Cookie warning detected in response. Trying alternative approach...")
+
+                # Fall back to single file approach for OpenAI
+                if url.startswith("https://openai.com"):
+                    from .singlefile import load_html_with_singlefile
+                    return load_html_with_singlefile(url)
+
+            return parse_html(html_content, markdown=markdown)
         else:
             raise ValueError(
                 f"Firecrawl API did not return expected content format")
