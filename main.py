@@ -37,6 +37,7 @@ linebot_user_id = os.getenv("LINE_USER_ID")
 channel_access_token = os.getenv('ChannelAccessToken')
 channel_access_token_hf = os.getenv('ChannelAccessTokenHF')
 gemini_key = os.getenv('GOOGLE_API_KEY')
+firecrawl_key = os.getenv('firecrawl_key')
 
 if not channel_secret:
     raise EnvironmentError('Specify ChannelSecret as environment variable.')
@@ -44,7 +45,7 @@ if not channel_access_token:
     raise EnvironmentError(
         'Specify ChannelAccessToken as environment variable.')
 if not gemini_key:
-    raise EnvironmentError('Specify GEMINI_API_KEY as environment variable.')
+    raise EnvironmentError('Specify GOOGLE_API_KEY as environment variable.')
 
 # Push Notification
 if not linebot_user_id:
@@ -52,6 +53,12 @@ if not linebot_user_id:
 if not channel_access_token_hf:
     raise EnvironmentError(
         'Specify HuggingFace ChannelAccessToken as environment variable.')
+
+# Log Firecrawl availability but don't require it
+if firecrawl_key:
+    logger.info('Firecrawl API key detected - will use for PTT URLs')
+else:
+    logger.info('No Firecrawl API key - using standard web scraping methods')
 
 
 class StoreMessage:

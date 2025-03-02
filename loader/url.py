@@ -1,8 +1,14 @@
 from urllib.parse import urlparse, urlunparse
 import httpx
 import logging
+import os
 
-from .html import load_html_with_cloudscraper, load_html_with_httpx
+from .html import (
+    load_html_with_cloudscraper,
+    load_html_with_httpx,
+    load_html_with_firecrawl,
+    FIRECRAWL_AVAILABLE
+)
 from .singlefile import load_html_with_singlefile
 from .pdf import load_pdf
 from .youtube_gcp import load_transcript_from_youtube
@@ -57,8 +63,20 @@ async def load_url(url: str) -> str:
     except httpx.HTTPStatusError as e:
         logger.error("Unable to load PDF: {} ({})", url, e)
 
+    # Special case for PTT using Firecrawl
+    if url.startswith("https://www.ptt.cc/bbs") and FIRECRAWL_AVAILABLE:
+        firecrawl_key = os.environ.get('firecrawl_key')
+        if firecrawl_key:
+            try:
+                logger.info(f"Using Firecrawl for PTT URL: {url}")
+                return load_html_with_firecrawl(url)
+            except Exception as e:
+                logger.error(f"Error using Firecrawl for PTT: {e}")
+                # Fall back to standard methods
+
+    # Continue with existing domain-specific handling
     httpx_domains = [
-        "https://www.ptt.cc/bbs",
+        "https://www.ptt.cc/bbs",  # Keep this as fallback if Firecrawl fails
         "https://ncode.syosetu.com",
         "https://pubmed.ncbi.nlm.nih.gov",
         "https://www.bnext.com.tw",
