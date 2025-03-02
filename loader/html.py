@@ -3,7 +3,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-
+from urllib.parse import urlparse
 import cloudscraper
 import httpx
 from bs4 import BeautifulSoup
@@ -133,6 +133,8 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         raise ImportError(
             "firecrawl package is not installed. Install with 'pip install firecrawl'")
 
+    parsed_url = urlparse(url)
+
     try:
         # Initialize the Firecrawl app with API key
         app = FirecrawlApp(api_key=firecrawl_key)
@@ -156,10 +158,18 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
             # PTT requires over18 cookie
             params['custom_headers']['Cookie'] = 'over18=1'
 
-        elif url.startswith("https://medium.com"):
+        # Handle any Medium domain (including subdomains)
+        elif parsed_url.netloc.endswith("medium.com"):
             # Medium has a lot of dynamic content and cookie banners
-            params['wait_for'] = 'article, .story, .post'
-            params['block_resources'] = ['image', 'font', 'media']
+            params.update({
+                'wait_for': 'article, .story, .post, [data-test-id="post-content"]',
+                'block_resources': ['image', 'font', 'media'],
+                'wait_until': 'networkidle0',
+                'bypass_paywalls': True,  # Medium has paywalls
+                'timeout': 90000,  # 90 seconds for Medium
+            })
+            # Add specific cookies for Medium
+            params['custom_headers']['Cookie'] = 'uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt; optimizelyEndUserId=lo_5f5a79a81615'
 
         elif url.startswith("https://openai.com"):
             # Enhanced settings for OpenAI sites
