@@ -55,8 +55,11 @@ def is_youtube_url(url: str) -> bool:
 
 def is_firecrawl_url(url: str) -> bool:
     """Check if the URL should be processed using Firecrawl"""
+    parsed_url = urlparse(url)
+
     return (url.startswith("https://www.ptt.cc/bbs") or
             url.startswith("https://medium.com") or
+            parsed_url.netloc.endswith("medium.com") or
             url.startswith("https://openai.com"))
 
 
