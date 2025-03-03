@@ -171,31 +171,31 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
             # Medium has paywalls and special content
             params["headers"]["Cookie"] = "uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt"
             # Medium specific actions to handle dynamic loading
-            params["actions"] = [
-                {
-                    "type": "wait",
-                    "selector": "article, [data-test-id='post-content']",
-                    "milliseconds": 2000
-                }
-            ]
-            params["timeout"] = 60000  # Longer timeout for Medium
+            # params["actions"] = [
+            #     {
+            #         "type": "wait",
+            #         "selector": "article, [data-test-id='post-content']",
+            #         "milliseconds": 2000
+            #     }
+            # ]
+            # params["timeout"] = 60000  # Longer timeout for Medium
 
         elif url.startswith("https://openai.com"):
             # OpenAI requires JavaScript and cookies
             params["headers"]["Cookie"] = "cookieConsent=true; OptanonAlertBoxClosed=true"
-            params["actions"] = [
-                {
-                    "type": "wait",
-                    "selector": "main, article, .content, h1",
-                    "milliseconds": 5000
-                }
-            ]
-            # Set location for better access
-            params["location"] = {
-                "country": "US",
-                "languages": ["en-US"]
-            }
-            params["timeout"] = 60000  # Longer timeout for OpenAI
+            # params["actions"] = [
+            #     {
+            #         "type": "wait",
+            #         "selector": "main, article, .content, h1",
+            #         "milliseconds": 5000
+            #     }
+            # ]
+            # # Set location for better access
+            # params["location"] = {
+            #     "country": "US",
+            #     "languages": ["en-US"]
+            # }
+            # params["timeout"] = 60000  # Longer timeout for OpenAI
 
         # Make the request
         result = app.scrape_url(url, params=params)
