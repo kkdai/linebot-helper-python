@@ -139,54 +139,63 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         # Initialize the Firecrawl app with API key
         app = FirecrawlApp(api_key=firecrawl_key)
 
-        # Default parameters
+        # Base parameters for all sites
         params = {
-            'formats': ['markdown'] if markdown else ['html'],
-            'custom_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-            },
-            'timeout': 60000,  # 60 seconds
-            'wait_until': 'networkidle2',  # Wait until network is idle
-            'javascript': True,  # Enable JavaScript by default
-            'cookies_enabled': True  # Enable cookies by default
+            "url": url,  # This is redundant as we also pass url directly to scrape_url, but included for completeness
+            "formats": ["markdown"] if markdown else ["html"],
+            "onlyMainContent": True,  # Extract main content only
+            "removeBase64Images": True,  # Remove base64 images to reduce response size
+            "blockAds": True,  # Block ads
+            "timeout": 30000,  # Default timeout in milliseconds
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
         }
 
-        # Site-specific parameters
+        # Site-specific customizations
         if url.startswith("https://www.ptt.cc/bbs"):
             # PTT requires over18 cookie
-            params['custom_headers']['Cookie'] = 'over18=1'
+            params["headers"]["Cookie"] = "over18=1"
+            # PTT specific actions
+            params["actions"] = [
+                {
+                    "type": "wait",
+                    "selector": ".bbs-screen"  # Wait for main content
+                }
+            ]
 
         # Handle any Medium domain (including subdomains)
         elif parsed_url.netloc.endswith("medium.com"):
-            # Medium has a lot of dynamic content and cookie banners
-            params.update({
-                'wait_for': 'article, .story, .post, [data-test-id="post-content"]',
-                'block_resources': ['image', 'font', 'media'],
-                'wait_until': 'networkidle0',
-                'bypass_paywalls': True,  # Medium has paywalls
-                'timeout': 90000,  # 90 seconds for Medium
-            })
-            # Add specific cookies for Medium
-            params['custom_headers']['Cookie'] = 'uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt; optimizelyEndUserId=lo_5f5a79a81615'
+            # Medium has paywalls and special content
+            params["headers"]["Cookie"] = "uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt"
+            # Medium specific actions to handle dynamic loading
+            params["actions"] = [
+                {
+                    "type": "wait",
+                    "selector": "article, [data-test-id='post-content']",
+                    "milliseconds": 2000
+                }
+            ]
+            params["timeout"] = 60000  # Longer timeout for Medium
 
         elif url.startswith("https://openai.com"):
-            # Enhanced settings for OpenAI sites
-            params.update({
-                'wait_for': 'main, article, .content, h1, h2, p',  # Wait for content elements
-                'javascript': True,  # Ensure JavaScript is enabled
-                'cookies_enabled': True,  # Enable cookies
-                'emulate_device': 'desktop',  # Use desktop mode
-                'timeout': 120000,  # Longer timeout (120 seconds)
-                'wait_until': 'networkidle0',  # Wait until completely loaded
-                # Block non-essential resources
-                'block_resources': ['image', 'font', 'stylesheet'],
-                'bypass_bot_protection': True,  # Try to bypass bot protection
-                'save_cookies': True,  # Save and use cookies across requests
-            })
-            # Add specific cookies that might be needed
-            params['custom_headers']['Cookie'] = 'cookieConsent=true; OptanonAlertBoxClosed=true'
+            # OpenAI requires JavaScript and cookies
+            params["headers"]["Cookie"] = "cookieConsent=true; OptanonAlertBoxClosed=true"
+            params["actions"] = [
+                {
+                    "type": "wait",
+                    "selector": "main, article, .content, h1",
+                    "milliseconds": 5000
+                }
+            ]
+            # Set location for better access
+            params["location"] = {
+                "country": "US",
+                "languages": ["en-US"]
+            }
+            params["timeout"] = 60000  # Longer timeout for OpenAI
 
         # Make the request
         result = app.scrape_url(url, params=params)
