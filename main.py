@@ -139,8 +139,6 @@ async def huggingface_paper_summarization(request: Request):
 
 
 async def handle_message_event(event: MessageEvent):
-    logger.info("Received event JSON: " + json.dumps(event.__dict__,
-                default=lambda o: o.__dict__, indent=2))  # added logging line
     # 先判断消息来源
     source_id = "unknown"
 
