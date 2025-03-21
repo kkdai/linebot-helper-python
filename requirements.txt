@@ -16,3 +16,4 @@ urllib3
 cloudscraper
 pypdf
 firecrawl
+requests

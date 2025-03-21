@@ -25,20 +25,24 @@ from loader.gh_tools import summarized_yesterday_github_issues
 from loader.langtools import summarize_text, generate_json_from_image
 from loader.url import load_url
 from loader.utils import find_url
+from loader.searchtool import search_from_text  # Import the search function
 
 # Configure logging
 logging.basicConfig(
     stream=sys.stdout, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get environment variables
+# Get all environment variables at the top
 channel_secret = os.getenv('ChannelSecret')
 linebot_user_id = os.getenv("LINE_USER_ID")
 channel_access_token = os.getenv('ChannelAccessToken')
 channel_access_token_hf = os.getenv('ChannelAccessTokenHF')
 gemini_key = os.getenv('GOOGLE_API_KEY')
 firecrawl_key = os.getenv('firecrawl_key')
+search_api_key = os.getenv('SEARCH_API_KEY')
+search_engine_id = os.getenv('SEARCH_ENGINE_ID')
 
+# Validate required environment variables
 if not channel_secret:
     raise EnvironmentError('Specify ChannelSecret as environment variable.')
 if not channel_access_token:
@@ -46,21 +50,25 @@ if not channel_access_token:
         'Specify ChannelAccessToken as environment variable.')
 if not gemini_key:
     raise EnvironmentError('Specify GOOGLE_API_KEY as environment variable.')
-
-# Push Notification
 if not linebot_user_id:
     raise EnvironmentError('Specify LINE_USER_ID as environment variable.')
 if not channel_access_token_hf:
     raise EnvironmentError(
         'Specify HuggingFace ChannelAccessToken as environment variable.')
 
-# Log Firecrawl availability but don't require it
+# Log availability of optional features
 if firecrawl_key:
     logger.info(
         'Firecrawl API key detected - will use for PTT, Medium, and OpenAI URLs')
 else:
     logger.info(
         'No Firecrawl API key - using standard web scraping methods for all sites')
+
+if search_api_key and search_engine_id:
+    logger.info('Search API keys detected - search functionality is available')
+else:
+    logger.warning(
+        'Search API keys missing - search functionality will be limited')
 
 
 class StoreMessage:
@@ -198,8 +206,45 @@ async def handle_github_summary(event: MessageEvent):
 
 async def handle_text_message(event: MessageEvent, user_id: str):
     msg = event.message.text
-    reply_msg = TextSendMessage(text=f'uid: {user_id}, msg: {msg}')
-    await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
+    # Use text as search query for all text messages
+    # Check if required API keys are available
+    if not search_api_key or not search_engine_id:
+        reply_msg = TextSendMessage(
+            text="Search is not available. Missing API keys.")
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        return
+
+    try:
+        # Perform search
+        logger.info(f"Performing search for query: {msg}")
+        search_results = search_from_text(
+            msg, gemini_key, search_api_key, search_engine_id)
+
+        if not search_results:
+            reply_msg = TextSendMessage(
+                text=f"No search results found for: {msg}")
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
+            return
+
+        # Format search results
+        # Add a header with the search query
+        result_text = f"🔍 Search results for: {msg}\n\n"
+
+        # Include top 3 results (or fewer if less are available)
+        for i, result in enumerate(search_results[:3], 1):
+            result_text += f"{i}. {result['title']}\n"
+            result_text += f"   {result['link']}\n"
+            result_text += f"   {result['snippet']}\n\n"
+
+        reply_msg = TextSendMessage(text=result_text)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
+    except Exception as e:
+        logger.error(f"Error in search: {e}")
+        reply_msg = TextSendMessage(
+            text=f"An error occurred during search: {str(e)}")
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
 async def handle_image_message(event: MessageEvent):
