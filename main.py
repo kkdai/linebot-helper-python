@@ -237,7 +237,7 @@ async def handle_text_message(event: MessageEvent, user_id: str):
             result_text += f"   {result['link']}\n"
             result_text += f"   {result['snippet']}\n\n"
 
-        summary = summarize_text(msg)
+        summary = summarize_text(result_text, 300)
         summary_msg = TextSendMessage(text=summary)
         reply_msg = TextSendMessage(text=result_text)
         await line_bot_api.reply_message(event.reply_token, [summary_msg, reply_msg])
