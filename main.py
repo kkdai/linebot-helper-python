@@ -237,8 +237,10 @@ async def handle_text_message(event: MessageEvent, user_id: str):
             result_text += f"   {result['link']}\n"
             result_text += f"   {result['snippet']}\n\n"
 
+        summary = summarize_text(msg)
+        summary_msg = TextSendMessage(text=summary)
         reply_msg = TextSendMessage(text=result_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        await line_bot_api.reply_message(event.reply_token, [summary_msg, reply_msg])
 
     except Exception as e:
         logger.error(f"Error in search: {e}")
