@@ -232,7 +232,7 @@ async def handle_text_message(event: MessageEvent, user_id: str):
         result_text = f"🔍 Search results for: {msg}\n\n"
 
         # Include top 3 results (or fewer if less are available)
-        for i, result in enumerate(search_results[:3], 1):
+        for i, result in enumerate(search_results[:5], 1):
             result_text += f"{i}. {result['title']}\n"
             result_text += f"   {result['link']}\n"
             result_text += f"   {result['snippet']}\n\n"
