@@ -21,11 +21,11 @@ async def load_transcript_from_youtube(youtube_url: str) -> str:
         logging.debug(f"Result from fetch_youtube_data: {result}")
         summary = ""
         # Extract ids_data from the result
-        if 'ids_data' in result:
-            ids_data = result['ids_data']
+        if 'transcript' in result:
+            transcript = result['transcript']
             logging.debug(
-                f"ids_data data: {ids_data[:50]}")
-            summary = ids_data
+                f"transcript data: {transcript[:50]}")
+            summary = transcript
         else:
             logging.error("ids_data not found in result:", result)
             summary = "Error or ids_data not found..."
