@@ -23,7 +23,7 @@ def generate_twitter_post(input_text: str) -> str:
     Generate a Twitter post using the Google Generative AI model.
     '''
     model = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         temperature=0.5,
         max_tokens=None,
         timeout=None,
@@ -84,7 +84,7 @@ def generate_slack_post(input_text: str) -> str:
     Generate a Slack post using the Google Generative AI model.
     '''
     model = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         temperature=0.5,
         max_tokens=None,
         timeout=None,
@@ -141,7 +141,7 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
     Summarize a text using the Google Generative AI model.
     '''
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         temperature=0,
         max_tokens=None,
         timeout=None,
@@ -188,7 +188,7 @@ def summarize_text(text: str, max_tokens: int = 100) -> str:
 
 def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
     model = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         temperature=0.5,
         max_tokens=None,
         timeout=None,
