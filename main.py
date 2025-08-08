@@ -23,7 +23,7 @@ from httpx import HTTPStatusError
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
 from loader.langtools import summarize_text, generate_json_from_image
-from loader.url import load_url
+from loader.url import load_url, is_youtube_url
 from loader.utils import find_url
 from loader.searchtool import search_from_text  # Import the search function
 
@@ -191,7 +191,8 @@ async def handle_url_message(event: MessageEvent, urls: list):
             return
 
         logger.info(f"URL: content: >{result[:50]}<")
-        result = summarize_text(result)
+        if not is_youtube_url(url):
+            result = summarize_text(result)
         result = f"{url}\n{result}"
         reply_msg = TextSendMessage(text=result)
         results.append(reply_msg)
