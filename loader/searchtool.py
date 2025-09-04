@@ -24,7 +24,7 @@ def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
             genai.configure(api_key=gemini_api_key)
 
         # 建立 Gemini 模型
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
         # 準備提示詞，要求模型提取關鍵字
         prompt = f"""從以下文字中提取 {num_keywords} 個最重要的關鍵字或短語，只需返回關鍵字列表，不要有額外文字：
