@@ -146,6 +146,31 @@ async def huggingface_paper_summarization(request: Request):
     return {"status": "ok"}
 
 
+@app.post("/urls")
+async def multi_url_summarization(request: Request):
+    data = await request.json()
+    logger.info(f"/urls data={data}")
+
+    # Get parameters
+    title = data.get("title", "")
+    urls = data.get("urls", [])
+
+    # Validate URLs
+    if not urls or not isinstance(urls, list):
+        raise HTTPException(status_code=400, detail="urls must be a non-empty array")
+
+    if len(urls) > 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 URLs allowed")
+
+    if len(urls) < 1:
+        raise HTTPException(status_code=400, detail="At least 1 URL required")
+
+    # Process and push message
+    await handle_url_push_message(title, urls, linebot_user_id, channel_access_token)
+
+    return {"status": "ok", "processed_urls": len(urls)}
+
+
 async def handle_message_event(event: MessageEvent):
     # 先判断消息来源
     source_id = "unknown"
