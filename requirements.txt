@@ -18,3 +18,5 @@ pypdf
 firecrawl
 requests
 tenacity
+sqlalchemy
+aiosqlite
