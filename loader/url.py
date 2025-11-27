@@ -12,6 +12,7 @@ from .html import (
 from .singlefile import load_html_with_singlefile
 from .pdf import load_pdf
 from .youtube_gcp import load_transcript_from_youtube
+from .error_handler import retry_http_request
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,25 @@ def replace_domain(url: str) -> str:
 
 
 async def load_url(url: str) -> str:
+    """
+    Load content from URL with intelligent fallback strategy
+
+    Fallback priority:
+    1. Domain-specific optimized loader
+    2. Firecrawl (if available)
+    3. CloudScraper
+    4. SingleFile
+    5. Basic httpx
+
+    Args:
+        url: URL to load
+
+    Returns:
+        Extracted text content
+
+    Raises:
+        Exception: If all methods fail
+    """
     url = replace_domain(url)
 
     if is_youtube_url(url):
@@ -86,7 +106,7 @@ async def load_url(url: str) -> str:
 
     # Handle URLs that should use Firecrawl
     if is_firecrawl_url(url):
-        logger.info(f"Handling URL with Firecrawl: {url}")
+        logger.info(f"Handling URL with Firecrawl priority: {url}")
 
         # Try Firecrawl first if available
         if FIRECRAWL_AVAILABLE and os.environ.get('firecrawl_key'):
@@ -98,39 +118,65 @@ async def load_url(url: str) -> str:
 
         # For PTT, use cloudscraper as the first fallback
         if url.startswith("https://www.ptt.cc/bbs"):
-            try:
-                logger.info(f"Using cloudscraper for PTT URL: {url}")
-                return load_html_with_cloudscraper(url)
-            except Exception as e:
-                logger.warning(
-                    f"Cloudscraper failed for PTT, trying httpx: {e}")
+            fallback_methods = [
+                ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
+                ("httpx", lambda: load_html_with_httpx(url)),
+                ("singlefile", lambda: load_html_with_singlefile(url)),
+            ]
 
-            # Last resort for PTT - try httpx with proper cookies
-            try:
-                return load_html_with_httpx(url)
-            except Exception as e:
-                logger.error(f"All methods failed for PTT URL: {e}")
-                raise
+            for method_name, method_func in fallback_methods:
+                try:
+                    logger.info(f"Trying {method_name} for PTT URL: {url}")
+                    if method_name == "singlefile":
+                        return await method_func()
+                    return method_func()
+                except Exception as e:
+                    logger.warning(f"{method_name} failed for PTT: {e}")
+                    continue
 
-        # For OpenAI, try SingleFile as fallback
+            logger.error(f"All methods failed for PTT URL: {url}")
+            raise Exception("無法從 PTT 讀取內容，請稍後再試")
+
+        # For OpenAI, try SingleFile then httpx as fallback
         elif url.startswith("https://openai.com"):
-            try:
-                logger.info(
-                    f"Firecrawl failed for OpenAI URL, using SingleFile: {url}")
-                return await load_html_with_singlefile(url)
-            except Exception as e:
-                logger.error(f"All methods failed for OpenAI URL: {e}")
-                raise
+            fallback_methods = [
+                ("singlefile", lambda: load_html_with_singlefile(url)),
+                ("httpx", lambda: load_html_with_httpx(url)),
+            ]
 
-        # For Medium, try httpx as fallback
-        elif url.startswith("https://medium.com"):
-            try:
-                logger.info(
-                    f"Firecrawl failed for Medium URL, using httpx: {url}")
-                return load_html_with_httpx(url)
-            except Exception as e:
-                logger.error(f"All methods failed for Medium URL: {e}")
-                raise
+            for method_name, method_func in fallback_methods:
+                try:
+                    logger.info(f"Trying {method_name} for OpenAI URL: {url}")
+                    if method_name == "singlefile":
+                        return await method_func()
+                    return method_func()
+                except Exception as e:
+                    logger.warning(f"{method_name} failed for OpenAI: {e}")
+                    continue
+
+            logger.error(f"All methods failed for OpenAI URL: {url}")
+            raise Exception("無法從 OpenAI 讀取內容，請稍後再試")
+
+        # For Medium, try multiple fallbacks
+        elif "medium.com" in url:
+            fallback_methods = [
+                ("httpx", lambda: load_html_with_httpx(url)),
+                ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
+                ("singlefile", lambda: load_html_with_singlefile(url)),
+            ]
+
+            for method_name, method_func in fallback_methods:
+                try:
+                    logger.info(f"Trying {method_name} for Medium URL: {url}")
+                    if method_name == "singlefile":
+                        return await method_func()
+                    return method_func()
+                except Exception as e:
+                    logger.warning(f"{method_name} failed for Medium: {e}")
+                    continue
+
+            logger.error(f"All methods failed for Medium URL: {url}")
+            raise Exception("無法從 Medium 讀取內容，請稍後再試")
 
     # Handle non-Firecrawl URLs
     try:
@@ -139,7 +185,7 @@ async def load_url(url: str) -> str:
     except Exception as e:
         logger.error(f"Error checking/loading PDF: {e}")
 
-    # Domain-specific handling for other URLs
+    # Domain-specific handling for other URLs with retry
     httpx_domains = [
         "https://ncode.syosetu.com",
         "https://pubmed.ncbi.nlm.nih.gov",
@@ -150,15 +196,41 @@ async def load_url(url: str) -> str:
     ]
     for domain in httpx_domains:
         if url.startswith(domain):
-            return load_html_with_httpx(url)
+            try:
+                return load_html_with_httpx(url)
+            except Exception as e:
+                logger.warning(f"httpx failed for {domain}, trying singlefile: {e}")
+                return await load_html_with_singlefile(url)
 
     cloudscraper_domains = [
         "https://blog.tripplus.cc",
     ]
     for domain in cloudscraper_domains:
         if url.startswith(domain):
-            return load_html_with_cloudscraper(url)
+            try:
+                return load_html_with_cloudscraper(url)
+            except Exception as e:
+                logger.warning(f"cloudscraper failed for {domain}, trying singlefile: {e}")
+                return await load_html_with_singlefile(url)
 
-    # Default to singlefile for complex sites
-    text = await load_html_with_singlefile(url)
-    return text
+    # Default fallback chain for unknown domains
+    logger.info(f"Using default fallback chain for: {url}")
+    fallback_methods = [
+        ("singlefile", lambda: load_html_with_singlefile(url)),
+        ("httpx", lambda: load_html_with_httpx(url)),
+        ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
+    ]
+
+    for method_name, method_func in fallback_methods:
+        try:
+            logger.info(f"Trying {method_name} for URL: {url}")
+            if method_name == "singlefile":
+                return await method_func()
+            return method_func()
+        except Exception as e:
+            logger.warning(f"{method_name} failed: {e}")
+            continue
+
+    # If all methods fail, raise exception
+    logger.error(f"All methods failed for URL: {url}")
+    raise Exception("無法從網址讀取內容，請確認網址是否正確或稍後再試")

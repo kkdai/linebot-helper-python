@@ -26,6 +26,8 @@ from loader.langtools import summarize_text, generate_json_from_image
 from loader.url import load_url, is_youtube_url
 from loader.utils import find_url
 from loader.searchtool import search_from_text  # Import the search function
+from loader.error_handler import FriendlyErrorMessage
+from loader.text_utils import extract_url_and_mode, get_mode_description
 
 # Configure logging
 logging.basicConfig(
@@ -204,24 +206,42 @@ async def handle_url_message(event: MessageEvent, urls: list):
     for url in urls:
         try:
             result = await load_url(url)
+
+            if not result:
+                error_msg = "⚠️ 無法從這個網址提取內容，請確認網址是否正確或稍後再試。"
+                logger.error(f"Empty result for URL: {url}")
+                reply_msg = TextSendMessage(text=f"{url}\n\n{error_msg}")
+                results.append(reply_msg)
+                continue
+
+            logger.info(f"URL: content: >{result[:50]}<")
+            if not is_youtube_url(url):
+                try:
+                    result = summarize_text(result)
+                except Exception as summarize_error:
+                    logger.error(f"Summarization failed: {summarize_error}")
+                    error_msg = FriendlyErrorMessage.get_message(summarize_error, url)
+                    reply_msg = TextSendMessage(text=error_msg)
+                    results.append(reply_msg)
+                    continue
+
+            result = f"{url}\n\n{result}"
+            reply_msg = TextSendMessage(text=result)
+            results.append(reply_msg)
+
         except HTTPStatusError as e:
             logger.error(f"HTTP error occurred: {e}")
-            result = "An error occurred while summarizing the document."
+            error_msg = FriendlyErrorMessage.get_message(e, url)
+            reply_msg = TextSendMessage(text=error_msg)
+            results.append(reply_msg)
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            error_msg = FriendlyErrorMessage.get_message(e, url)
+            reply_msg = TextSendMessage(text=error_msg)
+            results.append(reply_msg)
 
-        if not result:
-            result = "An error occurred while summarizing the document."
-            logger.error(result)
-            reply_msg = TextSendMessage(text=result)
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
-            return
-
-        logger.info(f"URL: content: >{result[:50]}<")
-        if not is_youtube_url(url):
-            result = summarize_text(result)
-        result = f"{url}\n{result}"
-        reply_msg = TextSendMessage(text=result)
-        results.append(reply_msg)
-    await line_bot_api.reply_message(event.reply_token, results)
+    if results:
+        await line_bot_api.reply_message(event.reply_token, results)
 
 
 async def handle_github_summary(event: MessageEvent):
@@ -237,7 +257,7 @@ async def handle_text_message(event: MessageEvent, user_id: str):
     # Check if required API keys are available
     if not search_api_key or not search_engine_id:
         reply_msg = TextSendMessage(
-            text="Search is not available. Missing API keys.")
+            text="❌ 搜尋功能暫時無法使用（缺少 API 金鑰）。")
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
         return
 
@@ -249,29 +269,35 @@ async def handle_text_message(event: MessageEvent, user_id: str):
 
         if not search_results:
             reply_msg = TextSendMessage(
-                text=f"No search results found for: {msg}")
+                text=f"🔍 沒有找到「{msg}」的相關結果，請嘗試其他關鍵字。")
             await line_bot_api.reply_message(event.reply_token, [reply_msg])
             return
 
         # Format search results
         # Add a header with the search query
-        result_text = f"🔍 Search results for: {msg}\n\n"
+        result_text = f"🔍 搜尋結果：{msg}\n\n"
 
-        # Include top 3 results (or fewer if less are available)
+        # Include top 5 results (or fewer if less are available)
         for i, result in enumerate(search_results[:5], 1):
             result_text += f"{i}. {result['title']}\n"
             result_text += f"   {result['link']}\n"
             result_text += f"   {result['snippet']}\n\n"
 
-        summary = summarize_text(result_text, 300)
-        summary_msg = TextSendMessage(text=summary)
-        reply_msg = TextSendMessage(text=result_text)
-        await line_bot_api.reply_message(event.reply_token, [summary_msg, reply_msg])
+        try:
+            summary = summarize_text(result_text, 300)
+            summary_msg = TextSendMessage(text=summary)
+            reply_msg = TextSendMessage(text=result_text)
+            await line_bot_api.reply_message(event.reply_token, [summary_msg, reply_msg])
+        except Exception as summarize_error:
+            logger.error(f"Summarization failed, sending raw results: {summarize_error}")
+            # If summarization fails, just send the raw results
+            reply_msg = TextSendMessage(text=result_text)
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
     except Exception as e:
         logger.error(f"Error in search: {e}")
-        reply_msg = TextSendMessage(
-            text=f"An error occurred during search: {str(e)}")
+        error_msg = FriendlyErrorMessage.get_message(e)
+        reply_msg = TextSendMessage(text=error_msg)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
@@ -308,22 +334,45 @@ async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, 
     for url in urls:
         try:
             result = await load_url(url)
+
+            if not result:
+                error_msg = "⚠️ 無法從這個網址提取內容。"
+                logger.error(f"Empty result for URL: {url}")
+                result_text = f"{url}\n{title}\n\n{error_msg}"
+                results.append(TextSendMessage(result_text))
+                continue
+
+            try:
+                result = summarize_text(result)
+            except Exception as summarize_error:
+                logger.error(f"Summarization failed: {summarize_error}")
+                error_msg = FriendlyErrorMessage.get_message(summarize_error, url)
+                result_text = f"{url}\n{title}\n\n{error_msg}"
+                results.append(TextSendMessage(result_text))
+                continue
+
+            result = f"{url}\n{title}\n\n{result}"
+            results.append(TextSendMessage(result))
+
         except HTTPStatusError as e:
             logger.error(f"HTTP error occurred: {e}")
-            result = "An error occurred while fetching HTML data."
+            error_msg = FriendlyErrorMessage.get_message(e, url)
+            result_text = f"{url}\n{title}\n\n{error_msg}"
+            results.append(TextSendMessage(result_text))
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            error_msg = FriendlyErrorMessage.get_message(e, url)
+            result_text = f"{url}\n{title}\n\n{error_msg}"
+            results.append(TextSendMessage(result_text))
 
-        if not result:
-            result = "An error occurred while fetching HTML data."
-            logger.error(result)
-            return
-        result = summarize_text(result)
-        result = f"{url}\n{title} \n\n{result}"
-        result = TextSendMessage(result)
-        results.append(result)
+    if results and linebot_user_id and linebot_token:
+        try:
+            line_bot_api = LineBotApi(linebot_token)
+            line_bot_api.push_message(linebot_user_id, results)
+        except Exception as push_error:
+            logger.error(f"Failed to push message: {push_error}")
+            return "ERROR"
 
-    if linebot_user_id and linebot_token:
-        line_bot_api = LineBotApi(linebot_token)
-        line_bot_api.push_message(linebot_user_id, results)
     return "OK"
 
 
