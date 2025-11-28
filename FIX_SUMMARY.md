@@ -25,10 +25,16 @@ langchain_core==0.2.38
 langchain-community==0.2.16
 langchain_google_genai==1.0.10
 google-generativeai==0.7.2
+google-genai==1.49.0
+httpx==0.28.1
 tenacity==8.5.0
 firecrawl==4.9.0
 pydantic==2.10.3
 ```
+
+**⚠️ 重要更新 (2025-11-28):**
+- `httpx`: 0.27.2 → **0.28.1** (解決 google-genai 相依性衝突)
+- `google-genai`: 新增 1.49.0 (用於 Google Maps Grounding API)
 
 ### 3. 更新的文件
 

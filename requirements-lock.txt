@@ -26,7 +26,7 @@ Pillow==11.0.0
 beautifulsoup4==4.12.3
 llmsherpa==0.1.4
 markdownify==0.13.1
-httpx==0.27.2
+httpx==0.28.1
 urllib3==2.2.3
 cloudscraper==1.2.71
 pypdf==5.1.0
