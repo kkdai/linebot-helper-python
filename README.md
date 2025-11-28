@@ -46,13 +46,33 @@ These environment variables enable additional features:
 ## Installation
 
 1. Clone this repository
+
 2. Install dependencies:
 
 ```bash
+# Recommended: Use locked versions for production
+pip install -r requirements-lock.txt
+
+# Or: Use version constraints for development
 pip install -r requirements.txt
 ```
 
+**⚠️ Troubleshooting Dependencies:**
+
+If you encounter `ModuleNotFoundError: No module named 'langchain_core.pydantic_v1'`, use the fix script:
+
+```bash
+# Linux/macOS
+bash fix_dependencies.sh
+
+# Windows PowerShell
+.\fix_dependencies.ps1
+```
+
+See [FIX_SUMMARY.md](FIX_SUMMARY.md) for details.
+
 3. Set up environment variables
+
 4. Run the application:
 
 ```bash
