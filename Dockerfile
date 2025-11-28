@@ -10,8 +10,10 @@ ENV PORT=8080 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# 複製 requirements.txt 用於緩存 Python 依賴
-COPY requirements.txt .
+# 複製 requirements 文件用於緩存 Python 依賴
+# 使用鎖定版本確保可重現的構建
+COPY requirements-lock.txt requirements.txt
+COPY requirements.txt ./requirements-fallback.txt
 
 # 安裝系統依賴和 Python 依賴
 # 1. 合併 RUN 命令減少層數

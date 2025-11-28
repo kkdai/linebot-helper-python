@@ -34,8 +34,13 @@
 
 ### 步驟 1: 安裝新的依賴
 
+**⚠️ 重要：使用鎖定版本避免兼容性問題**
+
 ```bash
-# 在本地或伺服器上執行
+# 推薦：使用鎖定版本（生產環境）
+pip install -r requirements-lock.txt
+
+# 或：使用版本約束（開發環境）
 pip install -r requirements.txt
 ```
 
@@ -43,6 +48,12 @@ pip install -r requirements.txt
 - `tenacity` - 重試機制
 - `sqlalchemy` - ORM 框架
 - `aiosqlite` - 非同步 SQLite
+- `pydantic` - 資料驗證（明確版本）
+
+**版本說明：**
+- 使用 `requirements-lock.txt` 確保可重現的構建
+- 使用 `requirements.txt` 允許小版本更新
+- 詳見 `DEPENDENCIES_FIX.md`
 
 ### 步驟 2: 測試本地環境
 
