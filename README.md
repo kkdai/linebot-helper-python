@@ -1,14 +1,23 @@
 # LINE Bot Information Helper
 
-A Python application that provides LINE bot functionality with tools for searching, summarizing content from URLs, and processing images.
+A Python application that provides LINE bot functionality with tools for searching, summarizing content from URLs, processing images, and managing personal bookmarks.
 
-## Features
+## ✨ Features
 
-- URL content extraction and summarization
-- Image processing with Gemini AI
-- Web search capabilities
-- GitHub issues summary
+### Core Features
+- **URL Content Extraction & Summarization** - Extract and summarize web content with AI
+- **Flexible Summary Modes** - Choose between short, normal, or detailed summaries
+- **Bookmark System** - Save and organize your favorite articles
+- **Image Processing** - Analyze images with Gemini AI
+- **Web Search** - Intelligent keyword extraction and search
+- **GitHub Issues Summary** - Daily digest of GitHub activity
+- **Enhanced Error Handling** - Friendly Chinese error messages with automatic retry
+
+### Special Website Support
 - Special handling for PTT, Medium, and OpenAI websites using Firecrawl
+- YouTube transcript extraction with Gemini API
+- PDF document processing
+- Multiple fallback strategies for reliable content extraction
 
 ## Environment Variables
 
@@ -32,6 +41,7 @@ These environment variables enable additional features:
 - `SEARCH_API_KEY`: Google Custom Search API key for web search functionality
 - `SEARCH_ENGINE_ID`: Google Custom Search Engine ID for web search functionality
 - `SINGLEFILE_PATH`: Path to SingleFile executable (defaults to `/Users/narumi/.local/bin/single-file`)
+- `DATABASE_URL`: Database connection URL (defaults to `sqlite+aiosqlite:///./linebot_bookmarks.db`)
 
 ## Installation
 
@@ -51,27 +61,51 @@ uvicorn main:app --reload
 
 ## Usage
 
-### Web Search
+### 📝 URL Summarization with Modes
 
-Any text message sent to the bot will be treated as a search query and return relevant search results.
+Send a URL to the bot and it will extract and summarize the content. You can choose different summary lengths:
 
-### URL Summarization
+- **Standard Summary** (default): `https://example.com`
+- **Short Summary** (1-3 key points): `https://example.com [短]` or `https://example.com [short]`
+- **Detailed Summary** (comprehensive analysis): `https://example.com [詳]` or `https://example.com [detailed]`
 
-Send a URL to the bot and it will extract and summarize the content.
+### 🔖 Bookmark System
 
-### GitHub Summary
+Save and manage your favorite articles:
 
-Send the message "@g" to get a summary of yesterday's GitHub issues.
+- **Save Bookmark**: `https://example.com 🔖`
+- **View Bookmarks**: `/bookmarks` or `/書籤`
+- **Search Bookmarks**: `/search Python` or `/搜尋 AI`
+- **Combine with Summary Mode**: `https://example.com [詳] 🔖`
 
-### Image Processing
+### 🔍 Web Search
 
-Send an image to the bot and it will analyze and describe the content.
+Any text message (without URL) sent to the bot will be treated as a search query and return relevant search results with AI-generated summary.
+
+### 🐙 GitHub Summary
+
+Send the message `@g` to get a summary of yesterday's GitHub issues from the configured repository.
+
+### 🖼️ Image Processing
+
+Send an image to the bot and it will analyze and describe the content in Traditional Chinese.
 
 ## API Endpoints
 
-- `/`: Main webhook endpoint for LINE Bot
-- `/hn`: Endpoint for Hacker News summarization
-- `/hf`: Endpoint for Hugging Face paper summarization
+### LINE Bot Endpoints
+- `POST /`: Main webhook endpoint for LINE Bot
+- `POST /hn`: Endpoint for Hacker News summarization
+- `POST /hf`: Endpoint for Hugging Face paper summarization
+- `POST /urls`: Multi-URL batch processing (up to 5 URLs)
+
+### Bookmark System API
+- `POST /bookmarks/create`: Create a new bookmark
+- `GET /bookmarks/list/{user_id}`: List user's bookmarks (supports pagination)
+- `GET /bookmarks/search/{user_id}?q=keyword`: Search bookmarks by keyword
+- `DELETE /bookmarks/delete/{bookmark_id}`: Delete a bookmark
+- `GET /bookmarks/stats/{user_id}`: Get bookmark statistics
+
+For detailed API documentation, see [IMPROVEMENTS.md](IMPROVEMENTS.md).
 
 ## Deployment to Google Cloud Platform
 
@@ -145,9 +179,47 @@ Monitor your application using the Google Cloud Console:
 - View logs: `https://console.cloud.google.com/logs`
 - Monitor instance usage: `https://console.cloud.google.com/appengine`
 
+## 🎯 Recent Improvements (v2.0)
+
+### 1. Enhanced Error Handling
+- Automatic retry with exponential backoff (up to 3 attempts)
+- Circuit breaker pattern to prevent cascading failures
+- User-friendly Traditional Chinese error messages
+- Multiple fallback strategies for content extraction
+
+### 2. Flexible Summary Modes
+- **Short Mode**: 1-3 key points for quick scanning
+- **Normal Mode**: Balanced 200-300 character summary
+- **Detailed Mode**: Comprehensive 500-800 character analysis
+
+### 3. Bookmark System
+- Save and organize favorite articles
+- Full-text search across titles, summaries, and URLs
+- SQLite database with async support
+- Track access patterns and usage statistics
+
+For detailed documentation, see:
+- [IMPROVEMENTS.md](IMPROVEMENTS.md) - Technical details and deployment guide
+- [QUICK_START.md](QUICK_START.md) - User guide and examples
+
+## 📚 Documentation
+
+- **Quick Start Guide**: [QUICK_START.md](QUICK_START.md)
+- **Technical Documentation**: [IMPROVEMENTS.md](IMPROVEMENTS.md)
+- **N8N Workflow**: [n8n.json](n8n.json)
+
 ## Dependencies
 
 See `requirements.txt` for a complete list of dependencies.
+
+Key dependencies:
+- `fastapi` - Web framework
+- `line-bot-sdk` - LINE Bot SDK
+- `google.generativeai` - Gemini AI
+- `langchain` - LLM framework
+- `sqlalchemy` - Database ORM
+- `tenacity` - Retry logic
+- `aiosqlite` - Async SQLite
 
 ## License
 
