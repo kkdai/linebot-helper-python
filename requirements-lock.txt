@@ -33,10 +33,6 @@ pypdf==5.1.0
 firecrawl==4.9.0
 requests==2.32.3
 
-# Database
-sqlalchemy==2.0.36
-aiosqlite==0.20.0
-
 # Utilities
 tenacity==8.5.0
 pydantic==2.10.3
