@@ -31,7 +31,6 @@ from loader.searchtool import search_from_text  # Import the search function
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from loader.maps_grounding import search_nearby_places  # Import maps grounding
-import database  # Import database module
 
 # Configure logging
 logging.basicConfig(
@@ -94,13 +93,6 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 # Initialize the Gemini Pro API
 genai.configure(api_key=gemini_key)
 
-
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database tables on application startup"""
-    await database.init_db()
-    logger.info("Database initialized successfully")
 
 image_prompt = '''
 Describe all the information from the image, reply in zh_tw.
@@ -203,23 +195,16 @@ async def handle_message_event(event: MessageEvent):
             logger.info(f"UID: {user_id}")
             message_text = event.message.text
 
-            # Check for bookmark commands
-            if message_text.startswith("/bookmarks") or message_text.startswith("/書籤"):
-                await handle_bookmarks_command(event, user_id)
-            elif message_text.startswith("/search") or message_text.startswith("/搜尋"):
-                await handle_search_bookmarks_command(event, user_id, message_text)
-            elif message_text == "@g":
+            # Check for special commands
+            if message_text == "@g":
                 await handle_github_summary(event)
             else:
                 # Extract URLs and summary mode from message
                 urls, mode = extract_url_and_mode(message_text)
                 logger.info(f"URLs: >{urls}< Mode: {mode}")
 
-                # Check if user wants to bookmark (🔖 emoji present)
-                should_bookmark = "🔖" in message_text
-
                 if urls:
-                    await handle_url_message(event, urls, mode, should_bookmark=should_bookmark)
+                    await handle_url_message(event, urls, mode)
                 else:
                     await handle_text_message(event, user_id)
         elif isinstance(event.message, ImageMessage):
@@ -228,18 +213,16 @@ async def handle_message_event(event: MessageEvent):
             await handle_location_message(event)
 
 
-async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal", should_bookmark: bool = False):
+async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal"):
     """
-    Handle URL messages with optional summary mode and bookmarking
+    Handle URL messages with optional summary mode
 
     Args:
         event: LINE message event
         urls: List of URLs to process
         mode: Summary mode - "short", "normal", or "detailed"
-        should_bookmark: Whether to save URLs as bookmarks
     """
     results = []
-    user_id = event.source.user_id if isinstance(event.source, SourceUser) else None
 
     # Add mode indicator if not normal
     if mode != "normal":
@@ -273,25 +256,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             else:
                 summary = result
 
-            # Save to bookmarks if requested
-            if should_bookmark and user_id:
-                try:
-                    # Extract title from first line of summary or use URL
-                    title = summary.split('\n')[0][:100] if summary else url
-                    await database.create_bookmark(
-                        user_id=user_id,
-                        url=url,
-                        title=title,
-                        summary=summary,
-                        summary_mode=mode
-                    )
-                    result = f"🔖 已儲存書籤\n\n{url}\n\n{result}"
-                except Exception as bookmark_error:
-                    logger.error(f"Failed to save bookmark: {bookmark_error}")
-                    result = f"{url}\n\n{result}"
-            else:
-                result = f"{url}\n\n{result}"
-
+            # Format result with URL
+            result = f"{url}\n\n{result}"
             reply_msg = TextSendMessage(text=result)
             results.append(reply_msg)
 
@@ -446,97 +412,6 @@ async def handle_location_message(event: MessageEvent):
     )
 
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-
-async def handle_bookmarks_command(event: MessageEvent, user_id: str):
-    """
-    Handle /bookmarks command to list user's bookmarks
-
-    Args:
-        event: LINE message event
-        user_id: LINE user ID
-    """
-    try:
-        bookmarks = await database.get_user_bookmarks(user_id, limit=10)
-
-        if not bookmarks:
-            reply_msg = TextSendMessage(
-                text="📚 你還沒有任何書籤\n\n使用方式：發送網址並加上 🔖 即可儲存書籤\n例如：https://example.com 🔖")
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
-            return
-
-        # Format bookmarks list
-        result_text = f"📚 你的書籤（最近 {len(bookmarks)} 筆）\n\n"
-
-        for i, bookmark in enumerate(bookmarks, 1):
-            title = bookmark.title[:40] + "..." if bookmark.title and len(bookmark.title) > 40 else bookmark.title
-            result_text += f"{i}. {title or bookmark.url}\n"
-            result_text += f"   {bookmark.url}\n"
-            if bookmark.created_at:
-                result_text += f"   📅 {bookmark.created_at.strftime('%Y-%m-%d %H:%M')}\n"
-            result_text += "\n"
-
-        result_text += "💡 使用 /search [關鍵字] 搜尋書籤"
-
-        reply_msg = TextSendMessage(text=result_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-    except Exception as e:
-        logger.error(f"Error handling bookmarks command: {e}")
-        error_msg = FriendlyErrorMessage.get_message(e)
-        reply_msg = TextSendMessage(text=error_msg)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-
-async def handle_search_bookmarks_command(event: MessageEvent, user_id: str, message_text: str):
-    """
-    Handle /search command to search bookmarks
-
-    Args:
-        event: LINE message event
-        user_id: LINE user ID
-        message_text: Full message text
-    """
-    try:
-        # Extract search keyword
-        if message_text.startswith("/search"):
-            keyword = message_text.replace("/search", "", 1).strip()
-        else:
-            keyword = message_text.replace("/搜尋", "", 1).strip()
-
-        if not keyword:
-            reply_msg = TextSendMessage(
-                text="🔍 請輸入搜尋關鍵字\n\n使用方式：/search [關鍵字]\n例如：/search Python")
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
-            return
-
-        bookmarks = await database.search_bookmarks(user_id, keyword, limit=10)
-
-        if not bookmarks:
-            reply_msg = TextSendMessage(
-                text=f"🔍 找不到包含「{keyword}」的書籤")
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
-            return
-
-        # Format search results
-        result_text = f"🔍 搜尋結果：「{keyword}」（{len(bookmarks)} 筆）\n\n"
-
-        for i, bookmark in enumerate(bookmarks, 1):
-            title = bookmark.title[:40] + "..." if bookmark.title and len(bookmark.title) > 40 else bookmark.title
-            result_text += f"{i}. {title or bookmark.url}\n"
-            result_text += f"   {bookmark.url}\n"
-            if bookmark.created_at:
-                result_text += f"   📅 {bookmark.created_at.strftime('%Y-%m-%d %H:%M')}\n"
-            result_text += "\n"
-
-        reply_msg = TextSendMessage(text=result_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-    except Exception as e:
-        logger.error(f"Error handling search bookmarks command: {e}")
-        error_msg = FriendlyErrorMessage.get_message(e)
-        reply_msg = TextSendMessage(text=error_msg)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
 async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: str):
