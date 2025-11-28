@@ -15,7 +15,8 @@ from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextSendMessage, PostbackEvent, TextMessage, ImageMessage
+    MessageEvent, TextSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage,
+    QuickReply, QuickReplyButton, MessageAction
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 import google.generativeai as genai
@@ -29,6 +30,7 @@ from loader.utils import find_url
 from loader.searchtool import search_from_text  # Import the search function
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
+from loader.maps_grounding import search_nearby_places  # Import maps grounding
 import database  # Import database module
 
 # Configure logging
@@ -208,6 +210,9 @@ async def handle_message_event(event: MessageEvent):
                 await handle_search_bookmarks_command(event, user_id, message_text)
             elif message_text == "@g":
                 await handle_github_summary(event)
+            elif message_text.startswith("🗺️"):
+                # Handle map search requests from Quick Reply
+                await handle_map_search_request(event, user_id, message_text)
             else:
                 # Extract URLs and summary mode from message
                 urls, mode = extract_url_and_mode(message_text)
@@ -222,6 +227,8 @@ async def handle_message_event(event: MessageEvent):
                     await handle_text_message(event, user_id)
         elif isinstance(event.message, ImageMessage):
             await handle_image_message(event)
+        elif isinstance(event.message, LocationMessage):
+            await handle_location_message(event)
 
 
 async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal", should_bookmark: bool = False):
@@ -374,6 +381,131 @@ async def handle_image_message(event: MessageEvent):
     logger.info(result.text)
     reply_msg = TextSendMessage(text=result.text)
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
+
+async def handle_location_message(event: MessageEvent):
+    """
+    Handle location messages and provide Quick Reply options for nearby places
+
+    Args:
+        event: LINE message event containing location data
+    """
+    latitude = event.message.latitude
+    longitude = event.message.longitude
+    address = event.message.address
+
+    # Get user_id
+    user_id = event.source.user_id if isinstance(event.source, SourceUser) else "unknown"
+
+    # Store location in memory for later use
+    msg_memory_store[user_id] = StoreMessage(
+        text=json.dumps({
+            "latitude": latitude,
+            "longitude": longitude,
+            "address": address
+        }),
+        url=f"location:{latitude},{longitude}"
+    )
+
+    logger.info(f"Received location from {user_id}: ({latitude}, {longitude}) - {address}")
+
+    # Create Quick Reply buttons
+    quick_reply_buttons = QuickReply(
+        items=[
+            QuickReplyButton(
+                action=MessageAction(
+                    label="⛽ 找加油站",
+                    text="🗺️ 找加油站"
+                )
+            ),
+            QuickReplyButton(
+                action=MessageAction(
+                    label="🅿️ 找停車場",
+                    text="🗺️ 找停車場"
+                )
+            ),
+            QuickReplyButton(
+                action=MessageAction(
+                    label="🍴 找餐廳",
+                    text="🗺️ 找餐廳"
+                )
+            ),
+        ]
+    )
+
+    # Send reply with Quick Reply buttons
+    reply_msg = TextSendMessage(
+        text=f"📍 已收到你的位置\n\n{address or '位置已記錄'}\n\n請選擇要搜尋的類型：",
+        quick_reply=quick_reply_buttons
+    )
+
+    await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
+
+async def handle_map_search_request(event: MessageEvent, user_id: str, message_text: str):
+    """
+    Handle map search requests from Quick Reply buttons
+
+    Args:
+        event: LINE message event
+        user_id: LINE user ID
+        message_text: Message text containing the search type
+    """
+    # Check if we have stored location for this user
+    if user_id not in msg_memory_store:
+        reply_msg = TextSendMessage(
+            text="❌ 找不到位置資訊\n\n請先傳送你的位置，然後再選擇搜尋類型。"
+        )
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        return
+
+    # Get stored location
+    try:
+        location_data = json.loads(msg_memory_store[user_id].text)
+        latitude = location_data["latitude"]
+        longitude = location_data["longitude"]
+        address = location_data.get("address", "")
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"Failed to parse stored location: {e}")
+        reply_msg = TextSendMessage(
+            text="❌ 位置資訊格式錯誤\n\n請重新傳送你的位置。"
+        )
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        return
+
+    # Determine place type from message
+    place_type_map = {
+        "🗺️ 找加油站": "gas_station",
+        "🗺️ 找停車場": "parking",
+        "🗺️ 找餐廳": "restaurant"
+    }
+
+    place_type = place_type_map.get(message_text, "restaurant")
+    logger.info(f"Searching for {place_type} at ({latitude}, {longitude})")
+
+    # Send "searching" message
+    searching_msg = TextSendMessage(text="🔍 搜尋中，請稍候...")
+    await line_bot_api.reply_message(event.reply_token, [searching_msg])
+
+    # Call Maps Grounding API
+    try:
+        result = await search_nearby_places(
+            latitude=latitude,
+            longitude=longitude,
+            place_type=place_type,
+            language_code="zh-TW"
+        )
+
+        # Send result
+        result_msg = TextSendMessage(text=result)
+        await line_bot_api.push_message(user_id, [result_msg])
+
+    except Exception as e:
+        logger.error(f"Map search error: {e}", exc_info=True)
+        error_msg = TextSendMessage(
+            text=f"❌ 搜尋時發生錯誤\n\n{FriendlyErrorMessage.get_message(e)}"
+        )
+        await line_bot_api.push_message(user_id, [error_msg])
 
 
 async def handle_bookmarks_command(event: MessageEvent, user_id: str):
