@@ -16,7 +16,7 @@ from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage,
-    QuickReply, QuickReplyButton, MessageAction
+    QuickReply, QuickReplyButton, PostbackAction
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 import google.generativeai as genai
@@ -210,9 +210,6 @@ async def handle_message_event(event: MessageEvent):
                 await handle_search_bookmarks_command(event, user_id, message_text)
             elif message_text == "@g":
                 await handle_github_summary(event)
-            elif message_text.startswith("🗺️"):
-                # Handle map search requests from Quick Reply
-                await handle_map_search_request(event, user_id, message_text)
             else:
                 # Extract URLs and summary mode from message
                 urls, mode = extract_url_and_mode(message_text)
@@ -394,40 +391,49 @@ async def handle_location_message(event: MessageEvent):
     longitude = event.message.longitude
     address = event.message.address
 
-    # Get user_id
-    user_id = event.source.user_id if isinstance(event.source, SourceUser) else "unknown"
+    logger.info(f"Received location: ({latitude}, {longitude}) - {address}")
 
-    # Store location in memory for later use
-    msg_memory_store[user_id] = StoreMessage(
-        text=json.dumps({
-            "latitude": latitude,
-            "longitude": longitude,
-            "address": address
-        }),
-        url=f"location:{latitude},{longitude}"
-    )
-
-    logger.info(f"Received location from {user_id}: ({latitude}, {longitude}) - {address}")
-
-    # Create Quick Reply buttons
+    # Create Quick Reply buttons with PostbackAction
+    # Pass location data in postback data
     quick_reply_buttons = QuickReply(
         items=[
             QuickReplyButton(
-                action=MessageAction(
+                action=PostbackAction(
                     label="⛽ 找加油站",
-                    text="🗺️ 找加油站"
+                    data=json.dumps({
+                        "action": "search_nearby",
+                        "place_type": "gas_station",
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "address": address or ""
+                    }),
+                    display_text="⛽ 找加油站"
                 )
             ),
             QuickReplyButton(
-                action=MessageAction(
+                action=PostbackAction(
                     label="🅿️ 找停車場",
-                    text="🗺️ 找停車場"
+                    data=json.dumps({
+                        "action": "search_nearby",
+                        "place_type": "parking",
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "address": address or ""
+                    }),
+                    display_text="🅿️ 找停車場"
                 )
             ),
             QuickReplyButton(
-                action=MessageAction(
+                action=PostbackAction(
                     label="🍴 找餐廳",
-                    text="🗺️ 找餐廳"
+                    data=json.dumps({
+                        "action": "search_nearby",
+                        "place_type": "restaurant",
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "address": address or ""
+                    }),
+                    display_text="🍴 找餐廳"
                 )
             ),
         ]
@@ -440,72 +446,6 @@ async def handle_location_message(event: MessageEvent):
     )
 
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-
-async def handle_map_search_request(event: MessageEvent, user_id: str, message_text: str):
-    """
-    Handle map search requests from Quick Reply buttons
-
-    Args:
-        event: LINE message event
-        user_id: LINE user ID
-        message_text: Message text containing the search type
-    """
-    # Check if we have stored location for this user
-    if user_id not in msg_memory_store:
-        reply_msg = TextSendMessage(
-            text="❌ 找不到位置資訊\n\n請先傳送你的位置，然後再選擇搜尋類型。"
-        )
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        return
-
-    # Get stored location
-    try:
-        location_data = json.loads(msg_memory_store[user_id].text)
-        latitude = location_data["latitude"]
-        longitude = location_data["longitude"]
-        address = location_data.get("address", "")
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.error(f"Failed to parse stored location: {e}")
-        reply_msg = TextSendMessage(
-            text="❌ 位置資訊格式錯誤\n\n請重新傳送你的位置。"
-        )
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        return
-
-    # Determine place type from message
-    place_type_map = {
-        "🗺️ 找加油站": "gas_station",
-        "🗺️ 找停車場": "parking",
-        "🗺️ 找餐廳": "restaurant"
-    }
-
-    place_type = place_type_map.get(message_text, "restaurant")
-    logger.info(f"Searching for {place_type} at ({latitude}, {longitude})")
-
-    # Send "searching" message
-    searching_msg = TextSendMessage(text="🔍 搜尋中，請稍候...")
-    await line_bot_api.reply_message(event.reply_token, [searching_msg])
-
-    # Call Maps Grounding API
-    try:
-        result = await search_nearby_places(
-            latitude=latitude,
-            longitude=longitude,
-            place_type=place_type,
-            language_code="zh-TW"
-        )
-
-        # Send result
-        result_msg = TextSendMessage(text=result)
-        await line_bot_api.push_message(user_id, [result_msg])
-
-    except Exception as e:
-        logger.error(f"Map search error: {e}", exc_info=True)
-        error_msg = TextSendMessage(
-            text=f"❌ 搜尋時發生錯誤\n\n{FriendlyErrorMessage.get_message(e)}"
-        )
-        await line_bot_api.push_message(user_id, [error_msg])
 
 
 async def handle_bookmarks_command(event: MessageEvent, user_id: str):
@@ -599,19 +539,89 @@ async def handle_search_bookmarks_command(event: MessageEvent, user_id: str, mes
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
+async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: str):
+    """
+    Handle map search requests from PostbackEvent (Quick Reply buttons)
+
+    Args:
+        event: LINE postback event
+        data: Parsed JSON data containing location and place_type
+        user_id: LINE user ID
+    """
+    try:
+        place_type = data.get('place_type')
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        address = data.get('address', '')
+
+        if not place_type or latitude is None or longitude is None:
+            logger.error(f"Missing required data in postback: {data}")
+            error_msg = TextSendMessage(text="❌ 位置資訊不完整，請重新傳送位置。")
+            await line_bot_api.reply_message(event.reply_token, [error_msg])
+            return
+
+        logger.info(f"Searching for {place_type} at ({latitude}, {longitude})")
+
+        # Send "searching" message
+        searching_msg = TextSendMessage(text="🔍 搜尋中，請稍候...")
+        await line_bot_api.reply_message(event.reply_token, [searching_msg])
+
+        # Call Maps Grounding API
+        result = await search_nearby_places(
+            latitude=latitude,
+            longitude=longitude,
+            place_type=place_type,
+            language_code="zh-TW"
+        )
+
+        # Send result
+        result_msg = TextSendMessage(text=result)
+        if user_id:
+            await line_bot_api.push_message(user_id, [result_msg])
+        else:
+            logger.warning("No user_id available, cannot push result message")
+
+    except Exception as e:
+        logger.error(f"Map search error: {e}", exc_info=True)
+        error_msg = TextSendMessage(
+            text=f"❌ 搜尋時發生錯誤\n\n{FriendlyErrorMessage.get_message(e)}"
+        )
+        if user_id:
+            await line_bot_api.push_message(user_id, [error_msg])
+
+
 async def handle_postback_event(event: PostbackEvent):
-    query_params = parse_qs(event.postback.data)
-    action_value = query_params.get('action', [None])[0]
-    m_id = query_params.get('m_id', [None])[0]
+    """
+    Handle postback events from Quick Reply buttons and other interactions
+    Supports both query string format (legacy) and JSON format (new map search)
+    """
+    postback_data = event.postback.data
+    user_id = event.source.user_id if isinstance(event.source, SourceUser) else None
 
-    if m_id is None or m_id not in msg_memory_store:
-        logger.error("Invalid message ID or message ID not found in store.")
-        return
+    # Try to parse as JSON first (new format for map search)
+    try:
+        data = json.loads(postback_data)
+        action_value = data.get('action')
 
-    # Remove gen_tweet and gen_slack actions
-    if action_value not in ["gen_tweet", "gen_slack"]:
-        logger.error("Invalid action value.")
-        return
+        # Handle map search requests
+        if action_value == "search_nearby":
+            await handle_map_search_postback(event, data, user_id)
+            return
+
+    except json.JSONDecodeError:
+        # Fall back to query string format (legacy format)
+        query_params = parse_qs(postback_data)
+        action_value = query_params.get('action', [None])[0]
+        m_id = query_params.get('m_id', [None])[0]
+
+        if m_id is None or m_id not in msg_memory_store:
+            logger.error("Invalid message ID or message ID not found in store.")
+            return
+
+        # Remove gen_tweet and gen_slack actions
+        if action_value not in ["gen_tweet", "gen_slack"]:
+            logger.error("Invalid action value.")
+            return
 
 
 async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, linebot_token: str):
