@@ -1,6 +1,6 @@
 """
 Google Maps Grounding API integration module
-Uses Gemini with Google Maps grounding for location-based queries
+Uses Gemini with Google Maps grounding for location-based queries via Vertex AI
 """
 import os
 import logging
@@ -11,15 +11,7 @@ logger = logging.getLogger(__name__)
 # Check if new google-genai SDK is available
 try:
     from google import genai
-    from google.genai.types import (
-        GenerateContentConfig,
-        GoogleMaps,
-        HttpOptions,
-        Tool,
-        ToolConfig,
-        RetrievalConfig,
-        LatLng,
-    )
+    from google.genai import types
     GENAI_AVAILABLE = True
 except ImportError:
     logger.warning("google-genai package not available. Maps grounding features will be disabled.")
@@ -42,7 +34,7 @@ async def search_nearby_places(
     language_code: str = "zh-TW"
 ) -> str:
     """
-    使用 Google Maps Vertex Grounding API 搜尋附近地點
+    使用 Google Maps Vertex AI Grounding API 搜尋附近地點
 
     Args:
         latitude: 緯度
@@ -53,16 +45,25 @@ async def search_nearby_places(
 
     Returns:
         str: AI 生成的附近地點推薦
+
+    Note:
+        需要設定以下環境變數來使用 Vertex AI：
+        - GOOGLE_CLOUD_PROJECT: 你的 GCP 專案 ID
+        - GOOGLE_CLOUD_LOCATION: 區域（建議：global）
+        - GOOGLE_GENAI_USE_VERTEXAI: 設為 True
+        或者使用 Application Default Credentials (ADC)
     """
     if not GENAI_AVAILABLE:
         return "❌ 抱歉，Maps 搜尋功能目前無法使用。請聯繫管理員。"
 
     try:
-        # Get API key
-        api_key = os.getenv('GOOGLE_API_KEY')
-        if not api_key:
-            logger.error("GOOGLE_API_KEY not found")
-            return "❌ 抱歉，API 金鑰未設定。"
+        # Check for Vertex AI configuration
+        project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+        location = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
+
+        if not project_id:
+            logger.error("GOOGLE_CLOUD_PROJECT not found. Maps Grounding requires Vertex AI.")
+            return "❌ 抱歉，Google Cloud 專案未設定。Maps 搜尋需要 Vertex AI 配置。"
 
         # Build query
         query = custom_query if custom_query else QUERY_TEMPLATES.get(
@@ -70,27 +71,31 @@ async def search_nearby_places(
             QUERY_TEMPLATES["restaurant"]
         )
 
-        logger.info(f"Searching for {place_type} at ({latitude}, {longitude})")
+        logger.info(f"Searching for {place_type} at ({latitude}, {longitude}) using Vertex AI")
 
-        # Initialize client
+        # Initialize Vertex AI client
+        # The client will automatically use Application Default Credentials (ADC)
         client = genai.Client(
-            api_key=api_key,
-            http_options=HttpOptions(api_version="v1")
+            vertexai=True,
+            project=project_id,
+            location=location,
+            http_options=types.HttpOptions(api_version="v1")
         )
 
         # Call API with Maps grounding
+        # Using gemini-2.0-flash which supports Maps Grounding
         response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.0-flash",
             contents=query,
-            config=GenerateContentConfig(
+            config=types.GenerateContentConfig(
                 tools=[
-                    Tool(google_maps=GoogleMaps(
+                    types.Tool(google_maps=types.GoogleMaps(
                         enable_widget=False
                     ))
                 ],
-                tool_config=ToolConfig(
-                    retrieval_config=RetrievalConfig(
-                        lat_lng=LatLng(
+                tool_config=types.ToolConfig(
+                    retrieval_config=types.RetrievalConfig(
+                        lat_lng=types.LatLng(
                             latitude=latitude,
                             longitude=longitude
                         ),
