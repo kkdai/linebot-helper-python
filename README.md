@@ -43,6 +43,22 @@ These environment variables enable additional features:
 - `SINGLEFILE_PATH`: Path to SingleFile executable (defaults to `/Users/narumi/.local/bin/single-file`)
 - `DATABASE_URL`: Database connection URL (defaults to `sqlite+aiosqlite:///./linebot_bookmarks.db`)
 
+### Google Maps Grounding with Vertex AI
+
+For the Maps Grounding feature (location-based search), you need to configure Vertex AI:
+
+- `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
+- `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (recommended: `global`)
+- `GOOGLE_GENAI_USE_VERTEXAI`: Set to `True` to enable Vertex AI mode
+
+**Note:** Maps Grounding requires Vertex AI authentication, not just an API key. You need to:
+1. Enable the Vertex AI API in your Google Cloud project
+2. Set up Application Default Credentials (ADC) by running:
+   ```bash
+   gcloud auth application-default login
+   ```
+3. Or use a service account key file and set `GOOGLE_APPLICATION_CREDENTIALS` environment variable
+
 ## Installation
 
 1. Clone this repository
