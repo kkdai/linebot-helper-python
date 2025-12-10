@@ -27,6 +27,12 @@ from loader.searchtool import search_from_text  # Import the search function
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from loader.maps_grounding import search_nearby_places  # Import maps grounding
+from loader.chat_session import (  # Import chat session with Grounding
+    ChatSessionManager,
+    search_and_answer_with_grounding,
+    format_grounding_response,
+    get_session_status_message
+)
 
 # Configure logging
 logging.basicConfig(
@@ -91,6 +97,10 @@ async_http_client = AiohttpAsyncHttpClient(session)
 line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
+
+# Initialize Chat Session Manager for Grounding
+chat_session_manager = ChatSessionManager(session_timeout_minutes=30)
+logger.info('Chat Session Manager initialized with 30min timeout')
 
 
 image_prompt = '''
@@ -282,53 +292,113 @@ async def handle_github_summary(event: MessageEvent):
 
 
 async def handle_text_message(event: MessageEvent, user_id: str):
-    msg = event.message.text
+    """
+    處理純文字訊息 - 使用 Vertex AI Grounding with Google Search
 
-    # Use text as search query for all text messages
-    # Check if required API keys are available
-    if not search_api_key or not search_engine_id:
-        reply_msg = TextSendMessage(
-            text="❌ 搜尋功能暫時無法使用（缺少 API 金鑰）。")
+    支援對話記憶和自動網路搜尋
+    """
+    msg = event.message.text.strip()
+
+    # 處理特殊指令
+    if msg.lower() in ['/clear', '/清除', '/reset', '/重置']:
+        # 清除對話記憶
+        success = chat_session_manager.clear_session(user_id)
+        if success:
+            reply_text = "✅ 對話已重置\n\n你可以開始新的對話了！"
+        else:
+            reply_text = "📊 目前沒有進行中的對話。\n\n發送任何訊息開始新對話！"
+        reply_msg = TextSendMessage(text=reply_text)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
         return
 
+    if msg.lower() in ['/status', '/狀態', '/info']:
+        # 顯示對話狀態
+        status_text = get_session_status_message(chat_session_manager, user_id)
+        reply_msg = TextSendMessage(text=status_text)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        return
+
+    if msg.lower() in ['/help', '/幫助', '/說明']:
+        # 顯示說明訊息
+        help_text = """🤖 智能搜尋助手
+
+💬 **對話功能**
+發送任何問題，我會自動搜尋網路並提供詳細回答。
+支援連續對話，我會記住我們的對話內容！
+
+⚡ **特殊指令**
+/clear - 清除對話記憶，開始新對話
+/status - 查看目前對話狀態
+/help - 顯示此說明
+
+📚 **其他功能**
+• 發送網址 - 摘要網頁內容
+• 發送圖片 - AI 圖片分析
+• @g - GitHub issues 摘要
+
+提示：對話會在 30 分鐘無互動後自動過期。"""
+        reply_msg = TextSendMessage(text=help_text)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        return
+
+    # 使用 Vertex AI Grounding 進行搜尋和回答
     try:
-        # Perform search
-        logger.info(f"Performing search for query: {msg}")
-        search_results = search_from_text(
-            msg, None, search_api_key, search_engine_id)  # gemini_key no longer needed (using Vertex AI)
+        logger.info(f"Processing text message with Grounding for user {user_id}: {msg[:50]}...")
 
-        if not search_results:
-            reply_msg = TextSendMessage(
-                text=f"🔍 沒有找到「{msg}」的相關結果，請嘗試其他關鍵字。")
+        # 使用 Grounding 搜尋並回答
+        result = await search_and_answer_with_grounding(
+            query=msg,
+            user_id=user_id,
+            session_manager=chat_session_manager
+        )
+
+        # 格式化回應
+        response_text = format_grounding_response(result, include_sources=True)
+
+        # 檢查回應長度（LINE 訊息最多 5000 字元）
+        if len(response_text) > 4500:
+            # 分割成多則訊息
+            logger.warning(f"Response too long ({len(response_text)} chars), splitting")
+            # 先發送答案（不含來源）
+            answer_only = format_grounding_response(
+                {'answer': result['answer'], 'sources': [], 'has_history': result['has_history']},
+                include_sources=False
+            )
+            msg1 = TextSendMessage(text=answer_only[:4500])
+
+            # 再發送來源
+            if result['sources']:
+                sources_text = "📚 參考來源：\n"
+                for i, source in enumerate(result['sources'][:3], 1):
+                    sources_text += f"{i}. {source['title']}\n   {source['uri']}\n"
+                msg2 = TextSendMessage(text=sources_text)
+                await line_bot_api.reply_message(event.reply_token, [msg1, msg2])
+            else:
+                await line_bot_api.reply_message(event.reply_token, [msg1])
+        else:
+            # 正常長度，直接發送
+            reply_msg = TextSendMessage(text=response_text)
             await line_bot_api.reply_message(event.reply_token, [reply_msg])
-            return
 
-        # Format search results
-        # Add a header with the search query
-        result_text = f"🔍 搜尋結果：{msg}\n\n"
-
-        # Include top 5 results (or fewer if less are available)
-        for i, result in enumerate(search_results[:5], 1):
-            result_text += f"{i}. {result['title']}\n"
-            result_text += f"   {result['link']}\n"
-            result_text += f"   {result['snippet']}\n\n"
-
-        try:
-            summary = summarize_text(result_text, 300)
-            summary_msg = TextSendMessage(text=summary)
-            reply_msg = TextSendMessage(text=result_text)
-            await line_bot_api.reply_message(event.reply_token, [summary_msg, reply_msg])
-        except Exception as summarize_error:
-            logger.error(f"Summarization failed, sending raw results: {summarize_error}")
-            # If summarization fails, just send the raw results
-            reply_msg = TextSendMessage(text=result_text)
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        logger.info(f"Successfully responded to user {user_id}")
 
     except Exception as e:
-        logger.error(f"Error in search: {e}")
-        error_msg = FriendlyErrorMessage.get_message(e)
-        reply_msg = TextSendMessage(text=error_msg)
+        logger.error(f"Error in Grounding search: {e}", exc_info=True)
+
+        # 提供友善的錯誤訊息
+        error_text = f"❌ 抱歉，處理您的問題時發生錯誤。\n\n"
+
+        # 根據錯誤類型提供不同建議
+        if "quota" in str(e).lower():
+            error_text += "可能原因：API 配額已用完\n建議：請稍後再試"
+        elif "not found" in str(e).lower() or "404" in str(e):
+            error_text += "可能原因：找不到相關資訊\n建議：嘗試用不同的問法"
+        elif "timeout" in str(e).lower():
+            error_text += "可能原因：網路連線逾時\n建議：請稍後再試"
+        else:
+            error_text += "請稍後再試，或使用 /clear 清除對話記憶後重新開始。"
+
+        reply_msg = TextSendMessage(text=error_text)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
