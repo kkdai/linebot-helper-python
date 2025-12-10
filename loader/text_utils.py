@@ -2,7 +2,7 @@
 Utility functions for text processing
 """
 import re
-from typing import Tuple, Optional
+from typing import Tuple
 
 
 def parse_summary_mode(text: str) -> Tuple[str, str]:

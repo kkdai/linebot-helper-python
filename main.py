@@ -8,9 +8,7 @@ from urllib.parse import parse_qs
 import aiohttp
 import PIL.Image
 from fastapi import Request, FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 import logging
-from linebot import LineBotApi
 from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
@@ -19,14 +17,12 @@ from linebot.models import (
     QuickReply, QuickReplyButton, PostbackAction
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
-import google.generativeai as genai
 from httpx import HTTPStatusError
 
 # local files
 from loader.gh_tools import summarized_yesterday_github_issues
 from loader.langtools import summarize_text, generate_json_from_image
 from loader.url import load_url, is_youtube_url
-from loader.utils import find_url
 from loader.searchtool import search_from_text  # Import the search function
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
@@ -42,10 +38,13 @@ channel_secret = os.getenv('ChannelSecret')
 linebot_user_id = os.getenv("LINE_USER_ID")
 channel_access_token = os.getenv('ChannelAccessToken')
 channel_access_token_hf = os.getenv('ChannelAccessTokenHF')
-gemini_key = os.getenv('GOOGLE_API_KEY')
 firecrawl_key = os.getenv('firecrawl_key')
 search_api_key = os.getenv('SEARCH_API_KEY')
 search_engine_id = os.getenv('SEARCH_ENGINE_ID')
+
+# Vertex AI configuration
+vertex_project = os.getenv('GOOGLE_CLOUD_PROJECT')
+vertex_location = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
 
 # Validate required environment variables
 if not channel_secret:
@@ -53,8 +52,8 @@ if not channel_secret:
 if not channel_access_token:
     raise EnvironmentError(
         'Specify ChannelAccessToken as environment variable.')
-if not gemini_key:
-    raise EnvironmentError('Specify GOOGLE_API_KEY as environment variable.')
+if not vertex_project:
+    raise EnvironmentError('Specify GOOGLE_CLOUD_PROJECT as environment variable for Vertex AI.')
 if not linebot_user_id:
     raise EnvironmentError('Specify LINE_USER_ID as environment variable.')
 if not channel_access_token_hf:
@@ -75,6 +74,9 @@ else:
     logger.warning(
         'Search API keys missing - search functionality will be limited')
 
+# Log Vertex AI configuration
+logger.info(f'Vertex AI configured - Project: {vertex_project}, Location: {vertex_location}')
+
 
 class StoreMessage:
     def __init__(self, text: str, url: str):
@@ -89,9 +91,6 @@ async_http_client = AiohttpAsyncHttpClient(session)
 line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
-
-# Initialize the Gemini Pro API
-genai.configure(api_key=gemini_key)
 
 
 image_prompt = '''
@@ -297,7 +296,7 @@ async def handle_text_message(event: MessageEvent, user_id: str):
         # Perform search
         logger.info(f"Performing search for query: {msg}")
         search_results = search_from_text(
-            msg, gemini_key, search_api_key, search_engine_id)
+            msg, None, search_api_key, search_engine_id)  # gemini_key no longer needed (using Vertex AI)
 
         if not search_results:
             reply_msg = TextSendMessage(
@@ -427,7 +426,6 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
         place_type = data.get('place_type')
         latitude = data.get('latitude')
         longitude = data.get('longitude')
-        address = data.get('address', '')
 
         if not place_type or latitude is None or longitude is None:
             logger.error(f"Missing required data in postback: {data}")
@@ -537,8 +535,10 @@ async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, 
 
     if results and linebot_user_id and linebot_token:
         try:
-            line_bot_api = LineBotApi(linebot_token)
-            line_bot_api.push_message(linebot_user_id, results)
+            # Create async client for this specific token
+            temp_async_client = AiohttpAsyncHttpClient(session)
+            temp_line_bot_api = AsyncLineBotApi(linebot_token, temp_async_client)
+            await temp_line_bot_api.push_message(linebot_user_id, results)
         except Exception as push_error:
             logger.error(f"Failed to push message: {push_error}")
             return "ERROR"

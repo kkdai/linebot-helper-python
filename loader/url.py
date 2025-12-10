@@ -12,7 +12,6 @@ from .html import (
 from .singlefile import load_html_with_singlefile
 from .pdf import load_pdf
 from .youtube_gcp import load_transcript_from_youtube
-from .error_handler import retry_http_request
 
 logger = logging.getLogger(__name__)
 

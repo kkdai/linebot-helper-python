@@ -31,7 +31,8 @@ These environment variables must be set for the application to work:
 - `ChannelAccessToken`: LINE Bot channel access token
 - `LINE_USER_ID`: LINE user ID to send push notifications to
 - `ChannelAccessTokenHF`: Hugging Face channel access token
-- `GOOGLE_API_KEY`: Google API key for Gemini AI
+- `GOOGLE_CLOUD_PROJECT`: Google Cloud project ID for Vertex AI (required)
+- `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (optional, defaults to `us-central1`)
 
 ### Optional Environment Variables
 
@@ -43,21 +44,42 @@ These environment variables enable additional features:
 - `SINGLEFILE_PATH`: Path to SingleFile executable (defaults to `/Users/narumi/.local/bin/single-file`)
 - `DATABASE_URL`: Database connection URL (defaults to `sqlite+aiosqlite:///./linebot_bookmarks.db`)
 
-### Google Maps Grounding with Vertex AI
+### Vertex AI Setup (Required for All AI Features)
 
-For the Maps Grounding feature (location-based search), you need to configure Vertex AI:
+**IMPORTANT:** This application now uses Google Vertex AI for all AI features including:
+- Text summarization
+- Image analysis
+- YouTube video transcription
+- Web search keyword extraction
+- GitHub issues summary
+- Maps Grounding (location-based search)
 
-- `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID
-- `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (recommended: `global`)
-- `GOOGLE_GENAI_USE_VERTEXAI`: Set to `True` to enable Vertex AI mode
+**Setup Steps:**
 
-**Note:** Maps Grounding requires Vertex AI authentication, not just an API key. You need to:
-1. Enable the Vertex AI API in your Google Cloud project
-2. Set up Application Default Credentials (ADC) by running:
+1. **Enable Vertex AI API** in your Google Cloud project:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Enable the "Vertex AI API"
+
+2. **Set up Authentication** using Application Default Credentials (ADC):
    ```bash
    gcloud auth application-default login
    ```
-3. Or use a service account key file and set `GOOGLE_APPLICATION_CREDENTIALS` environment variable
+
+   Or use a service account key file:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+   ```
+
+3. **Configure Environment Variables:**
+   - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID (required)
+   - `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (optional, defaults to `us-central1`)
+
+**Note:** For Maps Grounding specifically, `global` location is recommended.
+
+**Migration from Gemini API Key:**
+- `GOOGLE_API_KEY` is **no longer used** - all features now use Vertex AI
+- This provides higher rate limits and better quota management
+- Vertex AI is a paid service - see [pricing](https://cloud.google.com/vertex-ai/pricing)
 
 ## Installation
 
