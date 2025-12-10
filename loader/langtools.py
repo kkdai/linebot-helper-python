@@ -1,12 +1,19 @@
-# Adjust the import as necessary
+# Pure Vertex AI implementation - no LangChain
 import os
 import logging
 import PIL.Image
+from io import BytesIO
 from typing import Any
-from langchain.chains.summarize import load_summarize_chain
-from langchain.docstore.document import Document
-from langchain_google_vertexai import ChatVertexAI
-from langchain_core.prompts import PromptTemplate
+
+# Use google-genai SDK for Vertex AI
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    logging.error("google-genai package not available")
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -18,13 +25,24 @@ VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
 
 
-def docs_to_str(docs: list[Document]) -> str:
-    return "\n".join([doc.page_content for doc in docs])
+def _get_vertex_client():
+    """Get Vertex AI client instance"""
+    if not GENAI_AVAILABLE:
+        raise ImportError("google-genai package not available")
+    if not VERTEX_PROJECT:
+        raise ValueError("GOOGLE_CLOUD_PROJECT not set")
+
+    return genai.Client(
+        vertexai=True,
+        project=VERTEX_PROJECT,
+        location=VERTEX_LOCATION,
+        http_options=types.HttpOptions(api_version="v1")
+    )
 
 
 def summarize_text(text: str, max_tokens: int = 100, mode: str = "normal") -> str:
     '''
-    Summarize a text using the Google Generative AI model.
+    Summarize a text using Vertex AI Gemini.
 
     Args:
         text: Text to summarize
@@ -39,7 +57,7 @@ def summarize_text(text: str, max_tokens: int = 100, mode: str = "normal") -> st
 
 def summarize_text_with_mode(text: str, mode: str = "normal") -> str:
     '''
-    Summarize a text with different length modes.
+    Summarize a text with different length modes using Vertex AI.
 
     Args:
         text: Text to summarize
@@ -51,16 +69,6 @@ def summarize_text_with_mode(text: str, mode: str = "normal") -> str:
     Returns:
         Summarized text in Traditional Chinese
     '''
-    llm = ChatVertexAI(
-        model="gemini-2.0-flash-lite",
-        temperature=0,
-        max_tokens=None,
-        timeout=None,
-        max_retries=2,
-        project=VERTEX_PROJECT,
-        location=VERTEX_LOCATION,
-    )
-
     # Define prompts for different modes
     prompts = {
         "short": """用台灣用語的繁體中文，用 1-3 個重點總結文章核心內容。務必極度簡潔。
@@ -142,39 +150,96 @@ reply in zh-TW"""
 
     # Select prompt based on mode
     prompt_template = prompts.get(mode, prompts["normal"])
-    prompt = PromptTemplate.from_template(prompt_template)
+    prompt = prompt_template.replace("{text}", text)
 
-    summarize_chain = load_summarize_chain(
-        llm=llm, chain_type="stuff", prompt=prompt)
-    document = Document(page_content=text)
-    summary = summarize_chain.invoke([document])
-    return summary["output_text"]
+    try:
+        client = _get_vertex_client()
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0,
+                max_output_tokens=2048,
+            )
+        )
+
+        return response.text if response.text else "無法生成摘要"
+
+    except Exception as e:
+        logging.error(f"Error summarizing text: {e}")
+        raise
 
 
 def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
-    model = ChatVertexAI(
-        model="gemini-2.0-flash",
-        temperature=0.5,
-        max_tokens=None,
-        timeout=None,
-        max_retries=2,
-        project=VERTEX_PROJECT,
-        location=VERTEX_LOCATION,
-    )
+    '''
+    Analyze image using Vertex AI Gemini.
 
-    prompt_template = PromptTemplate.from_template(prompt)
-    chain = prompt_template | model
-    response = chain.invoke({"image": img})
+    Args:
+        img: PIL Image object
+        prompt: Prompt for image analysis
 
+    Returns:
+        Response object with text attribute
+    '''
     try:
-        if response.parts:
-            logging.info(f">>>>{response.text}")
-            return response
+        client = _get_vertex_client()
+
+        # Convert PIL Image to bytes
+        img_byte_arr = BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+        # Create multimodal content
+        contents = [
+            types.Part.from_text(prompt),
+            types.Part.from_image_bytes(
+                data=img_byte_arr,
+                mime_type="image/png"
+            )
+        ]
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=contents,
+            config=types.GenerateContentConfig(
+                temperature=0.5,
+                max_output_tokens=2048,
+            )
+        )
+
+        logging.info(f">>>>{response.text}")
+
+        # Return a simple object with text attribute for compatibility
+        class ImageResponse:
+            def __init__(self, text):
+                self.text = text
+                self.parts = [text] if text else []
+                self.candidates = []
+
+        return ImageResponse(response.text if response.text else "")
+
+    except Exception as e:
+        logging.error(f"Error analyzing image: {e}")
+        raise
+
+
+# Legacy helper function for compatibility
+def docs_to_str(docs: list) -> str:
+    """Convert documents to string (for backward compatibility)"""
+    if not docs:
+        return ""
+
+    # Handle different document types
+    result = []
+    for doc in docs:
+        if hasattr(doc, 'page_content'):
+            result.append(doc.page_content)
+        elif isinstance(doc, dict) and 'page_content' in doc:
+            result.append(doc['page_content'])
+        elif isinstance(doc, str):
+            result.append(doc)
         else:
-            logging.warning("No valid parts found in the response.")
-            for candidate in response.candidates:
-                logging.warning("!!!!Safety Ratings:",
-                                candidate.safety_ratings)
-    except ValueError as e:
-        logging.error("Error:", e)
-    return response
+            result.append(str(doc))
+
+    return "\n".join(result)

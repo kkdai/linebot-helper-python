@@ -44,11 +44,10 @@ pip install -r requirements-lock.txt
 pip install -r requirements.txt
 ```
 
-**新增的依賴：**
+**主要依賴：**
+- `google-genai` - Vertex AI SDK (已移除 LangChain)
 - `tenacity` - 重試機制
-- `sqlalchemy` - ORM 框架
-- `aiosqlite` - 非同步 SQLite
-- `pydantic` - 資料驗證（明確版本）
+- `pydantic` - 資料驗證
 
 **版本說明：**
 - 使用 `requirements-lock.txt` 確保可重現的構建
@@ -63,8 +62,8 @@ uvicorn main:app --reload
 
 # 測試基本功能
 # 1. 發送 URL 測試摘要功能
-# 2. 發送 "https://example.com 🔖" 測試書籤
-# 3. 發送 "/bookmarks" 查看書籤列表
+# 2. 發送 "https://example.com [短]" 測試短摘要
+# 3. 發送 "https://example.com [詳]" 測試詳細摘要
 ```
 
 ### 步驟 3: 檢查環境變數
@@ -76,26 +75,14 @@ uvicorn main:app --reload
 - `ChannelAccessToken`
 - `LINE_USER_ID`
 - `ChannelAccessTokenHF`
-- `GOOGLE_API_KEY`
+- `GOOGLE_CLOUD_PROJECT` (Vertex AI)
+- `GOOGLE_CLOUD_LOCATION` (預設: `us-central1`)
 
 **可選的：**
 - `firecrawl_key`
 - `SEARCH_API_KEY`
 - `SEARCH_ENGINE_ID`
-- `DATABASE_URL` (預設: `sqlite+aiosqlite:///./linebot_bookmarks.db`)
-
-### 步驟 4: 資料庫初始化
-
-資料庫會在應用啟動時自動初始化，無需手動操作。
-
-**檢查資料庫：**
-```bash
-# 啟動後應該會看到這個檔案
-ls -la linebot_bookmarks.db
-
-# 檢查資料庫結構
-sqlite3 linebot_bookmarks.db ".schema"
-```
+- `GITHUB_TOKEN`
 
 ---
 
@@ -113,7 +100,8 @@ docker run -p 8080:8080 \
   -e ChannelAccessToken="your_token" \
   -e LINE_USER_ID="your_user_id" \
   -e ChannelAccessTokenHF="your_hf_token" \
-  -e GOOGLE_API_KEY="your_gemini_key" \
+  -e GOOGLE_CLOUD_PROJECT="your_project_id" \
+  -e GOOGLE_CLOUD_LOCATION="us-central1" \
   linebot-helper
 
 # 測試
