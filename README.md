@@ -5,10 +5,11 @@ A Python application that provides LINE bot functionality with tools for searchi
 ## ✨ Features
 
 ### Core Features
+- **🤖 Intelligent Conversation with Memory** - Ask questions and get AI-powered answers with automatic web search (NEW!)
+- **💬 Multi-turn Dialogue Support** - Remembers conversation context for 30 minutes
 - **URL Content Extraction & Summarization** - Extract and summarize web content with AI
 - **Flexible Summary Modes** - Choose between short, normal, or detailed summaries
 - **Image Processing** - Analyze images with Gemini AI
-- **Web Search** - Intelligent keyword extraction and search
 - **GitHub Issues Summary** - Daily digest of GitHub activity
 - **Enhanced Error Handling** - Friendly Chinese error messages with automatic retry
 
@@ -79,6 +80,12 @@ These environment variables enable additional features:
 - This provides higher rate limits and better quota management
 - Vertex AI is a paid service - see [pricing](https://cloud.google.com/vertex-ai/pricing)
 
+**Google Search Grounding:**
+- The intelligent chat feature uses **Vertex AI Grounding with Google Search**
+- This is Google's official RAG (Retrieval-Augmented Generation) solution
+- Automatically searches the web when needed and cites sources
+- No separate Google Custom Search API required for chat feature
+
 ## Installation
 
 1. Clone this repository
@@ -117,6 +124,38 @@ uvicorn main:app --reload
 
 ## Usage
 
+### 🤖 Intelligent Chat with Memory (NEW!)
+
+Send any question and the bot will automatically search the web and provide detailed answers with sources.
+
+**Features:**
+- 💬 **Continuous Conversation** - The bot remembers your conversation for 30 minutes
+- 🔍 **Auto Web Search** - Automatically searches when needed using Google Search Grounding
+- 📚 **Source Citations** - Provides references for information
+- 🇹🇼 **Traditional Chinese** - All responses in Traditional Chinese
+
+**Examples:**
+```
+You: Python 是什麼？
+Bot: Python 是一種高階、直譯式的程式語言...
+     📚 參考來源：
+     1. Python 官方網站
+        https://www.python.org/
+
+You: 它有什麼優點？  ✅ Bot remembers "它" = Python
+Bot: 💬 [對話中]
+     Python 的主要優點包括：...
+```
+
+**Special Commands:**
+- `/clear` or `/清除` - Clear conversation memory
+- `/status` or `/狀態` - Check conversation status
+- `/help` or `/幫助` - Show help message
+
+**Note:** Conversations automatically expire after 30 minutes of inactivity.
+
+---
+
 ### 📝 URL Summarization with Modes
 
 Send a URL to the bot and it will extract and summarize the content. You can choose different summary lengths:
@@ -124,10 +163,6 @@ Send a URL to the bot and it will extract and summarize the content. You can cho
 - **Standard Summary** (default): `https://example.com`
 - **Short Summary** (1-3 key points): `https://example.com [短]` or `https://example.com [short]`
 - **Detailed Summary** (comprehensive analysis): `https://example.com [詳]` or `https://example.com [detailed]`
-
-### 🔍 Web Search
-
-Any text message (without URL) sent to the bot will be treated as a search query and return relevant search results with AI-generated summary.
 
 ### 🐙 GitHub Summary
 
