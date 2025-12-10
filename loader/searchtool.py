@@ -1,30 +1,48 @@
 import requests
-import google.generativeai as genai
 import os
 import logging
 
+# Use new google-genai SDK with Vertex AI
+try:
+    from google import genai
+    from google.genai import types
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    logging.warning("google-genai package not available")
+
 logger = logging.getLogger(__name__)
+
+# Vertex AI configuration
+VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
 
 
 def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
     """
-    使用 Gemini API 從文字中提取關鍵字。
+    使用 Gemini API (via Vertex AI) 從文字中提取關鍵字。
 
     :param text: 使用者輸入的文字
-    :param gemini_api_key: Gemini API 的 API 金鑰
+    :param gemini_api_key: Gemini API 的 API 金鑰 (ignored, using Vertex AI)
     :param num_keywords: 要提取的關鍵字數量，預設為 5
     :return: 提取的關鍵字列表
     """
+    if not GENAI_AVAILABLE:
+        logger.error("google-genai package not available")
+        return [text] if len(text) < 100 else []
+
+    if not VERTEX_PROJECT:
+        logger.error("GOOGLE_CLOUD_PROJECT not set")
+        return [text] if len(text) < 100 else []
+
     try:
-        # 設定 API 金鑰
-        current_key = genai.get_api_key()
-
-        # Only configure if needed (prevent reconfiguring when already set correctly)
-        if current_key != gemini_api_key:
-            genai.configure(api_key=gemini_api_key)
-
-        # 建立 Gemini 模型
-        model = genai.GenerativeModel("gemini-2.0-flash-lite")
+        # Initialize Vertex AI client
+        client = genai.Client(
+            vertexai=True,
+            project=VERTEX_PROJECT,
+            location=VERTEX_LOCATION,
+            http_options=types.HttpOptions(api_version="v1")
+        )
 
         # 準備提示詞，要求模型提取關鍵字
         prompt = f"""從以下文字中提取 {num_keywords} 個最重要的關鍵字或短語，只需返回關鍵字列表，不要有額外文字：
@@ -34,7 +52,10 @@ def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
 關鍵字："""
 
         # 生成回應
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=prompt,
+        )
 
         # 處理回應，將文字分割成關鍵字列表
         if response.text:

@@ -5,7 +5,7 @@ import PIL.Image
 from typing import Any
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
 from langchain_core.prompts import PromptTemplate
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -13,9 +13,14 @@ logging.basicConfig(level=logging.DEBUG)
 # Set the user agent
 os.environ["USER_AGENT"] = "myagent"
 
+# Vertex AI configuration
+VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+
 
 def docs_to_str(docs: list[Document]) -> str:
     return "\n".join([doc.page_content for doc in docs])
+
 
 def summarize_text(text: str, max_tokens: int = 100, mode: str = "normal") -> str:
     '''
@@ -46,12 +51,14 @@ def summarize_text_with_mode(text: str, mode: str = "normal") -> str:
     Returns:
         Summarized text in Traditional Chinese
     '''
-    llm = ChatGoogleGenerativeAI(
+    llm = ChatVertexAI(
         model="gemini-2.0-flash-lite",
         temperature=0,
         max_tokens=None,
         timeout=None,
         max_retries=2,
+        project=VERTEX_PROJECT,
+        location=VERTEX_LOCATION,
     )
 
     # Define prompts for different modes
@@ -145,12 +152,14 @@ reply in zh-TW"""
 
 
 def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
-    model = ChatGoogleGenerativeAI(
+    model = ChatVertexAI(
         model="gemini-2.0-flash",
         temperature=0.5,
         max_tokens=None,
         timeout=None,
         max_retries=2,
+        project=VERTEX_PROJECT,
+        location=VERTEX_LOCATION,
     )
 
     prompt_template = PromptTemplate.from_template(prompt)

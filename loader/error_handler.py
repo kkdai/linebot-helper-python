@@ -3,16 +3,13 @@ Error handling utilities with retry logic and user-friendly messages
 """
 import logging
 from typing import Optional, Callable, Any
-from functools import wraps
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
-    RetryError
 )
 from httpx import HTTPStatusError, TimeoutException, ConnectError
-import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +163,7 @@ gemini_circuit = CircuitBreaker(failure_threshold=3, timeout=30)
 
 
 def handle_error_with_fallback(primary_func: Callable, fallback_func: Optional[Callable] = None,
-                                url: Optional[str] = None) -> Any:
+                               url: Optional[str] = None) -> Any:
     """
     Execute primary function with optional fallback
 

@@ -231,7 +231,7 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
             return parse_html(html_content, markdown=markdown)
         else:
             raise ValueError(
-                f"Firecrawl API did not return expected content format")
+                "Firecrawl API did not return expected content format")
     except Exception as e:
         logger.error(f"Error using Firecrawl API: {e}")
         raise
