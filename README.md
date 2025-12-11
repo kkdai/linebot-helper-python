@@ -39,9 +39,8 @@ These environment variables must be set for the application to work:
 These environment variables enable additional features:
 
 - `firecrawl_key`: Firecrawl API key for enhanced web scraping of PTT, Medium, and OpenAI websites
-- `SEARCH_API_KEY`: Google Custom Search API key for web search functionality
-- `SEARCH_ENGINE_ID`: Google Custom Search Engine ID for web search functionality
 - `SINGLEFILE_PATH`: Path to SingleFile executable (defaults to `/Users/narumi/.local/bin/single-file`)
+- `GITHUB_TOKEN`: GitHub personal access token for accessing private repositories (optional)
 
 ### Vertex AI Setup (Required for All AI Features)
 

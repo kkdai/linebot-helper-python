@@ -23,7 +23,6 @@ from httpx import HTTPStatusError
 from loader.gh_tools import summarized_yesterday_github_issues
 from loader.langtools import summarize_text, generate_json_from_image
 from loader.url import load_url, is_youtube_url
-from loader.searchtool import search_from_text  # Import the search function
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from loader.maps_grounding import search_nearby_places  # Import maps grounding
@@ -45,8 +44,6 @@ linebot_user_id = os.getenv("LINE_USER_ID")
 channel_access_token = os.getenv('ChannelAccessToken')
 channel_access_token_hf = os.getenv('ChannelAccessTokenHF')
 firecrawl_key = os.getenv('firecrawl_key')
-search_api_key = os.getenv('SEARCH_API_KEY')
-search_engine_id = os.getenv('SEARCH_ENGINE_ID')
 
 # Vertex AI configuration
 vertex_project = os.getenv('GOOGLE_CLOUD_PROJECT')
@@ -74,14 +71,9 @@ else:
     logger.info(
         'No Firecrawl API key - using standard web scraping methods for all sites')
 
-if search_api_key and search_engine_id:
-    logger.info('Search API keys detected - search functionality is available')
-else:
-    logger.warning(
-        'Search API keys missing - search functionality will be limited')
-
 # Log Vertex AI configuration
 logger.info(f'Vertex AI configured - Project: {vertex_project}, Location: {vertex_location}')
+logger.info('Text search using Vertex AI Grounding with Google Search (no Custom Search API needed)')
 
 
 class StoreMessage:
