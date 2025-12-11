@@ -223,6 +223,7 @@ async def search_and_answer_with_grounding(
         prompt = f"""請用台灣用語的繁體中文回答以下問題。
 如果需要最新資訊，請搜尋網路並提供準確的答案。
 請提供詳細且有用的回答，並確保資訊來源可靠。
+請不要使用 markdown 格式（不要用 **、##、- 等符號）。使用純文字回答。
 
 問題：{query}"""
 
