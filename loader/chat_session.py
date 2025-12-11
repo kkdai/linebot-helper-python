@@ -100,7 +100,7 @@ class ChatSessionManager:
 
             # 創建 chat session（使用共享的 client）
             chat = self.client.chats.create(
-                model="gemini-2.0-flash",
+                model="gemini-3-pro-preview",
                 config=config
             )
 
