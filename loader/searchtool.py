@@ -1,3 +1,14 @@
+"""
+⚠️ DEPRECATED: This module is no longer used in the main application.
+
+The text search functionality has been replaced by Vertex AI Grounding with Google Search,
+which provides better quality results and native conversation memory.
+
+See: loader/chat_session.py for the new implementation.
+
+This file is kept for reference or as a fallback option.
+"""
+
 import requests
 import os
 import logging
