@@ -35,6 +35,8 @@ class ChatSessionManager:
         """
         self.sessions: Dict[str, dict] = {}  # {user_id: session_data}
         self.session_timeout = timedelta(minutes=session_timeout_minutes)
+        # 創建共享的 Vertex AI client（重要：保持 client 實例不被關閉）
+        self.client = self._create_client()
         logger.info(f"ChatSessionManager initialized with {session_timeout_minutes}min timeout")
 
     def _create_client(self) -> genai.Client:
@@ -44,6 +46,7 @@ class ChatSessionManager:
         if not VERTEX_PROJECT:
             raise ValueError("GOOGLE_CLOUD_PROJECT not set")
 
+        logger.info(f"Creating Vertex AI client for project {VERTEX_PROJECT}")
         return genai.Client(
             vertexai=True,
             project=VERTEX_PROJECT,
@@ -87,8 +90,6 @@ class ChatSessionManager:
         logger.info(f"Creating new session for user {user_id}")
 
         try:
-            client = self._create_client()
-
             # 啟用 Google Search Grounding
             config = types.GenerateContentConfig(
                 temperature=0.7,
@@ -97,9 +98,8 @@ class ChatSessionManager:
                 tools=[types.Tool(google_search=types.GoogleSearch())],
             )
 
-            # 創建 chat session
-            # Note: The chat API might differ, adjust based on actual API
-            chat = client.chats.create(
+            # 創建 chat session（使用共享的 client）
+            chat = self.client.chats.create(
                 model="gemini-2.0-flash",
                 config=config
             )
@@ -111,10 +111,11 @@ class ChatSessionManager:
                 'created_at': now
             }
 
+            logger.info(f"Chat session created successfully for user {user_id}")
             return chat, []
 
         except Exception as e:
-            logger.error(f"Failed to create chat session: {e}")
+            logger.error(f"Failed to create chat session: {e}", exc_info=True)
             raise
 
     def add_to_history(self, user_id: str, role: str, content: str) -> None:
