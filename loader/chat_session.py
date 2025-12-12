@@ -232,11 +232,41 @@ async def search_and_answer_with_grounding(
         # 發送訊息
         response = chat.send_message(prompt)
 
-        logger.info(f"Received response from Grounding API: {response.text[:100]}...")
+        # 檢查 response.text 是否存在
+        if not response.text:
+            # 記錄詳細的 response 結構以便調試
+            logger.error(f"Response.text is None. Response structure:")
+            logger.error(f"  - Has candidates: {hasattr(response, 'candidates')}")
+            if hasattr(response, 'candidates') and response.candidates:
+                for i, candidate in enumerate(response.candidates):
+                    logger.error(f"  - Candidate {i}:")
+                    logger.error(f"    - Has content: {hasattr(candidate, 'content')}")
+                    logger.error(f"    - Finish reason: {getattr(candidate, 'finish_reason', 'N/A')}")
+                    if hasattr(candidate, 'safety_ratings'):
+                        logger.error(f"    - Safety ratings: {candidate.safety_ratings}")
+
+            # 嘗試從 candidates 中獲取文本
+            response_text = None
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and candidate.content:
+                    if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text'):
+                                response_text = part.text
+                                break
+
+            if not response_text:
+                raise ValueError("API returned empty response. This may be due to content filtering or rate limiting.")
+
+            logger.info(f"Received response from Grounding API: {response_text[:100]}...")
+        else:
+            response_text = response.text
+            logger.info(f"Received response from Grounding API: {response_text[:100]}...")
 
         # 記錄到歷史
         session_manager.add_to_history(user_id, "user", query)
-        session_manager.add_to_history(user_id, "assistant", response.text)
+        session_manager.add_to_history(user_id, "assistant", response_text)
 
         # 提取引用來源（如果有）
         sources = []
@@ -257,7 +287,7 @@ async def search_and_answer_with_grounding(
             logger.warning(f"Failed to extract sources: {e}")
 
         return {
-            'answer': response.text,
+            'answer': response_text,
             'sources': sources,
             'has_history': len(history) > 0
         }

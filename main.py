@@ -383,6 +383,8 @@ async def handle_text_message(event: MessageEvent, user_id: str):
         # 根據錯誤類型提供不同建議
         if "quota" in str(e).lower():
             error_text += "可能原因：API 配額已用完\n建議：請稍後再試"
+        elif "empty response" in str(e).lower():
+            error_text += "可能原因：內容被安全過濾器攔截或 API 限流\n建議：請嘗試用不同的問法，或稍後再試"
         elif "not found" in str(e).lower() or "404" in str(e):
             error_text += "可能原因：找不到相關資訊\n建議：嘗試用不同的問法"
         elif "timeout" in str(e).lower():
