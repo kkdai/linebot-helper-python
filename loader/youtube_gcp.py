@@ -4,7 +4,7 @@ import logging
 # Use new google-genai SDK with Vertex AI
 try:
     from google import genai
-    from google.genai import types
+    from google.genai.types import HttpOptions, Part
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
@@ -49,21 +49,22 @@ async def load_transcript_from_youtube(youtube_url: str) -> str:
             vertexai=True,
             project=VERTEX_PROJECT,
             location=VERTEX_LOCATION,
-            http_options=types.HttpOptions(api_version="v1beta")
+            http_options=HttpOptions(api_version="v1")
         )
 
-        # Prepare content with prompt and YouTube URL
+        # Prepare content with YouTube URL and prompt
+        # Note: Can mix Part objects and strings directly in contents list
         contents = [
-            types.Part.from_text(text=PROMPT),
-            types.Part.from_uri(
+            Part.from_uri(
                 file_uri=youtube_url,
-                mime_type="video/*"
-            )
+                mime_type="video/mp4"
+            ),
+            PROMPT
         ]
 
         # Generate content
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash",
             contents=contents,
         )
 
