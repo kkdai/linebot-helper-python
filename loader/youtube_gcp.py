@@ -54,7 +54,7 @@ async def load_transcript_from_youtube(youtube_url: str) -> str:
 
         # Prepare content with prompt and YouTube URL
         contents = [
-            types.Part.from_text(PROMPT),
+            types.Part.from_text(text=PROMPT),
             types.Part.from_uri(
                 file_uri=youtube_url,
                 mime_type="video/*"

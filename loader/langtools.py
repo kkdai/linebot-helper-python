@@ -192,7 +192,7 @@ def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
 
         # Create multimodal content
         contents = [
-            types.Part.from_text(prompt),
+            types.Part.from_text(text=prompt),
             types.Part.from_image_bytes(
                 data=img_byte_arr,
                 mime_type="image/png"
