@@ -259,7 +259,39 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
             # Format result with URL
             result = f"{url}\n\n{result}"
-            reply_msg = TextSendMessage(text=result)
+
+            # Add Quick Reply for YouTube URLs
+            if is_youtube_url(url):
+                quick_reply_buttons = QuickReply(
+                    items=[
+                        QuickReplyButton(
+                            action=PostbackAction(
+                                label="📄 Detail",
+                                data=json.dumps({
+                                    "action": "youtube_summary",
+                                    "mode": "detail",
+                                    "url": url
+                                }),
+                                display_text="📄 詳細摘要"
+                            )
+                        ),
+                        QuickReplyButton(
+                            action=PostbackAction(
+                                label="🐦 Post on X",
+                                data=json.dumps({
+                                    "action": "youtube_summary",
+                                    "mode": "twitter",
+                                    "url": url
+                                }),
+                                display_text="🐦 Twitter 分享文案"
+                            )
+                        ),
+                    ]
+                )
+                reply_msg = TextSendMessage(text=result, quick_reply=quick_reply_buttons)
+            else:
+                reply_msg = TextSendMessage(text=result)
+
             results.append(reply_msg)
 
         except HTTPStatusError as e:
@@ -527,6 +559,57 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
             await line_bot_api.push_message(user_id, [error_msg])
 
 
+async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
+    """
+    Handle YouTube summary requests from PostbackEvent (Quick Reply buttons)
+
+    Args:
+        event: LINE postback event
+        data: Parsed JSON data containing YouTube URL and mode
+    """
+    try:
+        mode = data.get('mode')
+        url = data.get('url')
+        user_id = event.source.user_id if isinstance(event.source, SourceUser) else None
+
+        if not mode or not url:
+            logger.error("Missing mode or url in YouTube summary postback")
+            return
+
+        logger.info(f"Generating YouTube summary: mode={mode}, url={url}")
+
+        # Send "processing" message
+        mode_text = "詳細摘要" if mode == "detail" else "Twitter 分享文案"
+        processing_msg = TextSendMessage(text=f"⏳ 正在生成{mode_text}，請稍候...")
+        await line_bot_api.reply_message(event.reply_token, [processing_msg])
+
+        # Generate summary with specified mode
+        result = await load_url(url, youtube_mode=mode)
+
+        if not result:
+            error_msg = "⚠️ 無法生成影片摘要，請稍後再試。"
+            logger.error(f"Empty result for YouTube URL: {url}")
+            result_msg = TextSendMessage(text=error_msg)
+        else:
+            # Format result with URL
+            result = f"{url}\n\n{result}"
+            result_msg = TextSendMessage(text=result)
+
+        # Send result using push message
+        if user_id:
+            await line_bot_api.push_message(user_id, [result_msg])
+        else:
+            logger.warning("No user_id available, cannot push result message")
+
+    except Exception as e:
+        logger.error(f"YouTube summary error: {e}", exc_info=True)
+        error_msg = TextSendMessage(
+            text=f"❌ 生成摘要時發生錯誤\n\n{FriendlyErrorMessage.get_message(e, url)}"
+        )
+        if user_id:
+            await line_bot_api.push_message(user_id, [error_msg])
+
+
 async def handle_postback_event(event: PostbackEvent):
     """
     Handle postback events from Quick Reply buttons and other interactions
@@ -543,6 +626,11 @@ async def handle_postback_event(event: PostbackEvent):
         # Handle map search requests
         if action_value == "search_nearby":
             await handle_map_search_postback(event, data, user_id)
+            return
+
+        # Handle YouTube summary requests
+        if action_value == "youtube_summary":
+            await handle_youtube_summary_postback(event, data)
             return
 
     except json.JSONDecodeError:

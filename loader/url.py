@@ -78,7 +78,7 @@ def replace_domain(url: str) -> str:
     return url
 
 
-async def load_url(url: str) -> str:
+async def load_url(url: str, youtube_mode: str = "normal") -> str:
     """
     Load content from URL with intelligent fallback strategy
 
@@ -91,6 +91,7 @@ async def load_url(url: str) -> str:
 
     Args:
         url: URL to load
+        youtube_mode: Summary mode for YouTube videos - "normal", "detail", or "twitter"
 
     Returns:
         Extracted text content
@@ -101,7 +102,7 @@ async def load_url(url: str) -> str:
     url = replace_domain(url)
 
     if is_youtube_url(url):
-        return await load_transcript_from_youtube(url)
+        return await load_transcript_from_youtube(url, mode=youtube_mode)
 
     # Handle URLs that should use Firecrawl
     if is_firecrawl_url(url):
