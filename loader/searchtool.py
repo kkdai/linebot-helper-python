@@ -64,7 +64,7 @@ def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
 
         # 生成回應
         response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash-lite",
             contents=prompt,
         )
 

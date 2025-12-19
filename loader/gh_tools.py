@@ -151,7 +151,7 @@ def summarized_yesterday_github_issues() -> str:
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,

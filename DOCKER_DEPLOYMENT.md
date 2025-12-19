@@ -315,10 +315,10 @@ chmod +x deploy.sh
   - CPU: $0.00002400 per vCPU-second
 
 ### Vertex AI 定價（Gemini models）
-- **gemini-2.0-flash-lite**:
+- **gemini-2.5-flash-lite**:
   - Input: ~$0.075 per 1M tokens
   - Output: ~$0.30 per 1M tokens
-- **gemini-2.0-flash**:
+- **gemini-2.5-flash**:
   - Input: ~$0.15 per 1M tokens
   - Output: ~$0.60 per 1M tokens
 

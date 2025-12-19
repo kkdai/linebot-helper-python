@@ -25,7 +25,7 @@ def get_or_create_session(self, user_id: str):
     client = self._create_client()  # 創建 client
 
     chat = client.chats.create(     # 使用 client 創建 chat
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         config=config
     )
 
@@ -68,7 +68,7 @@ class ChatSessionManager:
 
         # 使用共享的 self.client（不會被關閉）
         chat = self.client.chats.create(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             config=config
         )
 
