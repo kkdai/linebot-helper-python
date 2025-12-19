@@ -140,7 +140,7 @@ class ChatSessionManager:
 
         # 創建 chat session
         chat = client.chats.create(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             config=config
         )
 
@@ -394,7 +394,7 @@ async def search_with_context(
 改寫後的搜尋查詢："""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash-lite",
             contents=rewrite_prompt
         )
 
@@ -429,7 +429,7 @@ async def search_with_context(
 請提供詳細且有用的回答："""
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=answer_prompt,
         config=types.GenerateContentConfig(
             temperature=0.7,

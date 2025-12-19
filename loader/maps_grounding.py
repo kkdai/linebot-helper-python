@@ -83,7 +83,7 @@ async def search_nearby_places(
         )
 
         # Call API with Maps grounding
-        # Using gemini-2.0-flash which supports Maps Grounding
+        # Using gemini-2.5-flash which supports Maps Grounding
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=query,
