@@ -12,7 +12,8 @@ from markdownify import markdownify
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-PERSISTENT_TEMP_DIR = "/path/to/persistent/temp/dir"
+# Use system temp directory instead of hardcoded path
+PERSISTENT_TEMP_DIR = tempfile.gettempdir()
 
 
 def get_singlefile_path_from_env() -> str:
@@ -78,11 +79,20 @@ async def singlefile_download(url: str, cookies_file: Optional[str] = None) -> s
 async def load_singlefile_html(url: str) -> str:
     f = await singlefile_download(url)
 
-    with open(f, "rb") as fp:
-        soup = BeautifulSoup(fp, "html.parser")
-        text = soup.get_text(strip=True)
-    os.remove(f)
-    return text
+    # Check if SingleFile download was successful
+    if not f or not os.path.exists(f):
+        logger.error(f"SingleFile download failed or file not found: {f}")
+        raise FileNotFoundError(f"Failed to download content from {url}")
+
+    try:
+        with open(f, "rb") as fp:
+            soup = BeautifulSoup(fp, "html.parser")
+            text = soup.get_text(strip=True)
+        return text
+    finally:
+        # Always try to remove the temp file
+        if os.path.exists(f):
+            os.remove(f)
 
 
 async def load_html_with_singlefile(url: str) -> str:

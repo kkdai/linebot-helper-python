@@ -193,6 +193,7 @@ async def load_url(url: str, youtube_mode: str = "normal") -> str:
         "https://github.com",
         "https://www.twreporter.org",
         "https://telegra.ph",
+        "https://www.jiqizhixin.com",  # 機器之心
     ]
     for domain in httpx_domains:
         if url.startswith(domain):
