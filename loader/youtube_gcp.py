@@ -1,10 +1,12 @@
 import os
 import logging
+import time
 
 # Use new google-genai SDK with Vertex AI
 try:
     from google import genai
     from google.genai.types import HttpOptions, Part
+    from google.genai.errors import ClientError
     GENAI_AVAILABLE = True
 except ImportError:
     GENAI_AVAILABLE = False
@@ -131,40 +133,69 @@ async def load_transcript_from_youtube(youtube_url: str, mode: str = "normal") -
 
     logging.info(f"Summarizing YouTube video: {youtube_url} (mode: {mode})")
 
-    try:
-        # Initialize Vertex AI client
-        client = genai.Client(
-            vertexai=True,
-            project=VERTEX_PROJECT,
-            location=VERTEX_LOCATION,
-            http_options=HttpOptions(api_version="v1")
-        )
+    # Retry logic for rate limiting
+    max_retries = 2
+    retry_delay = 5  # seconds
 
-        # Prepare content with YouTube URL and prompt
-        # Note: Can mix Part objects and strings directly in contents list
-        contents = [
-            Part.from_uri(
-                file_uri=youtube_url,
-                mime_type="video/mp4"
-            ),
-            prompt
-        ]
+    for attempt in range(max_retries):
+        try:
+            # Initialize Vertex AI client
+            client = genai.Client(
+                vertexai=True,
+                project=VERTEX_PROJECT,
+                location=VERTEX_LOCATION,
+                http_options=HttpOptions(api_version="v1")
+            )
 
-        # Generate content
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents,
-        )
+            # Prepare content with YouTube URL and prompt
+            # Note: Can mix Part objects and strings directly in contents list
+            contents = [
+                Part.from_uri(
+                    file_uri=youtube_url,
+                    mime_type="video/mp4"
+                ),
+                prompt
+            ]
 
-        if response.text:
-            summary = response.text
-            logging.info(f"YouTube summary generated ({mode}): {summary[:100]}...")
-            return summary
-        else:
-            logging.error("No text content in Vertex AI response")
-            return "無法從影片中提取摘要。"
+            # Generate content
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=contents,
+            )
 
-    except Exception as e:
-        logging.error(
-            f"An error occurred while summarizing YouTube video: {e}", exc_info=True)
-        return f"處理影片時發生錯誤: {str(e)[:100]}"
+            if response.text:
+                summary = response.text
+                logging.info(f"YouTube summary generated ({mode}): {summary[:100]}...")
+                return summary
+            else:
+                logging.error("No text content in Vertex AI response")
+                return "無法從影片中提取摘要。"
+
+        except ClientError as e:
+            # Handle 429 Rate Limit errors
+            if e.status_code == 429:
+                if attempt < max_retries - 1:
+                    logging.warning(
+                        f"Rate limit hit (429), retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    logging.error("Rate limit exceeded after all retries")
+                    return (
+                        "⏳ Vertex AI 使用量已達上限，請稍後再試。\n\n"
+                        "💡 建議：\n"
+                        "• 等待 1-2 分鐘後重試\n"
+                        "• 檢查 Vertex AI 配額設定：https://console.cloud.google.com/iam-admin/quotas"
+                    )
+            else:
+                logging.error(f"Vertex AI API error: {e}", exc_info=True)
+                return f"❌ Vertex AI 錯誤 ({e.status_code}): {str(e)[:100]}"
+
+        except Exception as e:
+            logging.error(
+                f"An error occurred while summarizing YouTube video: {e}", exc_info=True)
+            return f"處理影片時發生錯誤: {str(e)[:100]}"
+
+    return "處理影片時發生未預期的錯誤。"
