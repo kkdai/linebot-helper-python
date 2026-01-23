@@ -26,12 +26,15 @@ from loader.url import load_url, is_youtube_url
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from loader.maps_grounding import search_nearby_places  # Import maps grounding
-from loader.chat_session import (  # Import chat session with Grounding
-    ChatSessionManager,
-    search_and_answer_with_grounding,
-    format_grounding_response,
+
+# ADK Agents and Services
+from agents.chat_agent import (
+    ChatAgent,
+    create_chat_agent,
+    format_chat_response,
     get_session_status_message
 )
+from services.line_service import LineService
 
 # Configure logging
 logging.basicConfig(
@@ -90,9 +93,13 @@ line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
 
-# Initialize Chat Session Manager for Grounding
-chat_session_manager = ChatSessionManager(session_timeout_minutes=30)
-logger.info('Chat Session Manager initialized with 30min timeout')
+# Initialize ADK Chat Agent
+chat_agent = create_chat_agent()
+logger.info('ADK Chat Agent initialized with 30min session timeout')
+
+# Initialize LINE Service wrapper
+# Note: line_service will be set after line_bot_api is created
+line_service = None
 
 
 image_prompt = '''
@@ -317,7 +324,7 @@ async def handle_github_summary(event: MessageEvent):
 
 async def handle_text_message(event: MessageEvent, user_id: str):
     """
-    處理純文字訊息 - 使用 Vertex AI Grounding with Google Search
+    處理純文字訊息 - 使用 ADK ChatAgent with Google Search Grounding
 
     支援對話記憶和自動網路搜尋
     """
@@ -326,7 +333,7 @@ async def handle_text_message(event: MessageEvent, user_id: str):
     # 處理特殊指令
     if msg.lower() in ['/clear', '/清除', '/reset', '/重置']:
         # 清除對話記憶
-        success = chat_session_manager.clear_session(user_id)
+        success = chat_agent.clear_session(user_id)
         if success:
             reply_text = "✅ 對話已重置\n\n你可以開始新的對話了！"
         else:
@@ -337,27 +344,28 @@ async def handle_text_message(event: MessageEvent, user_id: str):
 
     if msg.lower() in ['/status', '/狀態', '/info']:
         # 顯示對話狀態
-        status_text = get_session_status_message(chat_session_manager, user_id)
+        status_text = get_session_status_message(chat_agent, user_id)
         reply_msg = TextSendMessage(text=status_text)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
         return
 
     if msg.lower() in ['/help', '/幫助', '/說明']:
         # 顯示說明訊息
-        help_text = """🤖 智能搜尋助手
+        help_text = """🤖 智能搜尋助手 (ADK)
 
-💬 **對話功能**
+💬 對話功能
 發送任何問題，我會自動搜尋網路並提供詳細回答。
 支援連續對話，我會記住我們的對話內容！
 
-⚡ **特殊指令**
+⚡ 特殊指令
 /clear - 清除對話記憶，開始新對話
 /status - 查看目前對話狀態
 /help - 顯示此說明
 
-📚 **其他功能**
+📚 其他功能
 • 發送網址 - 摘要網頁內容
 • 發送圖片 - AI 圖片分析
+• 發送位置 - 搜尋附近地點
 • @g - GitHub issues 摘要
 
 提示：對話會在 30 分鐘無互動後自動過期。"""
@@ -365,26 +373,22 @@ async def handle_text_message(event: MessageEvent, user_id: str):
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
         return
 
-    # 使用 Vertex AI Grounding 進行搜尋和回答
+    # 使用 ADK ChatAgent 進行對話
     try:
-        logger.info(f"Processing text message with Grounding for user {user_id}: {msg[:50]}...")
+        logger.info(f"Processing text message with ChatAgent for user {user_id}: {msg[:50]}...")
 
-        # 使用 Grounding 搜尋並回答
-        result = await search_and_answer_with_grounding(
-            query=msg,
-            user_id=user_id,
-            session_manager=chat_session_manager
-        )
+        # 使用 ChatAgent 處理訊息
+        result = await chat_agent.chat(user_id=user_id, message=msg)
 
         # 格式化回應
-        response_text = format_grounding_response(result, include_sources=True)
+        response_text = format_chat_response(result, include_sources=True)
 
         # 檢查回應長度（LINE 訊息最多 5000 字元）
         if len(response_text) > 4500:
             # 分割成多則訊息
             logger.warning(f"Response too long ({len(response_text)} chars), splitting")
             # 先發送答案（不含來源）
-            answer_only = format_grounding_response(
+            answer_only = format_chat_response(
                 {'answer': result['answer'], 'sources': [], 'has_history': result['has_history']},
                 include_sources=False
             )
@@ -407,22 +411,10 @@ async def handle_text_message(event: MessageEvent, user_id: str):
         logger.info(f"Successfully responded to user {user_id}")
 
     except Exception as e:
-        logger.error(f"Error in Grounding search: {e}", exc_info=True)
+        logger.error(f"Error in ChatAgent: {e}", exc_info=True)
 
-        # 提供友善的錯誤訊息
-        error_text = f"❌ 抱歉，處理您的問題時發生錯誤。\n\n"
-
-        # 根據錯誤類型提供不同建議
-        if "quota" in str(e).lower():
-            error_text += "可能原因：API 配額已用完\n建議：請稍後再試"
-        elif "empty response" in str(e).lower():
-            error_text += "可能原因：內容被安全過濾器攔截或 API 限流\n建議：請嘗試用不同的問法，或稍後再試"
-        elif "not found" in str(e).lower() or "404" in str(e):
-            error_text += "可能原因：找不到相關資訊\n建議：嘗試用不同的問法"
-        elif "timeout" in str(e).lower():
-            error_text += "可能原因：網路連線逾時\n建議：請稍後再試"
-        else:
-            error_text += "請稍後再試，或使用 /clear 清除對話記憶後重新開始。"
+        # 使用 LineService 格式化錯誤訊息
+        error_text = LineService.format_error_message(e, "處理您的問題")
 
         reply_msg = TextSendMessage(text=error_text)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
