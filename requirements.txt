@@ -1,5 +1,7 @@
 # Vertex AI (no LangChain)
 google-genai>=1.0.0
+# Google Agent Development Kit (ADK)
+google-adk>=1.0.0
 beautifulsoup4
 llmsherpa
 fastapi
