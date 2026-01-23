@@ -20,19 +20,22 @@ from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 from httpx import HTTPStatusError
 
 # local files
-from loader.gh_tools import summarized_yesterday_github_issues
-from loader.langtools import summarize_text, generate_json_from_image
-from loader.url import load_url, is_youtube_url
+from loader.url import is_youtube_url
 from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
-from loader.maps_grounding import search_nearby_places  # Import maps grounding
 
 # ADK Agents and Services
-from agents.chat_agent import (
-    ChatAgent,
-    create_chat_agent,
-    format_chat_response,
-    get_session_status_message
+from agents import (
+    # Chat Agent
+    ChatAgent, create_chat_agent, format_chat_response, get_session_status_message,
+    # Content Agent
+    ContentAgent, create_content_agent, format_content_response,
+    # Location Agent
+    LocationAgent, create_location_agent, format_location_response,
+    # Vision Agent
+    VisionAgent, create_vision_agent, format_vision_response,
+    # GitHub Agent
+    GitHubAgent, create_github_agent, format_github_response,
 )
 from services.line_service import LineService
 
@@ -93,9 +96,13 @@ line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
 
-# Initialize ADK Chat Agent
+# Initialize ADK Agents
 chat_agent = create_chat_agent()
-logger.info('ADK Chat Agent initialized with 30min session timeout')
+content_agent = create_content_agent()
+location_agent = create_location_agent()
+vision_agent = create_vision_agent()
+github_agent = create_github_agent()
+logger.info('All ADK Agents initialized (Chat, Content, Location, Vision, GitHub)')
 
 # Initialize LINE Service wrapper
 # Note: line_service will be set after line_bot_api is created
@@ -223,7 +230,7 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal"):
     """
-    Handle URL messages with optional summary mode
+    Handle URL messages using ContentAgent
 
     Args:
         event: LINE message event
@@ -240,35 +247,25 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
     for url in urls:
         try:
-            result = await load_url(url)
+            # Use ContentAgent to process URL
+            result = await content_agent.process_url(url, mode=mode)
 
-            if not result:
-                error_msg = "⚠️ 無法從這個網址提取內容，請確認網址是否正確或稍後再試。"
-                logger.error(f"Empty result for URL: {url}")
-                reply_msg = TextSendMessage(text=f"{url}\n\n{error_msg}")
+            if result["status"] != "success":
+                error_msg = result.get("error_message", "無法處理此網址")
+                logger.error(f"ContentAgent failed for URL: {url} - {error_msg}")
+                reply_msg = TextSendMessage(text=f"{url}\n\n⚠️ {error_msg}")
                 results.append(reply_msg)
                 continue
 
-            logger.info(f"URL: content: >{result[:50]}<")
-            summary = None
-            if not is_youtube_url(url):
-                try:
-                    summary = summarize_text(result, mode=mode)
-                    result = summary
-                except Exception as summarize_error:
-                    logger.error(f"Summarization failed: {summarize_error}")
-                    error_msg = FriendlyErrorMessage.get_message(summarize_error, url)
-                    reply_msg = TextSendMessage(text=error_msg)
-                    results.append(reply_msg)
-                    continue
-            else:
-                summary = result
+            # Format response
+            content = result["content"]
+            content_type = result.get("content_type", "html")
+            formatted_result = f"{url}\n\n{content}"
 
-            # Format result with URL
-            result = f"{url}\n\n{result}"
+            logger.info(f"URL processed: {url} (type: {content_type})")
 
             # Add Quick Reply for YouTube URLs
-            if is_youtube_url(url):
+            if content_type == "youtube":
                 quick_reply_buttons = QuickReply(
                     items=[
                         QuickReplyButton(
@@ -295,21 +292,16 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
                         ),
                     ]
                 )
-                reply_msg = TextSendMessage(text=result, quick_reply=quick_reply_buttons)
+                reply_msg = TextSendMessage(text=formatted_result, quick_reply=quick_reply_buttons)
             else:
-                reply_msg = TextSendMessage(text=result)
+                reply_msg = TextSendMessage(text=formatted_result)
 
             results.append(reply_msg)
 
-        except HTTPStatusError as e:
-            logger.error(f"HTTP error occurred: {e}")
-            error_msg = FriendlyErrorMessage.get_message(e, url)
-            reply_msg = TextSendMessage(text=error_msg)
-            results.append(reply_msg)
         except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            error_msg = FriendlyErrorMessage.get_message(e, url)
-            reply_msg = TextSendMessage(text=error_msg)
+            logger.error(f"Unexpected error processing URL: {e}", exc_info=True)
+            error_msg = LineService.format_error_message(e, "處理網址")
+            reply_msg = TextSendMessage(text=f"{url}\n\n{error_msg}")
             results.append(reply_msg)
 
     if results:
@@ -317,8 +309,10 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
 
 async def handle_github_summary(event: MessageEvent):
-    result = summarized_yesterday_github_issues()
-    reply_msg = TextSendMessage(text=result)
+    """Handle GitHub issues summary using GitHubAgent"""
+    result = github_agent.get_issues_summary()
+    response_text = format_github_response(result)
+    reply_msg = TextSendMessage(text=response_text)
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
@@ -421,16 +415,28 @@ async def handle_text_message(event: MessageEvent, user_id: str):
 
 
 async def handle_image_message(event: MessageEvent):
-    message_content = await line_bot_api.get_message_content(event.message.id)
-    image_content = b''
-    async for s in message_content.iter_content():
-        image_content += s
-    img = PIL.Image.open(BytesIO(image_content))
-    result = generate_json_from_image(img, image_prompt)
-    logger.info("------------IMAGE---------------")
-    logger.info(result.text)
-    reply_msg = TextSendMessage(text=result.text)
-    await line_bot_api.reply_message(event.reply_token, [reply_msg])
+    """Handle image messages using VisionAgent"""
+    try:
+        message_content = await line_bot_api.get_message_content(event.message.id)
+        image_content = b''
+        async for s in message_content.iter_content():
+            image_content += s
+
+        logger.info(f"Received image: {len(image_content)} bytes")
+
+        # Use VisionAgent to analyze image
+        result = await vision_agent.analyze(image_content)
+        response_text = format_vision_response(result)
+
+        logger.info(f"Image analysis result: {response_text[:100]}...")
+        reply_msg = TextSendMessage(text=response_text)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
+    except Exception as e:
+        logger.error(f"Image processing error: {e}", exc_info=True)
+        error_msg = LineService.format_error_message(e, "分析圖片")
+        reply_msg = TextSendMessage(text=error_msg)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
 async def handle_location_message(event: MessageEvent):
@@ -503,7 +509,7 @@ async def handle_location_message(event: MessageEvent):
 
 async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: str):
     """
-    Handle map search requests from PostbackEvent (Quick Reply buttons)
+    Handle map search requests using LocationAgent
 
     Args:
         event: LINE postback event
@@ -527,16 +533,17 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
         searching_msg = TextSendMessage(text="🔍 搜尋中，請稍候...")
         await line_bot_api.reply_message(event.reply_token, [searching_msg])
 
-        # Call Maps Grounding API
-        result = await search_nearby_places(
+        # Use LocationAgent to search
+        result = await location_agent.search(
             latitude=latitude,
             longitude=longitude,
-            place_type=place_type,
-            language_code="zh-TW"
+            place_type=place_type
         )
 
-        # Send result
-        result_msg = TextSendMessage(text=result)
+        # Format and send result
+        response_text = format_location_response(result)
+        result_msg = TextSendMessage(text=response_text)
+
         if user_id:
             await line_bot_api.push_message(user_id, [result_msg])
         else:
@@ -545,7 +552,7 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
     except Exception as e:
         logger.error(f"Map search error: {e}", exc_info=True)
         error_msg = TextSendMessage(
-            text=f"❌ 搜尋時發生錯誤\n\n{FriendlyErrorMessage.get_message(e)}"
+            text=LineService.format_error_message(e, "搜尋地點")
         )
         if user_id:
             await line_bot_api.push_message(user_id, [error_msg])
@@ -553,7 +560,7 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
 
 async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
     """
-    Handle YouTube summary requests from PostbackEvent (Quick Reply buttons)
+    Handle YouTube summary requests using ContentAgent
 
     Args:
         event: LINE postback event
@@ -575,17 +582,17 @@ async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
         processing_msg = TextSendMessage(text=f"⏳ 正在生成{mode_text}，請稍候...")
         await line_bot_api.reply_message(event.reply_token, [processing_msg])
 
-        # Generate summary with specified mode
-        result = await load_url(url, youtube_mode=mode)
+        # Use ContentAgent to summarize YouTube video
+        result = await content_agent.summarize_youtube(url, mode=mode)
 
-        if not result:
-            error_msg = "⚠️ 無法生成影片摘要，請稍後再試。"
-            logger.error(f"Empty result for YouTube URL: {url}")
-            result_msg = TextSendMessage(text=error_msg)
+        if result["status"] != "success":
+            error_msg = result.get("error_message", "無法生成影片摘要")
+            logger.error(f"ContentAgent failed for YouTube URL: {url} - {error_msg}")
+            result_msg = TextSendMessage(text=f"⚠️ {error_msg}")
         else:
             # Format result with URL
-            result = f"{url}\n\n{result}"
-            result_msg = TextSendMessage(text=result)
+            formatted_result = f"{url}\n\n{result['summary']}"
+            result_msg = TextSendMessage(text=formatted_result)
 
         # Send result using push message
         if user_id:
@@ -596,7 +603,7 @@ async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
     except Exception as e:
         logger.error(f"YouTube summary error: {e}", exc_info=True)
         error_msg = TextSendMessage(
-            text=f"❌ 生成摘要時發生錯誤\n\n{FriendlyErrorMessage.get_message(e, url)}"
+            text=LineService.format_error_message(e, "生成影片摘要")
         )
         if user_id:
             await line_bot_api.push_message(user_id, [error_msg])
