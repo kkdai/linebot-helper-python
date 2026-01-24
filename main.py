@@ -21,21 +21,14 @@ from httpx import HTTPStatusError
 
 # local files
 from loader.url import is_youtube_url
-from loader.error_handler import FriendlyErrorMessage
 from loader.text_utils import extract_url_and_mode, get_mode_description
 
-# ADK Agents and Services
+# ADK Orchestrator and Agents
 from agents import (
-    # Chat Agent
-    ChatAgent, create_chat_agent, format_chat_response, get_session_status_message,
-    # Content Agent
-    ContentAgent, create_content_agent, format_content_response,
-    # Location Agent
-    LocationAgent, create_location_agent, format_location_response,
-    # Vision Agent
-    VisionAgent, create_vision_agent, format_vision_response,
-    # GitHub Agent
-    GitHubAgent, create_github_agent, format_github_response,
+    # Orchestrator (Main Controller)
+    Orchestrator, create_orchestrator, format_orchestrator_response,
+    # Individual agents for specific handlers
+    format_content_response, format_location_response,
 )
 from services.line_service import LineService
 
@@ -96,16 +89,11 @@ line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
 
-# Initialize ADK Agents
-chat_agent = create_chat_agent()
-content_agent = create_content_agent()
-location_agent = create_location_agent()
-vision_agent = create_vision_agent()
-github_agent = create_github_agent()
-logger.info('All ADK Agents initialized (Chat, Content, Location, Vision, GitHub)')
+# Initialize ADK Orchestrator (manages all specialized agents)
+orchestrator = create_orchestrator()
+logger.info('ADK Orchestrator initialized with all specialized agents (A2A enabled)')
 
 # Initialize LINE Service wrapper
-# Note: line_service will be set after line_bot_api is created
 line_service = None
 
 
@@ -204,24 +192,22 @@ async def handle_message_event(event: MessageEvent):
         logger.info(f"Room ID: {source_id}")
     elif isinstance(event.source, SourceUser):
         # 1:1 chat
-        # separate handle TextMessage and ImageMessage
+        # Use Orchestrator to handle all message types
         if isinstance(event.message, TextMessage):
             user_id = event.source.user_id
             logger.info(f"UID: {user_id}")
             message_text = event.message.text
 
-            # Check for special commands
-            if message_text == "@g":
-                await handle_github_summary(event)
-            else:
-                # Extract URLs and summary mode from message
-                urls, mode = extract_url_and_mode(message_text)
-                logger.info(f"URLs: >{urls}< Mode: {mode}")
+            # Extract URLs and mode for URL messages
+            urls, mode = extract_url_and_mode(message_text)
 
-                if urls:
-                    await handle_url_message(event, urls, mode)
-                else:
-                    await handle_text_message(event, user_id)
+            if urls:
+                # Handle URL messages with mode
+                await handle_url_message(event, urls, mode)
+            else:
+                # Use Orchestrator for all text messages (including commands)
+                await handle_text_message_via_orchestrator(event, user_id)
+
         elif isinstance(event.message, ImageMessage):
             await handle_image_message(event)
         elif isinstance(event.message, LocationMessage):
@@ -230,7 +216,7 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal"):
     """
-    Handle URL messages using ContentAgent
+    Handle URL messages via Orchestrator's ContentAgent
 
     Args:
         event: LINE message event
@@ -247,8 +233,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
     for url in urls:
         try:
-            # Use ContentAgent to process URL
-            result = await content_agent.process_url(url, mode=mode)
+            # Use Orchestrator's content_agent to process URL
+            result = await orchestrator.content_agent.process_url(url, mode=mode)
 
             if result["status"] != "success":
                 error_msg = result.get("error_message", "無法處理此網址")
@@ -258,9 +244,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
                 continue
 
             # Format response
-            content = result["content"]
+            formatted_result = format_content_response(result, include_url=True)
             content_type = result.get("content_type", "html")
-            formatted_result = f"{url}\n\n{content}"
 
             logger.info(f"URL processed: {url} (type: {content_type})")
 
@@ -308,114 +293,45 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
         await line_bot_api.reply_message(event.reply_token, results)
 
 
-async def handle_github_summary(event: MessageEvent):
-    """Handle GitHub issues summary using GitHubAgent"""
-    result = github_agent.get_issues_summary()
-    response_text = format_github_response(result)
-    reply_msg = TextSendMessage(text=response_text)
-    await line_bot_api.reply_message(event.reply_token, [reply_msg])
-
-
-async def handle_text_message(event: MessageEvent, user_id: str):
+async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str):
     """
-    處理純文字訊息 - 使用 ADK ChatAgent with Google Search Grounding
+    Handle text messages using the Orchestrator for A2A routing.
 
-    支援對話記憶和自動網路搜尋
+    The Orchestrator automatically:
+    - Detects intent (command, chat, github, etc.)
+    - Routes to appropriate specialized agent
+    - Handles response formatting
     """
     msg = event.message.text.strip()
 
-    # 處理特殊指令
-    if msg.lower() in ['/clear', '/清除', '/reset', '/重置']:
-        # 清除對話記憶
-        success = chat_agent.clear_session(user_id)
-        if success:
-            reply_text = "✅ 對話已重置\n\n你可以開始新的對話了！"
-        else:
-            reply_text = "📊 目前沒有進行中的對話。\n\n發送任何訊息開始新對話！"
-        reply_msg = TextSendMessage(text=reply_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        return
-
-    if msg.lower() in ['/status', '/狀態', '/info']:
-        # 顯示對話狀態
-        status_text = get_session_status_message(chat_agent, user_id)
-        reply_msg = TextSendMessage(text=status_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        return
-
-    if msg.lower() in ['/help', '/幫助', '/說明']:
-        # 顯示說明訊息
-        help_text = """🤖 智能搜尋助手 (ADK)
-
-💬 對話功能
-發送任何問題，我會自動搜尋網路並提供詳細回答。
-支援連續對話，我會記住我們的對話內容！
-
-⚡ 特殊指令
-/clear - 清除對話記憶，開始新對話
-/status - 查看目前對話狀態
-/help - 顯示此說明
-
-📚 其他功能
-• 發送網址 - 摘要網頁內容
-• 發送圖片 - AI 圖片分析
-• 發送位置 - 搜尋附近地點
-• @g - GitHub issues 摘要
-
-提示：對話會在 30 分鐘無互動後自動過期。"""
-        reply_msg = TextSendMessage(text=help_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
-        return
-
-    # 使用 ADK ChatAgent 進行對話
     try:
-        logger.info(f"Processing text message with ChatAgent for user {user_id}: {msg[:50]}...")
+        logger.info(f"Processing via Orchestrator for user {user_id}: {msg[:50]}...")
 
-        # 使用 ChatAgent 處理訊息
-        result = await chat_agent.chat(user_id=user_id, message=msg)
+        # Use Orchestrator to process text (handles commands, @g, and chat)
+        result = await orchestrator.process_text(user_id=user_id, message=msg)
 
-        # 格式化回應
-        response_text = format_chat_response(result, include_sources=True)
+        # Format response using orchestrator formatter
+        response_text = format_orchestrator_response(result)
 
-        # 檢查回應長度（LINE 訊息最多 5000 字元）
+        # Handle long responses
         if len(response_text) > 4500:
-            # 分割成多則訊息
-            logger.warning(f"Response too long ({len(response_text)} chars), splitting")
-            # 先發送答案（不含來源）
-            answer_only = format_chat_response(
-                {'answer': result['answer'], 'sources': [], 'has_history': result['has_history']},
-                include_sources=False
-            )
-            msg1 = TextSendMessage(text=answer_only[:4500])
+            logger.warning(f"Response too long ({len(response_text)} chars), truncating")
+            response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
 
-            # 再發送來源
-            if result['sources']:
-                sources_text = "📚 參考來源：\n"
-                for i, source in enumerate(result['sources'][:3], 1):
-                    sources_text += f"{i}. {source['title']}\n   {source['uri']}\n"
-                msg2 = TextSendMessage(text=sources_text)
-                await line_bot_api.reply_message(event.reply_token, [msg1, msg2])
-            else:
-                await line_bot_api.reply_message(event.reply_token, [msg1])
-        else:
-            # 正常長度，直接發送
-            reply_msg = TextSendMessage(text=response_text)
-            await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        reply_msg = TextSendMessage(text=response_text)
+        await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
-        logger.info(f"Successfully responded to user {user_id}")
+        logger.info(f"Orchestrator successfully responded to user {user_id}")
 
     except Exception as e:
-        logger.error(f"Error in ChatAgent: {e}", exc_info=True)
-
-        # 使用 LineService 格式化錯誤訊息
+        logger.error(f"Error in Orchestrator: {e}", exc_info=True)
         error_text = LineService.format_error_message(e, "處理您的問題")
-
         reply_msg = TextSendMessage(text=error_text)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
 async def handle_image_message(event: MessageEvent):
-    """Handle image messages using VisionAgent"""
+    """Handle image messages via Orchestrator's VisionAgent"""
     try:
         message_content = await line_bot_api.get_message_content(event.message.id)
         image_content = b''
@@ -424,9 +340,9 @@ async def handle_image_message(event: MessageEvent):
 
         logger.info(f"Received image: {len(image_content)} bytes")
 
-        # Use VisionAgent to analyze image
-        result = await vision_agent.analyze(image_content)
-        response_text = format_vision_response(result)
+        # Use Orchestrator to process image
+        result = await orchestrator.process_image(image_content)
+        response_text = format_orchestrator_response(result)
 
         logger.info(f"Image analysis result: {response_text[:100]}...")
         reply_msg = TextSendMessage(text=response_text)
@@ -533,8 +449,8 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
         searching_msg = TextSendMessage(text="🔍 搜尋中，請稍候...")
         await line_bot_api.reply_message(event.reply_token, [searching_msg])
 
-        # Use LocationAgent to search
-        result = await location_agent.search(
+        # Use Orchestrator's LocationAgent to search
+        result = await orchestrator.location_agent.search(
             latitude=latitude,
             longitude=longitude,
             place_type=place_type
@@ -582,8 +498,8 @@ async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
         processing_msg = TextSendMessage(text=f"⏳ 正在生成{mode_text}，請稍候...")
         await line_bot_api.reply_message(event.reply_token, [processing_msg])
 
-        # Use ContentAgent to summarize YouTube video
-        result = await content_agent.summarize_youtube(url, mode=mode)
+        # Use Orchestrator's ContentAgent to summarize YouTube video
+        result = await orchestrator.content_agent.summarize_youtube(url, mode=mode)
 
         if result["status"] != "success":
             error_msg = result.get("error_message", "無法生成影片摘要")
