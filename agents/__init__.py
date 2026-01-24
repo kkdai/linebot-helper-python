@@ -2,7 +2,7 @@
 ADK Agents for LINE Bot
 
 This module provides ADK-based agents for handling different types of user requests.
-Each agent is specialized for a specific task domain.
+Each agent is specialized for a specific task domain, coordinated by the Orchestrator.
 """
 
 from .chat_agent import (
@@ -31,8 +31,21 @@ from .github_agent import (
     create_github_agent,
     format_github_response,
 )
+from .orchestrator import (
+    Orchestrator,
+    create_orchestrator,
+    format_orchestrator_response,
+    IntentType,
+    OrchestratorResult,
+)
 
 __all__ = [
+    # Orchestrator (Main Controller)
+    "Orchestrator",
+    "create_orchestrator",
+    "format_orchestrator_response",
+    "IntentType",
+    "OrchestratorResult",
     # Chat Agent
     "ChatAgent",
     "create_chat_agent",
