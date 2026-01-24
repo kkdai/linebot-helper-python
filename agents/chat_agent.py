@@ -27,6 +27,7 @@ except ImportError:
     logging.error("google-genai package not available")
 
 from config.agent_config import AgentConfig, get_agent_config
+from services.session_manager import SessionManager, SessionData, get_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +55,29 @@ class ChatAgent:
 
     This agent handles general text conversations, maintains conversation history,
     and can search the web for up-to-date information.
+
+    Uses centralized SessionManager for session lifecycle management.
     """
 
-    def __init__(self, config: Optional[AgentConfig] = None):
+    def __init__(
+        self,
+        config: Optional[AgentConfig] = None,
+        session_manager: Optional[SessionManager] = None
+    ):
         """
         Initialize ChatAgent.
 
         Args:
             config: Agent configuration. If None, loads from environment.
+            session_manager: Session manager instance. If None, uses singleton.
         """
         self.config = config or get_agent_config()
-        self.sessions: Dict[str, dict] = {}
-        self.session_timeout = timedelta(minutes=self.config.session_timeout_minutes)
+
+        # Use provided session manager or get singleton
+        self.session_manager = session_manager or get_session_manager(
+            timeout_minutes=self.config.session_timeout_minutes,
+            max_history_length=self.config.max_history_length
+        )
 
         # Initialize Vertex AI client
         self.client = self._create_client()
@@ -105,12 +117,26 @@ class ChatAgent:
             logger.warning(f"Failed to create ADK agent: {e}")
             self.adk_agent = None
 
-    def _is_session_expired(self, session_data: dict) -> bool:
-        """Check if session is expired"""
-        last_active = session_data.get('last_active')
-        if not last_active:
-            return True
-        return datetime.now() - last_active >= self.session_timeout
+    def _create_chat_config(self) -> types.GenerateContentConfig:
+        """Create chat configuration with optional grounding"""
+        if self.config.enable_grounding:
+            return types.GenerateContentConfig(
+                temperature=self.config.temperature,
+                max_output_tokens=self.config.max_output_tokens,
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+            )
+        return types.GenerateContentConfig(
+            temperature=self.config.temperature,
+            max_output_tokens=self.config.max_output_tokens,
+        )
+
+    def _chat_factory(self):
+        """Factory function for creating new chat instances"""
+        chat_config = self._create_chat_config()
+        return self.client.chats.create(
+            model=self.config.chat_model,
+            config=chat_config
+        )
 
     def get_or_create_session(self, user_id: str) -> Tuple[Any, List[dict]]:
         """
@@ -122,47 +148,11 @@ class ChatAgent:
         Returns:
             Tuple of (chat_session, history)
         """
-        now = datetime.now()
-
-        if user_id in self.sessions:
-            session_data = self.sessions[user_id]
-
-            if not self._is_session_expired(session_data):
-                session_data['last_active'] = now
-                logger.info(f"Reusing session for user {user_id}")
-                return session_data['chat'], session_data['history']
-            else:
-                logger.info(f"Session expired for user {user_id}")
-
-        # Create new session
-        logger.info(f"Creating new session for user {user_id}")
-
-        chat_config = types.GenerateContentConfig(
-            temperature=self.config.temperature,
-            max_output_tokens=self.config.max_output_tokens,
+        session = self.session_manager.get_or_create_session(
+            user_id,
+            self._chat_factory
         )
-
-        # Enable Google Search Grounding if configured
-        if self.config.enable_grounding:
-            chat_config = types.GenerateContentConfig(
-                temperature=self.config.temperature,
-                max_output_tokens=self.config.max_output_tokens,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
-            )
-
-        chat = self.client.chats.create(
-            model=self.config.chat_model,
-            config=chat_config
-        )
-
-        self.sessions[user_id] = {
-            'chat': chat,
-            'last_active': now,
-            'history': [],
-            'created_at': now
-        }
-
-        return chat, []
+        return session.chat, session.history
 
     def add_to_history(self, user_id: str, role: str, content: str) -> None:
         """
@@ -173,18 +163,7 @@ class ChatAgent:
             role: "user" or "assistant"
             content: Message content
         """
-        if user_id in self.sessions:
-            self.sessions[user_id]['history'].append({
-                'role': role,
-                'content': content,
-                'timestamp': datetime.now()
-            })
-
-            # Limit history length
-            max_len = self.config.max_history_length
-            if len(self.sessions[user_id]['history']) > max_len:
-                self.sessions[user_id]['history'] = \
-                    self.sessions[user_id]['history'][-max_len:]
+        self.session_manager.add_to_history(user_id, role, content)
 
     def clear_session(self, user_id: str) -> bool:
         """
@@ -196,11 +175,7 @@ class ChatAgent:
         Returns:
             True if session was cleared, False if no session existed
         """
-        if user_id in self.sessions:
-            del self.sessions[user_id]
-            logger.info(f"Cleared session for user {user_id}")
-            return True
-        return False
+        return self.session_manager.clear_session(user_id)
 
     def get_session_info(self, user_id: str) -> Optional[dict]:
         """
@@ -212,16 +187,7 @@ class ChatAgent:
         Returns:
             Session info dict or None if no session exists
         """
-        if user_id not in self.sessions:
-            return None
-
-        session_data = self.sessions[user_id]
-        return {
-            'history_count': len(session_data['history']),
-            'created_at': session_data['created_at'],
-            'last_active': session_data['last_active'],
-            'is_expired': self._is_session_expired(session_data)
-        }
+        return self.session_manager.get_session_info(user_id)
 
     async def chat(self, user_id: str, message: str) -> dict:
         """
@@ -232,7 +198,7 @@ class ChatAgent:
             message: User's message
 
         Returns:
-            dict with 'answer', 'sources', and 'has_history' keys
+            dict with 'status', 'answer', 'sources', and 'has_history' keys
         """
         try:
             chat, history = self.get_or_create_session(user_id)
@@ -260,6 +226,7 @@ class ChatAgent:
             sources = self._extract_sources(response)
 
             return {
+                'status': 'success',
                 'answer': response_text,
                 'sources': sources,
                 'has_history': len(history) > 0
@@ -267,7 +234,10 @@ class ChatAgent:
 
         except Exception as e:
             logger.error(f"Chat failed: {e}", exc_info=True)
-            raise
+            return {
+                'status': 'error',
+                'error_message': f"對話處理失敗: {str(e)[:100]}"
+            }
 
     def _extract_response_text(self, response) -> Optional[str]:
         """Extract text from response object"""
@@ -312,31 +282,24 @@ class ChatAgent:
         Returns:
             Number of sessions cleaned up
         """
-        expired_users = [
-            user_id for user_id, session_data in self.sessions.items()
-            if self._is_session_expired(session_data)
-        ]
-
-        for user_id in expired_users:
-            del self.sessions[user_id]
-
-        if expired_users:
-            logger.info(f"Cleaned up {len(expired_users)} expired sessions")
-
-        return len(expired_users)
+        return self.session_manager.cleanup_expired_sessions()
 
 
-def create_chat_agent(config: Optional[AgentConfig] = None) -> ChatAgent:
+def create_chat_agent(
+    config: Optional[AgentConfig] = None,
+    session_manager: Optional[SessionManager] = None
+) -> ChatAgent:
     """
     Factory function to create a ChatAgent.
 
     Args:
         config: Optional configuration. If None, loads from environment.
+        session_manager: Optional session manager. If None, uses singleton.
 
     Returns:
         Configured ChatAgent instance
     """
-    return ChatAgent(config)
+    return ChatAgent(config, session_manager)
 
 
 def format_chat_response(result: dict, include_sources: bool = True) -> str:
@@ -350,14 +313,17 @@ def format_chat_response(result: dict, include_sources: bool = True) -> str:
     Returns:
         Formatted response string
     """
+    if result.get('status') != 'success':
+        return f"❌ {result.get('error_message', '對話處理失敗')}"
+
     text = result['answer']
 
     # Add session indicator if in conversation
-    if result['has_history']:
+    if result.get('has_history'):
         text = f"💬 [對話中]\n\n{text}"
 
     # Add sources if available
-    if include_sources and result['sources']:
+    if include_sources and result.get('sources'):
         text += "\n\n📚 參考來源：\n"
         for i, source in enumerate(result['sources'][:3], 1):
             title = source.get('title', 'Unknown')
