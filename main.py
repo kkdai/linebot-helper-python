@@ -31,6 +31,7 @@ from agents import (
     format_content_response, format_location_response,
 )
 from services.line_service import LineService
+from services.session_manager import get_session_manager
 
 # Configure logging
 logging.basicConfig(
@@ -93,8 +94,31 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 orchestrator = create_orchestrator()
 logger.info('ADK Orchestrator initialized with all specialized agents (A2A enabled)')
 
+# Get session manager singleton (used by ChatAgent)
+session_manager = get_session_manager()
+
 # Initialize LINE Service wrapper
 line_service = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks on application startup"""
+    # Start session cleanup background task
+    await session_manager.start_cleanup_task()
+    logger.info("Session cleanup background task started")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on application shutdown"""
+    # Stop session cleanup task
+    await session_manager.stop_cleanup_task()
+    logger.info("Session cleanup background task stopped")
+
+    # Close aiohttp session
+    await session.close()
+    logger.info("Application shutdown complete")
 
 
 image_prompt = '''

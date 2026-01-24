@@ -171,7 +171,8 @@ class Orchestrator:
         # Check for system commands
         if message_lower in ['/clear', '/清除', '/reset', '/重置',
                             '/status', '/狀態', '/info',
-                            '/help', '/幫助', '/說明']:
+                            '/help', '/幫助', '/說明',
+                            '/session-stats', '/stats']:
             intents.append(Intent(
                 type=IntentType.COMMAND,
                 confidence=1.0,
@@ -382,6 +383,7 @@ class Orchestrator:
 ⚡ 特殊指令
 /clear - 清除對話記憶
 /status - 查看對話狀態
+/stats - 查看 Session 統計
 /help - 顯示此說明
 @g - GitHub Issues 摘要
 
@@ -391,6 +393,29 @@ class Orchestrator:
                 'response': help_text,
                 'intent': 'command'
             }
+
+        elif command in ['/session-stats', '/stats']:
+            # Get session statistics from session manager
+            if hasattr(self.chat_agent, 'session_manager'):
+                stats = self.chat_agent.session_manager.get_stats()
+                stats_text = f"""📈 Session 統計資訊
+
+👥 活躍對話數：{stats.active_sessions}
+💬 總訊息數：{stats.total_messages}
+⏱️ 最舊對話：{stats.oldest_session_age_minutes:.1f} 分鐘
+🧹 清理次數：{stats.cleanup_runs}
+🗑️ 已清理對話：{stats.sessions_cleaned}"""
+                return {
+                    'status': 'success',
+                    'response': stats_text,
+                    'intent': 'command'
+                }
+            else:
+                return {
+                    'status': 'success',
+                    'response': "📊 Session 管理器未啟用",
+                    'intent': 'command'
+                }
 
         return {
             'status': 'error',
