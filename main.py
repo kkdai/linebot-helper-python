@@ -1,6 +1,8 @@
 import os
 import sys
 import json  # added import for JSON conversion
+import uuid
+import time
 from io import BytesIO
 from typing import Dict
 from urllib.parse import parse_qs
@@ -8,12 +10,13 @@ from urllib.parse import parse_qs
 import aiohttp
 import PIL.Image
 from fastapi import Request, FastAPI, HTTPException
+from fastapi.responses import Response
 import logging
 from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage,
+    MessageEvent, TextSendMessage, ImageSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage,
     QuickReply, QuickReplyButton, PostbackAction
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
@@ -93,6 +96,12 @@ msg_memory_store: Dict[str, StoreMessage] = {}
 image_temp_store: Dict[str, bytes] = {}
 # Pending agentic vision mode: user_id -> True means waiting for text prompt
 pending_agentic_vision: Dict[str, bool] = {}
+# Temporary annotated image store for serving to LINE (keyed by UUID)
+# Format: {image_id: {"data": bytes, "created_at": float}}
+annotated_image_store: Dict[str, dict] = {}
+ANNOTATED_IMAGE_TTL = 300  # 5 minutes
+# Base URL for serving images (auto-detected from webhook request)
+app_base_url: str = ""
 
 # Initialize ADK Orchestrator (manages all specialized agents)
 orchestrator = create_orchestrator()
@@ -132,8 +141,17 @@ Describe all the information from the image, reply in zh_tw.
 
 @app.post("/")
 async def handle_webhook_callback(request: Request):
+    global app_base_url
     signature = request.headers['X-Line-Signature']
     body = (await request.body()).decode()
+
+    # Auto-detect base URL from request for serving images
+    if not app_base_url:
+        forwarded_proto = request.headers.get('x-forwarded-proto', 'https')
+        host = request.headers.get('x-forwarded-host') or request.headers.get('host', '')
+        if host:
+            app_base_url = f"{forwarded_proto}://{host}"
+            logger.info(f"App base URL detected: {app_base_url}")
 
     try:
         events = parser.parse(body, signature)
@@ -152,6 +170,37 @@ async def handle_webhook_callback(request: Request):
 def health_check():
     print("Health Check! Ok!")
     return "OK"
+
+
+@app.get("/images/{image_id}")
+def serve_annotated_image(image_id: str):
+    """Serve a temporarily stored annotated image for LINE ImageSendMessage"""
+    entry = annotated_image_store.get(image_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Image not found or expired")
+
+    # Check TTL
+    if time.time() - entry["created_at"] > ANNOTATED_IMAGE_TTL:
+        annotated_image_store.pop(image_id, None)
+        raise HTTPException(status_code=404, detail="Image expired")
+
+    return Response(content=entry["data"], media_type="image/png")
+
+
+def store_annotated_image(image_bytes: bytes) -> str:
+    """Store annotated image and return its ID"""
+    # Cleanup expired images
+    now = time.time()
+    expired = [k for k, v in annotated_image_store.items() if now - v["created_at"] > ANNOTATED_IMAGE_TTL]
+    for k in expired:
+        annotated_image_store.pop(k, None)
+
+    image_id = str(uuid.uuid4())
+    annotated_image_store[image_id] = {
+        "data": image_bytes,
+        "created_at": now,
+    }
+    return image_id
 
 
 @app.post("/hn")
@@ -412,6 +461,31 @@ async def handle_image_message(event: MessageEvent):
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
+def _extract_agentic_images(result) -> list:
+    """Extract annotated image bytes from OrchestratorResult"""
+    images = []
+    if hasattr(result, 'responses'):
+        for resp in result.responses:
+            if isinstance(resp, dict) and 'images' in resp:
+                images.extend(resp['images'])
+    return images
+
+
+def _create_image_send_message(image_bytes: bytes):
+    """Store image and create ImageSendMessage with serving URL"""
+    if not app_base_url:
+        logger.warning("app_base_url not set, cannot serve annotated image")
+        return None
+
+    image_id = store_annotated_image(image_bytes)
+    image_url = f"{app_base_url}/images/{image_id}"
+    logger.info(f"Serving annotated image at: {image_url}")
+    return ImageSendMessage(
+        original_content_url=image_url,
+        preview_image_url=image_url,
+    )
+
+
 async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, prompt_text: str):
     """Handle agentic vision request after user provides text prompt"""
     try:
@@ -435,8 +509,16 @@ async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, p
         if len(response_text) > 4500:
             response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
 
-        result_msg = TextSendMessage(text=response_text)
-        await line_bot_api.push_message(user_id, [result_msg])
+        messages = [TextSendMessage(text=response_text)]
+
+        # Send annotated images if available
+        agentic_images = _extract_agentic_images(result)
+        for img_bytes in agentic_images:
+            img_msg = _create_image_send_message(img_bytes)
+            if img_msg:
+                messages.append(img_msg)
+
+        await line_bot_api.push_message(user_id, messages)
 
     except Exception as e:
         logger.error(f"Agentic vision with prompt error: {e}", exc_info=True)
