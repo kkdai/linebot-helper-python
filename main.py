@@ -91,6 +91,8 @@ parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
 # Temporary image store for quick reply flow (keyed by user_id)
 image_temp_store: Dict[str, bytes] = {}
+# Pending agentic vision mode: user_id -> True means waiting for text prompt
+pending_agentic_vision: Dict[str, bool] = {}
 
 # Initialize ADK Orchestrator (manages all specialized agents)
 orchestrator = create_orchestrator()
@@ -223,6 +225,11 @@ async def handle_message_event(event: MessageEvent):
             user_id = event.source.user_id
             logger.info(f"UID: {user_id}")
             message_text = event.message.text
+
+            # Check if user has a pending agentic vision request
+            if user_id in pending_agentic_vision:
+                await handle_agentic_vision_with_prompt(event, user_id, message_text)
+                return
 
             # Extract URLs and mode for URL messages
             urls, mode = extract_url_and_mode(message_text)
@@ -405,6 +412,40 @@ async def handle_image_message(event: MessageEvent):
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
+async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, prompt_text: str):
+    """Handle agentic vision request after user provides text prompt"""
+    try:
+        # Clear pending state
+        pending_agentic_vision.pop(user_id, None)
+        image_data = image_temp_store.pop(user_id, None)
+
+        if not image_data:
+            error_msg = TextSendMessage(text="⚠️ 圖片已過期，請重新傳送圖片。")
+            await line_bot_api.reply_message(event.reply_token, [error_msg])
+            return
+
+        # Send processing message
+        processing_msg = TextSendMessage(text=f"⏳ 正在使用 Agentic Vision 分析中，請稍候...\n\n📝 指令：{prompt_text}")
+        await line_bot_api.reply_message(event.reply_token, [processing_msg])
+
+        # Process with agentic vision using user's prompt
+        result = await orchestrator.process_image_agentic(image_data, prompt=prompt_text)
+        response_text = format_orchestrator_response(result)
+
+        if len(response_text) > 4500:
+            response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
+
+        result_msg = TextSendMessage(text=response_text)
+        await line_bot_api.push_message(user_id, [result_msg])
+
+    except Exception as e:
+        logger.error(f"Agentic vision with prompt error: {e}", exc_info=True)
+        error_msg = TextSendMessage(
+            text=LineService.format_error_message(e, "Agentic Vision 分析")
+        )
+        await line_bot_api.push_message(user_id, [error_msg])
+
+
 async def handle_location_message(event: MessageEvent):
     """
     Handle location messages and provide Quick Reply options for nearby places
@@ -579,24 +620,28 @@ async def handle_image_analyze_postback(event: PostbackEvent, data: dict, user_i
     """Handle image analysis postback from quick reply"""
     try:
         mode = data.get('mode')
-        image_data = image_temp_store.pop(user_id, None)
 
-        if not image_data:
+        if not user_id or user_id not in image_temp_store:
             error_msg = TextSendMessage(text="⚠️ 圖片已過期，請重新傳送圖片。")
             await line_bot_api.reply_message(event.reply_token, [error_msg])
             return
 
-        # Send processing message
-        mode_text = "識別圖片" if mode == "recognize" else "Agentic Vision"
-        processing_msg = TextSendMessage(text=f"⏳ 正在使用 {mode_text} 分析中，請稍候...")
+        # Agentic Vision: ask user for text prompt first
+        if mode == "agentic_vision":
+            pending_agentic_vision[user_id] = True
+            reply_msg = TextSendMessage(
+                text="🔍 Agentic Vision 模式\n\n請輸入你想要分析的指令，例如：\n• 數一數圖片中有幾個人\n• 找出圖片中所有的文字\n• 分析圖表中的數據趨勢"
+            )
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
+            return
+
+        # 識別圖片: process immediately
+        image_data = image_temp_store.pop(user_id, None)
+
+        processing_msg = TextSendMessage(text="⏳ 正在使用識別圖片分析中，請稍候...")
         await line_bot_api.reply_message(event.reply_token, [processing_msg])
 
-        # Process based on mode
-        if mode == "agentic_vision":
-            result = await orchestrator.process_image_agentic(image_data)
-        else:
-            result = await orchestrator.process_image(image_data)
-
+        result = await orchestrator.process_image(image_data)
         response_text = format_orchestrator_response(result)
 
         if len(response_text) > 4500:

@@ -214,7 +214,7 @@ def analyze_image_agentic(
 
         contents = [
             types.Part.from_text(text=prompt),
-            types.Part.from_image_bytes(
+            types.Part.from_bytes(
                 data=image_data,
                 mime_type="image/png"
             )
@@ -292,7 +292,7 @@ def analyze_image(
         # Create multimodal content
         contents = [
             types.Part.from_text(text=prompt),
-            types.Part.from_image_bytes(
+            types.Part.from_bytes(
                 data=image_data,
                 mime_type="image/png"
             )
