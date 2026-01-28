@@ -183,6 +183,82 @@ def summarize_text(
         }
 
 
+def analyze_image_agentic(
+    image_data: bytes,
+    prompt: str = "請仔細分析這張圖片，使用 agentic vision 能力來深入檢視細節，包括放大、裁切、標註等。使用繁體中文回答。"
+) -> dict:
+    """
+    Analyze an image using Gemini 3 Flash Agentic Vision with code execution.
+
+    The model can write and execute Python code to zoom, crop, annotate,
+    and perform detailed visual analysis on the image.
+
+    Args:
+        image_data: The image data as bytes (PNG, JPEG, etc.)
+        prompt: The analysis prompt for agentic vision.
+
+    Returns:
+        dict: A dictionary containing:
+            - status: "success" or "error"
+            - analysis: The image analysis result (if successful)
+            - error_message: Error description (if failed)
+    """
+    if not image_data:
+        return {
+            "status": "error",
+            "error_message": "No image data provided"
+        }
+
+    try:
+        client = _get_vertex_client()
+
+        contents = [
+            types.Part.from_text(text=prompt),
+            types.Part.from_image_bytes(
+                data=image_data,
+                mime_type="image/png"
+            )
+        ]
+
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=contents,
+            config=types.GenerateContentConfig(
+                temperature=0.5,
+                max_output_tokens=4096,
+                tools=[types.Tool(code_execution=types.ToolCodeExecution)],
+            )
+        )
+
+        # Extract text and code execution results from response parts
+        result_parts = []
+        for part in response.candidates[0].content.parts:
+            if part.text is not None:
+                result_parts.append(part.text)
+            if part.code_execution_result is not None:
+                result_parts.append(f"[Code Output]: {part.code_execution_result.output}")
+
+        analysis = "\n".join(result_parts) if result_parts else None
+
+        if analysis:
+            return {
+                "status": "success",
+                "analysis": analysis
+            }
+        else:
+            return {
+                "status": "error",
+                "error_message": "No analysis generated"
+            }
+
+    except Exception as e:
+        logger.error(f"Error in agentic vision analysis: {e}")
+        return {
+            "status": "error",
+            "error_message": f"Agentic Vision failed: {str(e)[:100]}"
+        }
+
+
 def analyze_image(
     image_data: bytes,
     prompt: str = "請描述這張圖片的內容，使用繁體中文回答。"

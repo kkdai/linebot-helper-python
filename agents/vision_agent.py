@@ -17,7 +17,7 @@ except ImportError:
     ADK_AVAILABLE = False
 
 from config.agent_config import AgentConfig, get_agent_config
-from tools.summarizer import analyze_image
+from tools.summarizer import analyze_image, analyze_image_agentic
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +120,40 @@ class VisionAgent:
             return {
                 "status": "error",
                 "error_message": f"分析圖片時發生錯誤: {str(e)[:100]}"
+            }
+
+    async def analyze_agentic(
+        self,
+        image_data: bytes,
+        prompt: Optional[str] = None
+    ) -> dict:
+        """
+        Analyze an image using Agentic Vision (gemini-3-flash-preview + code execution).
+
+        Args:
+            image_data: Image data as bytes
+            prompt: Custom analysis prompt (optional)
+
+        Returns:
+            dict with 'status', 'analysis', and optional 'error_message'
+        """
+        try:
+            logger.info(f"Agentic Vision analyzing image ({len(image_data)} bytes)")
+
+            analysis_prompt = prompt or DEFAULT_IMAGE_PROMPT
+
+            result = analyze_image_agentic(
+                image_data=image_data,
+                prompt=analysis_prompt
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Agentic vision error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error_message": f"Agentic Vision 分析錯誤: {str(e)[:100]}"
             }
 
     async def analyze_pil_image(
