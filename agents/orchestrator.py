@@ -447,6 +447,30 @@ class Orchestrator:
             intents=[Intent(IntentType.IMAGE_ANALYSIS, 1.0, {})]
         )
 
+    async def process_image_agentic(
+        self,
+        image_data: bytes,
+        prompt: Optional[str] = None
+    ) -> OrchestratorResult:
+        """
+        Process an image using Agentic Vision (gemini-3-flash-preview).
+
+        Args:
+            image_data: Image bytes
+            prompt: Optional analysis prompt
+
+        Returns:
+            OrchestratorResult with agentic vision analysis
+        """
+        result = await self.vision_agent.analyze_agentic(image_data, prompt)
+        result['intent'] = 'image'
+
+        return OrchestratorResult(
+            success=result.get('status') == 'success',
+            responses=[result],
+            intents=[Intent(IntentType.IMAGE_ANALYSIS, 1.0, {})]
+        )
+
     async def process_location(
         self,
         latitude: float,

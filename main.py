@@ -89,6 +89,8 @@ async_http_client = AiohttpAsyncHttpClient(session)
 line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
+# Temporary image store for quick reply flow (keyed by user_id)
+image_temp_store: Dict[str, bytes] = {}
 
 # Initialize ADK Orchestrator (manages all specialized agents)
 orchestrator = create_orchestrator()
@@ -355,26 +357,50 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
 
 
 async def handle_image_message(event: MessageEvent):
-    """Handle image messages via Orchestrator's VisionAgent"""
+    """Handle image messages - store image and show quick reply options"""
     try:
         message_content = await line_bot_api.get_message_content(event.message.id)
         image_content = b''
         async for s in message_content.iter_content():
             image_content += s
 
-        logger.info(f"Received image: {len(image_content)} bytes")
+        user_id = event.source.user_id if isinstance(event.source, SourceUser) else None
+        if not user_id:
+            return
 
-        # Use Orchestrator to process image
-        result = await orchestrator.process_image(image_content)
-        response_text = format_orchestrator_response(result)
+        # Store image temporarily
+        image_temp_store[user_id] = image_content
+        logger.info(f"Stored image for user {user_id}: {len(image_content)} bytes")
 
-        logger.info(f"Image analysis result: {response_text[:100]}...")
-        reply_msg = TextSendMessage(text=response_text)
+        # Show quick reply options
+        quick_reply_buttons = QuickReply(
+            items=[
+                QuickReplyButton(
+                    action=PostbackAction(
+                        label="識別圖片",
+                        data=json.dumps({"action": "image_analyze", "mode": "recognize"}),
+                        display_text="識別圖片"
+                    )
+                ),
+                QuickReplyButton(
+                    action=PostbackAction(
+                        label="Agentic Vision",
+                        data=json.dumps({"action": "image_analyze", "mode": "agentic_vision"}),
+                        display_text="Agentic Vision"
+                    )
+                ),
+            ]
+        )
+
+        reply_msg = TextSendMessage(
+            text="📷 已收到圖片，請選擇分析方式：",
+            quick_reply=quick_reply_buttons
+        )
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
     except Exception as e:
         logger.error(f"Image processing error: {e}", exc_info=True)
-        error_msg = LineService.format_error_message(e, "分析圖片")
+        error_msg = LineService.format_error_message(e, "處理圖片")
         reply_msg = TextSendMessage(text=error_msg)
         await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
@@ -549,6 +575,45 @@ async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
             await line_bot_api.push_message(user_id, [error_msg])
 
 
+async def handle_image_analyze_postback(event: PostbackEvent, data: dict, user_id: str):
+    """Handle image analysis postback from quick reply"""
+    try:
+        mode = data.get('mode')
+        image_data = image_temp_store.pop(user_id, None)
+
+        if not image_data:
+            error_msg = TextSendMessage(text="⚠️ 圖片已過期，請重新傳送圖片。")
+            await line_bot_api.reply_message(event.reply_token, [error_msg])
+            return
+
+        # Send processing message
+        mode_text = "識別圖片" if mode == "recognize" else "Agentic Vision"
+        processing_msg = TextSendMessage(text=f"⏳ 正在使用 {mode_text} 分析中，請稍候...")
+        await line_bot_api.reply_message(event.reply_token, [processing_msg])
+
+        # Process based on mode
+        if mode == "agentic_vision":
+            result = await orchestrator.process_image_agentic(image_data)
+        else:
+            result = await orchestrator.process_image(image_data)
+
+        response_text = format_orchestrator_response(result)
+
+        if len(response_text) > 4500:
+            response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
+
+        result_msg = TextSendMessage(text=response_text)
+        await line_bot_api.push_message(user_id, [result_msg])
+
+    except Exception as e:
+        logger.error(f"Image analyze postback error: {e}", exc_info=True)
+        error_msg = TextSendMessage(
+            text=LineService.format_error_message(e, "分析圖片")
+        )
+        if user_id:
+            await line_bot_api.push_message(user_id, [error_msg])
+
+
 async def handle_postback_event(event: PostbackEvent):
     """
     Handle postback events from Quick Reply buttons and other interactions
@@ -565,6 +630,11 @@ async def handle_postback_event(event: PostbackEvent):
         # Handle map search requests
         if action_value == "search_nearby":
             await handle_map_search_postback(event, data, user_id)
+            return
+
+        # Handle image analysis requests
+        if action_value == "image_analyze":
+            await handle_image_analyze_postback(event, data, user_id)
             return
 
         # Handle YouTube summary requests
