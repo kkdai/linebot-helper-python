@@ -191,7 +191,8 @@ def analyze_image_agentic(
     Analyze an image using Gemini 3 Flash Agentic Vision with code execution.
 
     The model can write and execute Python code to zoom, crop, annotate,
-    and perform detailed visual analysis on the image.
+    and perform detailed visual analysis on the image. Returns both text
+    analysis and any generated/annotated images.
 
     Args:
         image_data: The image data as bytes (PNG, JPEG, etc.)
@@ -200,7 +201,8 @@ def analyze_image_agentic(
     Returns:
         dict: A dictionary containing:
             - status: "success" or "error"
-            - analysis: The image analysis result (if successful)
+            - analysis: The text analysis result (if successful)
+            - images: List of annotated image bytes (if any generated)
             - error_message: Error description (if failed)
     """
     if not image_data:
@@ -227,24 +229,40 @@ def analyze_image_agentic(
                 temperature=0.5,
                 max_output_tokens=4096,
                 tools=[types.Tool(code_execution=types.ToolCodeExecution)],
+                thinking_config=types.ThinkingConfig(
+                    thinking_level=types.ThinkingLevel.MEDIUM
+                ),
             )
         )
 
-        # Extract text and code execution results from response parts
+        # Extract text, code execution results, and generated images
         result_parts = []
+        generated_images = []
+
         for part in response.candidates[0].content.parts:
+            # Skip thinking parts
+            if hasattr(part, 'thought') and part.thought:
+                continue
             if part.text is not None:
                 result_parts.append(part.text)
             if part.code_execution_result is not None:
                 result_parts.append(f"[Code Output]: {part.code_execution_result.output}")
+            # Extract generated/annotated images
+            img = part.as_image()
+            if img is not None:
+                generated_images.append(img.image_bytes)
+                logger.info(f"Extracted annotated image: {len(img.image_bytes)} bytes")
 
         analysis = "\n".join(result_parts) if result_parts else None
 
-        if analysis:
-            return {
+        if analysis or generated_images:
+            result = {
                 "status": "success",
-                "analysis": analysis
+                "analysis": analysis or "（圖片已標註完成）"
             }
+            if generated_images:
+                result["images"] = generated_images
+            return result
         else:
             return {
                 "status": "error",
