@@ -230,7 +230,7 @@ def analyze_image_agentic(
                 max_output_tokens=4096,
                 tools=[types.Tool(code_execution=types.ToolCodeExecution)],
                 thinking_config=types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.MEDIUM
+                    thinkingBudget=2048
                 ),
             )
         )
@@ -321,9 +321,17 @@ def analyze_image(
             contents=contents,
             config=types.GenerateContentConfig(
                 temperature=0.5,
-                max_output_tokens=2048,
+                max_output_tokens=8192,
+                thinking_config=types.ThinkingConfig(
+                    thinkingBudget=0
+                ),
             )
         )
+
+        # Log finish reason for debugging
+        if response.candidates:
+            finish_reason = response.candidates[0].finish_reason
+            logger.info(f"Image analysis finish_reason: {finish_reason}")
 
         if response.text:
             return {
