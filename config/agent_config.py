@@ -20,7 +20,7 @@ class AgentConfig:
     # Model settings
     chat_model: str = "gemini-2.5-flash"
     orchestrator_model: str = "gemini-2.5-pro"
-    fast_model: str = "gemini-3.1-flash-lite"
+    fast_model: str = "gemini-3.1-flash-lite-preview"
 
     # Session settings
     session_timeout_minutes: int = 30
@@ -56,7 +56,7 @@ def get_agent_config() -> AgentConfig:
         location=location,
         chat_model=os.getenv('CHAT_MODEL', 'gemini-2.5-flash'),
         orchestrator_model=os.getenv('ORCHESTRATOR_MODEL', 'gemini-2.5-pro'),
-        fast_model=os.getenv('FAST_MODEL', 'gemini-3.1-flash-lite'),
+        fast_model=os.getenv('FAST_MODEL', 'gemini-3.1-flash-lite-preview'),
         session_timeout_minutes=int(os.getenv('SESSION_TIMEOUT_MINUTES', '30')),
         max_history_length=int(os.getenv('MAX_HISTORY_LENGTH', '20')),
         max_output_tokens=int(os.getenv('MAX_OUTPUT_TOKENS', '2048')),

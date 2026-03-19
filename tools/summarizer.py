@@ -156,7 +156,7 @@ def summarize_text(
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-3.1-flash-lite-preview",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,
