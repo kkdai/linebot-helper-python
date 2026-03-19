@@ -394,7 +394,7 @@ async def search_with_context(
 改寫後的搜尋查詢："""
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-3.1-flash-lite-preview",
             contents=rewrite_prompt
         )
 
