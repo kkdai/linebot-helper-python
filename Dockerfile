@@ -24,6 +24,7 @@ RUN apt-get update && \
         npm \
         git \
         chromium \
+        ffmpeg \
     && npm install -g single-file-cli \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
