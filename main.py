@@ -16,7 +16,7 @@ from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextSendMessage, ImageSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage,
+    MessageEvent, TextSendMessage, ImageSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage, AudioMessage,
     QuickReply, QuickReplyButton, PostbackAction
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
@@ -25,6 +25,7 @@ from httpx import HTTPStatusError
 # local files
 from loader.url import is_youtube_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
+from tools.audio_tool import transcribe_audio
 
 # ADK Orchestrator and Agents
 from agents import (
@@ -292,6 +293,8 @@ async def handle_message_event(event: MessageEvent):
 
         elif isinstance(event.message, ImageMessage):
             await handle_image_message(event)
+        elif isinstance(event.message, AudioMessage):
+            await handle_audio_message(event)
         elif isinstance(event.message, LocationMessage):
             await handle_location_message(event)
 
@@ -490,6 +493,47 @@ def _create_image_send_message(image_bytes: bytes):
         original_content_url=image_url,
         preview_image_url=image_url,
     )
+
+
+async def handle_audio_message(event: MessageEvent):
+    """Handle audio (voice) messages — transcribe and route through Orchestrator."""
+    user_id = event.source.user_id
+    try:
+        # Download audio from LINE
+        message_content = await line_bot_api.get_message_content(event.message.id)
+        audio_bytes = b""
+        async for chunk in message_content.iter_content():
+            audio_bytes += chunk
+        logger.info(f"Downloaded audio for user {user_id}: {len(audio_bytes)} bytes")
+
+        # Transcribe via Gemini
+        transcription = await transcribe_audio(audio_bytes)
+
+        # Guard: empty transcription
+        if not transcription.strip():
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [TextSendMessage(text="無法辨識語音內容，請重新錄製。")]
+            )
+            return
+
+        # Reply #1: show transcription to user
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text=f"你說的是：{transcription.strip()}")]
+        )
+
+        # Reply #2: run transcription through Orchestrator.
+        # Must use push_user_id=user_id because the reply token was already consumed in Reply #1.
+        await handle_text_message_via_orchestrator(event, user_id, text=transcription.strip(), push_user_id=user_id)
+
+    except Exception as e:
+        logger.error(f"Error handling audio message for user {user_id}: {e}", exc_info=True)
+        error_text = LineService.format_error_message(e, "處理語音訊息")
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text=error_text)]
+        )
 
 
 async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, prompt_text: str):
