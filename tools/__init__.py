@@ -11,6 +11,7 @@ from .youtube_tool import summarize_youtube_video
 from .maps_tool import search_nearby_places
 from .pdf_tool import load_pdf_content
 from .audio_tool import transcribe_audio
+from .tts_tool import text_to_speech
 
 __all__ = [
     # Summarization tools
@@ -25,4 +26,6 @@ __all__ = [
     "search_nearby_places",
     # Audio tools
     "transcribe_audio",
+    # TTS tools
+    "text_to_speech",
 ]
