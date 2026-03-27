@@ -498,6 +498,7 @@ def _create_image_send_message(image_bytes: bytes):
 async def handle_audio_message(event: MessageEvent):
     """Handle audio (voice) messages — transcribe and route through Orchestrator."""
     user_id = event.source.user_id
+    replied = False
     try:
         # Download audio from LINE
         message_content = await line_bot_api.get_message_content(event.message.id)
@@ -517,11 +518,12 @@ async def handle_audio_message(event: MessageEvent):
             )
             return
 
-        # Reply #1: show transcription to user
+        # Reply #1: show transcription to user (consumes reply token)
         await line_bot_api.reply_message(
             event.reply_token,
             [TextSendMessage(text=f"你說的是：{transcription.strip()}")]
         )
+        replied = True
 
         # Reply #2: run transcription through Orchestrator.
         # Must use push_user_id=user_id because the reply token was already consumed in Reply #1.
@@ -530,10 +532,12 @@ async def handle_audio_message(event: MessageEvent):
     except Exception as e:
         logger.error(f"Error handling audio message for user {user_id}: {e}", exc_info=True)
         error_text = LineService.format_error_message(e, "處理語音訊息")
-        await line_bot_api.reply_message(
-            event.reply_token,
-            [TextSendMessage(text=error_text)]
-        )
+        error_msg = TextSendMessage(text=error_text)
+        if replied:
+            # Reply token already consumed — use push_message to notify user
+            await line_bot_api.push_message(user_id, [error_msg])
+        else:
+            await line_bot_api.reply_message(event.reply_token, [error_msg])
 
 
 async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, prompt_text: str):
