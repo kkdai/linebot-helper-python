@@ -218,9 +218,11 @@ def store_annotated_image(image_bytes: bytes) -> str:
 def serve_audio(audio_id: str):
     """Serve a temporarily stored TTS audio file for LINE AudioSendMessage"""
     entry = audio_store.get(audio_id)
-    if not entry or time.time() - entry["created_at"] > AUDIO_TTL:
-        audio_store.pop(audio_id, None)
+    if not entry:
         raise HTTPException(status_code=404, detail="Audio not found or expired")
+    if time.time() - entry["created_at"] > AUDIO_TTL:
+        audio_store.pop(audio_id, None)
+        raise HTTPException(status_code=404, detail="Audio expired")
     return Response(content=entry["data"], media_type="audio/mp4")
 
 
