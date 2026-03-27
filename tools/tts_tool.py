@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 LIVE_MODEL = "gemini-live-2.5-flash-native-audio"
 VERTEX_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-VERTEX_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+VERTEX_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1"
 
 
 async def text_to_speech(text: str) -> tuple[bytes, int]:
