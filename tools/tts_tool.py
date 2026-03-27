@@ -24,7 +24,7 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
     Convert text to speech using Gemini Live API.
 
     Args:
-        text: Text to synthesize. Keep under ~1000 chars to stay under 1 minute.
+        text: Text to synthesize. Keep under ~250 Chinese chars (~1 minute of speech).
 
     Returns:
         (m4a_bytes, duration_ms) — duration_ms is an int
