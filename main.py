@@ -865,6 +865,11 @@ async def handle_postback_event(event: PostbackEvent):
             await handle_youtube_summary_postback(event, data)
             return
 
+        # Handle read aloud requests
+        if action_value == "read_aloud":
+            await handle_read_aloud_postback(event, data, user_id)
+            return
+
     except json.JSONDecodeError:
         # Fall back to query string format (legacy format)
         query_params = parse_qs(postback_data)
@@ -879,6 +884,47 @@ async def handle_postback_event(event: PostbackEvent):
         if action_value not in ["gen_tweet", "gen_slack"]:
             logger.error("Invalid action value.")
             return
+
+
+async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: str):
+    """Handle 🔊 朗讀摘要 postback — generate TTS audio and send as AudioSendMessage."""
+    summary_id = data.get("summary_id")
+    entry = summary_store.get(summary_id)
+
+    if not entry or time.time() - entry["created_at"] > SUMMARY_TTL:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="摘要已過期，請重新傳送網址。")]
+        )
+        return
+
+    try:
+        text = entry["text"][:MAX_TTS_CHARS]
+        m4a_bytes, duration_ms = await text_to_speech(text)
+
+        # Cleanup expired audio (sweep-on-write)
+        now = time.time()
+        expired = [k for k, v in audio_store.items() if now - v["created_at"] > AUDIO_TTL]
+        for k in expired:
+            audio_store.pop(k, None)
+
+        audio_id = str(uuid.uuid4())
+        audio_store[audio_id] = {"data": m4a_bytes, "created_at": now}
+
+        audio_url = f"{app_base_url}/audio/{audio_id}"
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [AudioSendMessage(original_content_url=audio_url, duration=duration_ms)]
+        )
+        logger.info(f"Read aloud sent to user {user_id}: {duration_ms}ms")
+
+    except Exception as e:
+        logger.error(f"Read aloud error for user {user_id}: {e}", exc_info=True)
+        error_text = LineService.format_error_message(e, "產生語音")
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text=error_text)]
+        )
 
 
 async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, linebot_token: str):
