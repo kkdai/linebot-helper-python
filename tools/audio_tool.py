@@ -45,9 +45,7 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/mp4") -> 
                 role="user",
                 parts=[
                     audio_part,
-                    types.Part.from_text(
-                        "請將以上語音內容完整轉錄成文字，保留原語言，不要加任何說明或前綴。"
-                    ),
+                    types.Part(text="請將以上語音內容完整轉錄成文字，保留原語言，不要加任何說明或前綴。"),
                 ],
             )
         ],
