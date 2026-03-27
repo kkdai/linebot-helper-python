@@ -14,7 +14,7 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-LIVE_MODEL = "gemini-3.1-flash-live-preview"
+LIVE_MODEL = "gemini-live-2.5-flash-native-audio"
 VERTEX_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 VERTEX_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 
