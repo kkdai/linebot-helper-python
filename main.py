@@ -889,6 +889,14 @@ async def handle_postback_event(event: PostbackEvent):
 async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: str):
     """Handle 🔊 朗讀摘要 postback — generate TTS audio and send as AudioSendMessage."""
     summary_id = data.get("summary_id")
+
+    if not summary_id:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="摘要已過期，請重新傳送網址。")]
+        )
+        return
+
     entry = summary_store.get(summary_id)
 
     if not entry or time.time() - entry["created_at"] > SUMMARY_TTL:
@@ -908,6 +916,14 @@ async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: 
         for k in expired:
             audio_store.pop(k, None)
 
+        if not app_base_url:
+            logger.error("app_base_url not set, cannot serve audio for user %s", user_id)
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [TextSendMessage(text="語音服務暫時無法使用，請稍後再試。")]
+            )
+            return
+
         audio_id = str(uuid.uuid4())
         audio_store[audio_id] = {"data": m4a_bytes, "created_at": now}
 
@@ -921,10 +937,7 @@ async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: 
     except Exception as e:
         logger.error(f"Read aloud error for user {user_id}: {e}", exc_info=True)
         error_text = LineService.format_error_message(e, "產生語音")
-        await line_bot_api.reply_message(
-            event.reply_token,
-            [TextSendMessage(text=error_text)]
-        )
+        await line_bot_api.push_message(user_id, [TextSendMessage(text=error_text)])
 
 
 async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, linebot_token: str):
