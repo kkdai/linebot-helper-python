@@ -110,7 +110,7 @@ SUMMARY_TTL = 600  # 10 minutes
 # Format: {audio_id: {"data": bytes, "created_at": float}}
 audio_store: Dict[str, dict] = {}
 AUDIO_TTL = 300  # 5 minutes
-MAX_TTS_CHARS = 1000  # Truncate summaries to keep audio under ~1 minute
+MAX_TTS_CHARS = 250  # Truncate summaries to keep audio under ~1 minute (~250 Chinese chars)
 # Base URL for serving images (auto-detected from webhook request)
 app_base_url: str = ""
 
@@ -908,13 +908,6 @@ async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: 
 
     try:
         text = entry["text"][:MAX_TTS_CHARS]
-        m4a_bytes, duration_ms = await text_to_speech(text)
-
-        # Cleanup expired audio (sweep-on-write)
-        now = time.time()
-        expired = [k for k, v in audio_store.items() if now - v["created_at"] > AUDIO_TTL]
-        for k in expired:
-            audio_store.pop(k, None)
 
         if not app_base_url:
             logger.error("app_base_url not set, cannot serve audio for user %s", user_id)
@@ -923,6 +916,14 @@ async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: 
                 [TextSendMessage(text="語音服務暫時無法使用，請稍後再試。")]
             )
             return
+
+        m4a_bytes, duration_ms = await text_to_speech(text)
+
+        # Cleanup expired audio (sweep-on-write)
+        now = time.time()
+        expired = [k for k, v in audio_store.items() if now - v["created_at"] > AUDIO_TTL]
+        for k in expired:
+            audio_store.pop(k, None)
 
         audio_id = str(uuid.uuid4())
         audio_store[audio_id] = {"data": m4a_bytes, "created_at": now}
