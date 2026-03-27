@@ -75,17 +75,21 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
 
         m4a_path = pcm_path.replace(".pcm", ".m4a")
 
-        subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-f", "s16le", "-ar", "16000", "-ac", "1",
-                "-i", pcm_path,
-                "-c:a", "aac",
-                m4a_path,
-            ],
-            check=True,
-            capture_output=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-f", "s16le", "-ar", "16000", "-ac", "1",
+                    "-i", pcm_path,
+                    "-c:a", "aac",
+                    m4a_path,
+                ],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"ffmpeg conversion failed: {e.stderr.decode(errors='replace')}")
+            raise
 
         with open(m4a_path, "rb") as f:
             m4a_bytes = f.read()
