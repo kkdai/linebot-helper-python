@@ -16,7 +16,7 @@ from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextSendMessage, ImageSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage, AudioMessage,
+    MessageEvent, TextSendMessage, ImageSendMessage, AudioSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage, AudioMessage,
     QuickReply, QuickReplyButton, PostbackAction
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
@@ -26,6 +26,7 @@ from httpx import HTTPStatusError
 from loader.url import is_youtube_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from tools.audio_tool import transcribe_audio
+from tools.tts_tool import text_to_speech
 
 # ADK Orchestrator and Agents
 from agents import (
@@ -101,6 +102,15 @@ pending_agentic_vision: Dict[str, bool] = {}
 # Format: {image_id: {"data": bytes, "created_at": float}}
 annotated_image_store: Dict[str, dict] = {}
 ANNOTATED_IMAGE_TTL = 300  # 5 minutes
+# Summary store for read-aloud QuickReply (keyed by UUID)
+# Format: {summary_id: {"text": str, "created_at": float}}
+summary_store: Dict[str, dict] = {}
+SUMMARY_TTL = 600  # 10 minutes
+# Audio store for serving generated voice messages (keyed by UUID)
+# Format: {audio_id: {"data": bytes, "created_at": float}}
+audio_store: Dict[str, dict] = {}
+AUDIO_TTL = 300  # 5 minutes
+MAX_TTS_CHARS = 1000  # Truncate summaries to keep audio under ~1 minute
 # Base URL for serving images (auto-detected from webhook request)
 app_base_url: str = ""
 
@@ -202,6 +212,16 @@ def store_annotated_image(image_bytes: bytes) -> str:
         "created_at": now,
     }
     return image_id
+
+
+@app.get("/audio/{audio_id}")
+def serve_audio(audio_id: str):
+    """Serve a temporarily stored TTS audio file for LINE AudioSendMessage"""
+    entry = audio_store.get(audio_id)
+    if not entry or time.time() - entry["created_at"] > AUDIO_TTL:
+        audio_store.pop(audio_id, None)
+        raise HTTPException(status_code=404, detail="Audio not found or expired")
+    return Response(content=entry["data"], media_type="audio/mp4")
 
 
 @app.post("/hn")
