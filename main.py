@@ -354,6 +354,22 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             formatted_result = format_content_response(result, include_url=True)
             content_type = result.get("content_type", "html")
 
+            # Store summary for read-aloud (sweep-on-write cleanup)
+            now = time.time()
+            expired_summaries = [k for k, v in summary_store.items() if now - v["created_at"] > SUMMARY_TTL]
+            for k in expired_summaries:
+                summary_store.pop(k, None)
+            summary_id = str(uuid.uuid4())
+            summary_store[summary_id] = {"text": formatted_result, "created_at": now}
+
+            read_aloud_button = QuickReplyButton(
+                action=PostbackAction(
+                    label="🔊 朗讀",
+                    data=json.dumps({"action": "read_aloud", "summary_id": summary_id}),
+                    display_text="🔊 朗讀摘要"
+                )
+            )
+
             logger.info(f"URL processed: {url} (type: {content_type})")
 
             # Add Quick Reply for YouTube URLs
@@ -382,11 +398,15 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
                                 display_text="🐦 Twitter 分享文案"
                             )
                         ),
+                        read_aloud_button,
                     ]
                 )
                 reply_msg = TextSendMessage(text=formatted_result, quick_reply=quick_reply_buttons)
             else:
-                reply_msg = TextSendMessage(text=formatted_result)
+                reply_msg = TextSendMessage(
+                    text=formatted_result,
+                    quick_reply=QuickReply(items=[read_aloud_button])
+                )
 
             results.append(reply_msg)
 
