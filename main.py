@@ -375,7 +375,7 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
         await line_bot_api.reply_message(event.reply_token, results)
 
 
-async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str):
+async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str, text: str = None, push_user_id: str = None):
     """
     Handle text messages using the Orchestrator for A2A routing.
 
@@ -384,7 +384,7 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
     - Routes to appropriate specialized agent
     - Handles response formatting
     """
-    msg = event.message.text.strip()
+    msg = text if text is not None else event.message.text.strip()
 
     try:
         logger.info(f"Processing via Orchestrator for user {user_id}: {msg[:50]}...")
@@ -401,7 +401,10 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
             response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
 
         reply_msg = TextSendMessage(text=response_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        if push_user_id:
+            await line_bot_api.push_message(push_user_id, [reply_msg])
+        else:
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
         logger.info(f"Orchestrator successfully responded to user {user_id}")
 
@@ -409,7 +412,10 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
         logger.error(f"Error in Orchestrator: {e}", exc_info=True)
         error_text = LineService.format_error_message(e, "處理您的問題")
         reply_msg = TextSendMessage(text=error_text)
-        await line_bot_api.reply_message(event.reply_token, [reply_msg])
+        if push_user_id:
+            await line_bot_api.push_message(push_user_id, [reply_msg])
+        else:
+            await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
 
 async def handle_image_message(event: MessageEvent):
