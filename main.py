@@ -273,8 +273,8 @@ async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id
                         ai_text_accum.append(t)
                         await websocket.send_text(json.dumps({"type": "text_chunk", "text": t}))
 
-                # Turn complete
-                if msg.server_content.turn_complete:
+                # Turn complete — native audio fires generation_complete; non-native fires turn_complete
+                if msg.server_content.turn_complete or msg.server_content.generation_complete:
                     await websocket.send_text(json.dumps({"type": "turn_complete"}))
 
                     # Push conversation to LINE
@@ -337,7 +337,9 @@ async def voice_ws(websocket: WebSocket, session_id: str):
 
         state = {"interrupted": False, "handsfree": False}
 
-        async with client.aio.live.connect(model="gemini-live-2.5-flash-native-audio", config=config) as session:
+        # gemini-2.0-flash-live-001 supports voice_config (TTS-based, Aoede female voice)
+        # gemini-live-2.5-flash-native-audio generates audio natively (voice_config ignored)
+        async with client.aio.live.connect(model="gemini-2.0-flash-live-001", config=config) as session:
             t1 = asyncio.create_task(_browser_to_gemini(websocket, session, state))
             t2 = asyncio.create_task(_gemini_to_browser(websocket, session, state, user_id))
             done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
