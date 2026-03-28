@@ -318,7 +318,8 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         system_instruction = _build_voice_system_instruction(lat, lng)
 
         # Step 3: Open Gemini Live session via Google AI Studio (supports gemini-3.1-flash-live-preview + voice_config)
-        client = live_genai.Client(api_key=GOOGLE_AI_API_KEY)
+        # vertexai=False overrides GOOGLE_GENAI_USE_VERTEXAI env var so api_key auth is used
+        client = live_genai.Client(api_key=GOOGLE_AI_API_KEY, vertexai=False)
         config = live_types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=live_types.SpeechConfig(
