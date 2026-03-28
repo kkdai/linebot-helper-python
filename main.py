@@ -90,6 +90,7 @@ class StoreMessage:
 
 # Initialize the FastAPI app for LINEBot
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 session = aiohttp.ClientSession()
 async_http_client = AiohttpAsyncHttpClient(session)
 line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
@@ -178,15 +179,12 @@ async def handle_webhook_callback(request: Request):
     return 'OK'
 
 
-# Static files for LIFF app
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 LIFF_ID = os.getenv("LIFF_ID", "")
 VERTEX_PROJECT_LIVE = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 
 
 @app.get("/liff/")
-async def serve_liff():
+def serve_liff():
     """Serve the LIFF voice assistant app with LIFF_ID injected."""
     try:
         with open("static/liff/index.html", encoding="utf-8") as f:
