@@ -9,8 +9,9 @@ from urllib.parse import parse_qs
 
 import aiohttp
 import PIL.Image
-from fastapi import Request, FastAPI, HTTPException
-from fastapi.responses import Response
+from fastapi import Request, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import logging
 from linebot import AsyncLineBotApi, WebhookParser
 from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
@@ -175,6 +176,43 @@ async def handle_webhook_callback(request: Request):
         elif isinstance(event, PostbackEvent):
             await handle_postback_event(event)
     return 'OK'
+
+
+# Static files for LIFF app
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+LIFF_ID = os.getenv("LIFF_ID", "")
+VERTEX_PROJECT_LIVE = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+
+
+@app.get("/liff/")
+async def serve_liff():
+    """Serve the LIFF voice assistant app with LIFF_ID injected."""
+    try:
+        with open("static/liff/index.html", encoding="utf-8") as f:
+            html = f.read().replace("{{LIFF_ID}}", LIFF_ID)
+        return HTMLResponse(html)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="LIFF app not found")
+
+
+@app.websocket("/ws/voice/{session_id}")
+async def voice_ws(websocket: WebSocket, session_id: str):
+    """Real-time voice assistant WebSocket — relay between LIFF and Gemini Live."""
+    await websocket.accept()
+    logger.info(f"Voice WS connected: {session_id}")
+    try:
+        while True:
+            data = await websocket.receive()
+            if data["type"] == "websocket.disconnect":
+                break
+            # Stub: echo text messages back
+            if "text" in data and data["text"]:
+                await websocket.send_text(data["text"])
+    except WebSocketDisconnect:
+        pass
+    finally:
+        logger.info(f"Voice WS disconnected: {session_id}")
 
 
 @app.get("/")
