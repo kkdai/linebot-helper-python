@@ -173,6 +173,7 @@ async function startRecording() {
     mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   } catch {
     showError('請允許麥克風權限才能使用語音功能');
+    setState(STATE.IDLE);
     return;
   }
 
@@ -216,6 +217,10 @@ function setupMicButton() {
     setState(STATE.RECORDING);
     currentUserBubble = addBubble('user', '🎤 說話中...');
     await startRecording();
+    // If user released button before getUserMedia resolved, clean up
+    if (currentState !== STATE.RECORDING) {
+      stopRecording();
+    }
   };
 
   const onPressEnd = (e) => {
