@@ -260,14 +260,18 @@ async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id
                     if t:
                         user_text_accum.append(t)
 
-                # AI response parts (audio + text)
+                # AI audio output
                 if msg.server_content.model_turn:
                     for part in msg.server_content.model_turn.parts:
                         if part.inline_data and part.inline_data.data:
                             await websocket.send_bytes(part.inline_data.data)
-                        if part.text:
-                            ai_text_accum.append(part.text)
-                            await websocket.send_text(json.dumps({"type": "text_chunk", "text": part.text}))
+
+                # AI output transcription (text version of AI speech)
+                if hasattr(msg.server_content, "output_transcription") and msg.server_content.output_transcription:
+                    t = msg.server_content.output_transcription.text or ""
+                    if t:
+                        ai_text_accum.append(t)
+                        await websocket.send_text(json.dumps({"type": "text_chunk", "text": t}))
 
                 # Turn complete
                 if msg.server_content.turn_complete:
@@ -315,7 +319,9 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         # Step 3: Open Gemini Live session
         client = live_genai.Client(vertexai=True, project=VERTEX_PROJECT_LIVE, location="us-central1")
         config = live_types.LiveConnectConfig(
-            response_modalities=["AUDIO", "TEXT"],
+            response_modalities=["AUDIO"],
+            output_audio_transcription=live_types.AudioTranscriptionConfig(),
+            input_audio_transcription=live_types.AudioTranscriptionConfig(),
             system_instruction=live_types.Content(
                 role="system",
                 parts=[live_types.Part(text=system_instruction)]
