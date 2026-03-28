@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import json  # added import for JSON conversion
@@ -28,6 +29,8 @@ from loader.url import is_youtube_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
+from google import genai as live_genai
+from google.genai import types as live_types
 
 # ADK Orchestrator and Agents
 from agents import (
@@ -194,21 +197,153 @@ def serve_liff():
         raise HTTPException(status_code=404, detail="LIFF app not found")
 
 
+def _build_voice_system_instruction(lat: float | None, lng: float | None) -> str:
+    location_info = f"使用者目前位置：緯度 {lat:.6f}，經度 {lng:.6f}" if lat and lng else "使用者未提供位置資訊，地點查詢時請請求使用者口述位置"
+    return f"""你是一個整合多種工具的語音助手，透過 LINE Bot 服務使用者。
+
+{location_info}
+
+你可以：
+- 查詢附近地點（使用 maps 工具查詢餐廳、停車場、加油站等）
+- 摘要網頁、YouTube 影片或 PDF 內容
+- 回答一般問題（搭配 Google Search）
+- 提供天氣、交通等即時資訊
+
+請用繁體中文回應，語氣自然口語，適合直接用語音播放。不要使用條列符號或 markdown 格式，改用自然的說話方式。每次回應控制在 50 字以內。"""
+
+
+async def _browser_to_gemini(websocket: WebSocket, session, state: dict):
+    """Relay PCM audio and control events from browser to Gemini Live session."""
+    try:
+        while True:
+            data = await websocket.receive()
+            if data.get("type") == "websocket.disconnect":
+                break
+            if data.get("bytes"):
+                # PCM audio chunk from microphone
+                await session.send_realtime_input(
+                    audio=live_types.Blob(data=data["bytes"], mime_type="audio/pcm;rate=16000")
+                )
+            elif data.get("text"):
+                event = json.loads(data["text"])
+                etype = event.get("type")
+                if etype == "end_of_speech":
+                    # Push-to-talk released — signal end of user turn
+                    await session.send_client_content(turn_complete=True)
+                elif etype == "interrupt":
+                    state["interrupted"] = True
+                elif etype == "toggle_handsfree":
+                    state["handsfree"] = event.get("enabled", False)
+                elif etype == "init":
+                    pass  # Already handled before this task starts
+    except Exception as e:
+        logger.debug(f"browser_to_gemini ended: {e}")
+
+
+async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id: str):
+    """Relay Gemini Live responses (PCM + text) back to browser; push to LINE on turn_complete."""
+    ai_text_accum = []
+    user_text_accum = []
+    try:
+        async for msg in session.receive():
+            if state.get("interrupted"):
+                state["interrupted"] = False
+                ai_text_accum.clear()
+                continue
+
+            if msg.server_content:
+                # Input transcription (user's speech)
+                if hasattr(msg.server_content, "input_transcription") and msg.server_content.input_transcription:
+                    t = msg.server_content.input_transcription.text or ""
+                    if t:
+                        user_text_accum.append(t)
+
+                # AI response parts (audio + text)
+                if msg.server_content.model_turn:
+                    for part in msg.server_content.model_turn.parts:
+                        if part.inline_data and part.inline_data.data:
+                            await websocket.send_bytes(part.inline_data.data)
+                        if part.text:
+                            ai_text_accum.append(part.text)
+                            await websocket.send_text(json.dumps({"type": "text_chunk", "text": part.text}))
+
+                # Turn complete
+                if msg.server_content.turn_complete:
+                    await websocket.send_text(json.dumps({"type": "turn_complete"}))
+
+                    # Push conversation to LINE
+                    user_speech = "".join(user_text_accum).strip() or "（語音輸入）"
+                    ai_response = "".join(ai_text_accum).strip()
+                    if ai_response and user_id:
+                        push_text = f"🎤 你說：{user_speech}\n\n🤖 AI：{ai_response}"
+                        try:
+                            await line_bot_api.push_message(user_id, [TextSendMessage(text=push_text)])
+                        except Exception as e:
+                            logger.error(f"push_message failed for {user_id}: {e}")
+
+                    ai_text_accum.clear()
+                    user_text_accum.clear()
+
+    except Exception as e:
+        logger.debug(f"gemini_to_browser ended: {e}")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": "語音服務發生錯誤"}))
+        except Exception:
+            pass
+
+
 @app.websocket("/ws/voice/{session_id}")
 async def voice_ws(websocket: WebSocket, session_id: str):
     """Real-time voice assistant WebSocket — relay between LIFF and Gemini Live."""
     await websocket.accept()
     logger.info(f"Voice WS connected: {session_id}")
+
     try:
-        while True:
-            data = await websocket.receive()
-            if data["type"] == "websocket.disconnect":
-                break
-            # Stub: echo text messages back
-            if "text" in data and data["text"]:
-                await websocket.send_text(data["text"])
+        # Step 1: Wait for init event
+        init_raw = await asyncio.wait_for(websocket.receive_text(), timeout=15.0)
+        init_data = json.loads(init_raw)
+        user_id = init_data.get("user_id", session_id)
+        lat = init_data.get("lat")
+        lng = init_data.get("lng")
+        logger.info(f"Voice WS init: user={user_id}, gps=({lat},{lng})")
+
+        # Step 2: Build system instruction
+        system_instruction = _build_voice_system_instruction(lat, lng)
+
+        # Step 3: Open Gemini Live session
+        client = live_genai.Client(vertexai=True, project=VERTEX_PROJECT_LIVE, location="us-central1")
+        config = live_types.LiveConnectConfig(
+            response_modalities=["AUDIO", "TEXT"],
+            system_instruction=live_types.Content(
+                role="system",
+                parts=[live_types.Part(text=system_instruction)]
+            ),
+        )
+
+        state = {"interrupted": False, "handsfree": False}
+
+        async with client.aio.live.connect(model="gemini-live-2.5-flash-native-audio", config=config) as session:
+            t1 = asyncio.create_task(_browser_to_gemini(websocket, session, state))
+            t2 = asyncio.create_task(_gemini_to_browser(websocket, session, state, user_id))
+            done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    except asyncio.TimeoutError:
+        logger.warning(f"Voice WS init timeout: {session_id}")
+        await websocket.send_text(json.dumps({"type": "error", "message": "初始化逾時"}))
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        logger.error(f"Voice WS error: {e}", exc_info=True)
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": "語音服務暫時無法使用"}))
+        except Exception:
+            pass
     finally:
         logger.info(f"Voice WS disconnected: {session_id}")
 
