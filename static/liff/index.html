@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>AI 語音助手</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111827;
+      color: #f9fafb;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    #header {
+      background: #1f2937;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #374151;
+      flex-shrink: 0;
+    }
+    #header h1 { font-size: 15px; font-weight: 600; color: #f9fafb; }
+    #header .subtitle { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+    /* Hands-free toggle */
+    #handsfree-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    #handsfree-toggle span { font-size: 11px; color: #9ca3af; }
+    #handsfree-switch {
+      width: 36px; height: 20px;
+      background: #374151;
+      border-radius: 10px;
+      position: relative;
+      transition: background 0.2s;
+    }
+    #handsfree-switch.on { background: #2563eb; }
+    #handsfree-switch::after {
+      content: '';
+      width: 16px; height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      position: absolute;
+      top: 2px; left: 2px;
+      transition: left 0.2s;
+    }
+    #handsfree-switch.on::after { left: 18px; }
+
+    /* Chat area */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #empty-hint {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+      color: #4b5563;
+    }
+    #empty-hint .icon { font-size: 40px; }
+    #empty-hint p { font-size: 13px; }
+
+    .bubble {
+      max-width: 80%;
+      padding: 10px 13px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .bubble.user {
+      background: #374151;
+      color: #f9fafb;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.user.recording {
+      background: #7f1d1d;
+      color: #fca5a5;
+    }
+    .bubble.ai {
+      background: #1e3a5f;
+      color: #e0f2fe;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+    .bubble-label {
+      font-size: 10px;
+      color: #6b7280;
+      margin-bottom: 3px;
+    }
+    .bubble.user .bubble-label { text-align: right; }
+
+    /* Waveform animation */
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 16px;
+    }
+    .waveform span {
+      display: block;
+      width: 3px;
+      background: currentColor;
+      border-radius: 2px;
+      animation: wave 1s ease-in-out infinite;
+    }
+    .waveform span:nth-child(2) { animation-delay: 0.15s; }
+    .waveform span:nth-child(3) { animation-delay: 0.3s; }
+    .waveform span:nth-child(4) { animation-delay: 0.45s; }
+    .waveform span:nth-child(5) { animation-delay: 0.6s; }
+    @keyframes wave {
+      0%, 100% { height: 4px; }
+      50% { height: 16px; }
+    }
+
+    /* Warning bar */
+    #handsfree-warning {
+      display: none;
+      background: #451a03;
+      color: #fbbf24;
+      font-size: 11px;
+      padding: 6px 16px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    #handsfree-warning.visible { display: block; }
+
+    /* Bottom controls */
+    #controls {
+      background: #1f2937;
+      border-top: 1px solid #374151;
+      padding: 20px 16px 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #status-text {
+      font-size: 12px;
+      color: #9ca3af;
+      height: 16px;
+    }
+    #mic-btn {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      border: none;
+      background: #1d4ed8;
+      color: #fff;
+      font-size: 28px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+      box-shadow: 0 0 0 0 rgba(29,78,216,0.4);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+    #mic-btn.recording {
+      background: #dc2626;
+      box-shadow: 0 0 0 10px rgba(220,38,38,0.15), 0 0 0 20px rgba(220,38,38,0.07);
+      animation: pulse-ring 1.5s ease-in-out infinite;
+    }
+    #mic-btn.speaking {
+      background: #374151;
+      opacity: 0.5;
+      cursor: default;
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(220,38,38,0.4), 0 0 0 0 rgba(220,38,38,0.2); }
+      70% { box-shadow: 0 0 0 12px rgba(220,38,38,0), 0 0 0 24px rgba(220,38,38,0); }
+      100% { box-shadow: 0 0 0 0 rgba(220,38,38,0), 0 0 0 0 rgba(220,38,38,0); }
+    }
+
+    /* Error toast */
+    #error-toast {
+      display: none;
+      position: fixed;
+      bottom: 160px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      z-index: 100;
+    }
+    #error-toast.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <div>
+    <h1>🎤 AI 語音助手</h1>
+    <div class="subtitle">Powered by Gemini Live</div>
+  </div>
+  <div id="handsfree-toggle" onclick="toggleHandsfree()">
+    <span>免持</span>
+    <div id="handsfree-switch"></div>
+  </div>
+</div>
+
+<div id="handsfree-warning">⚠ 免持模式開啟中，吵雜環境可能誤觸發</div>
+
+<div id="chat">
+  <div id="empty-hint">
+    <div class="icon">🎤</div>
+    <p>按住麥克風按鈕開始說話</p>
+  </div>
+</div>
+
+<div id="controls">
+  <div id="status-text">待機中</div>
+  <button id="mic-btn">🎤</button>
+</div>
+
+<div id="error-toast"></div>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+  window.LIFF_ID = "{{LIFF_ID}}";
+</script>
+<script src="/static/liff/voice.js"></script>
+</body>
+</html>
