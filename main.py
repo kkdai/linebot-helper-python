@@ -183,6 +183,8 @@ async def handle_webhook_callback(request: Request):
 
 
 LIFF_ID = os.getenv("LIFF_ID", "")
+if not LIFF_ID:
+    logger.warning("LIFF_ID env var not set — /liff/ will serve with unsubstituted placeholder")
 VERTEX_PROJECT_LIVE = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 
 

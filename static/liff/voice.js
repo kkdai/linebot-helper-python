@@ -49,7 +49,7 @@ function getLocation() {
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────────
-function connectWebSocket(userId, lat, lng) {
+function connectWebSocket(userId, lat, lng, attempt = 0) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${proto}://${location.host}/ws/voice/${userId}`;
   ws = new WebSocket(url);
@@ -68,9 +68,13 @@ function connectWebSocket(userId, lat, lng) {
   ws.onerror = () => showError('連線錯誤，請重新整理頁面');
 
   ws.onclose = () => {
-    setStatus('連線已中斷');
-    // Auto-reconnect after 2s (max 3 attempts handled in outer scope)
-    setTimeout(() => connectWebSocket(userId, lat, lng), 2000);
+    if (attempt < 3) {
+      setStatus(`連線中斷，重新連線中… (${attempt + 1}/3)`);
+      setTimeout(() => connectWebSocket(userId, lat, lng, attempt + 1), 2000);
+    } else {
+      setStatus('連線失敗');
+      showError('連線已中斷，請重新整理頁面');
+    }
   };
 }
 
@@ -246,6 +250,7 @@ function setupMicButton() {
 // ── Hands-free recording ──────────────────────────────────────────────────
 async function startHandsfreeRecording() {
   if (currentState !== STATE.IDLE) return;
+  setState(STATE.RECORDING);
   await startRecording();
   // In hands-free mode, VAD on Gemini side handles turn detection.
   // Keep audio flowing continuously.
