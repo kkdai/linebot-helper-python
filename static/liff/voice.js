@@ -1,14 +1,22 @@
+// ── Constants ─────────────────────────────────────────────────────────────
+const GEMINI_WS_URL = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+const MODEL = 'models/gemini-3.1-flash-live-preview';
+
 // ── State ─────────────────────────────────────────────────────────────────
 const STATE = { IDLE: 'idle', RECORDING: 'recording', SPEAKING: 'speaking' };
 let currentState = STATE.IDLE;
-let ws = null;
+let geminiWs = null;
 let handsfreeEnabled = false;
-let audioContext = null;
-let mediaStream = null;
-let scriptProcessor = null;
-let nextPlayTime = 0;
+let audioStreamer = null;
+let audioPlayer = null;
+let userId = null;
+let userLat = null;
+let userLng = null;
 let currentAiBubble = null;
 let currentUserBubble = null;
+let aiTextAccum = [];
+let userTextAccum = [];
+let connectAttempt = 0;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const micBtn = document.getElementById('mic-btn');
@@ -28,9 +36,12 @@ window.addEventListener('load', async () => {
       return;
     }
     const profile = await liff.getProfile();
-    const userId = profile.userId;
-    const { lat, lng } = await getLocation();
-    connectWebSocket(userId, lat, lng);
+    userId = profile.userId;
+    const loc = await getLocation();
+    userLat = loc.lat || null;
+    userLng = loc.lng || null;
+    audioPlayer = new AudioPlayer();
+    await connectToGemini();
     setupMicButton();
   } catch (e) {
     showError('初始化失敗：' + e.message);
@@ -43,64 +54,340 @@ function getLocation() {
     if (!navigator.geolocation) return resolve({});
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve({})  // GPS denied → proceed without coordinates
+      () => resolve({})
     );
   });
 }
 
-// ── WebSocket ──────────────────────────────────────────────────────────────
-function connectWebSocket(userId, lat, lng, attempt = 0) {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${proto}://${location.host}/ws/voice/${userId}`;
-  ws = new WebSocket(url);
-  ws.binaryType = 'arraybuffer';
+// ── Ephemeral token + Gemini WebSocket ─────────────────────────────────────
+async function connectToGemini() {
+  setStatus('連線中...');
+  try {
+    let url = `/api/liff-token?user_id=${encodeURIComponent(userId)}`;
+    if (userLat != null) url += `&lat=${userLat}`;
+    if (userLng != null) url += `&lng=${userLng}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
+    const { access_token } = await res.json();
 
-  ws.onopen = () => {
-    const initMsg = { type: 'init', user_id: userId };
-    if (lat) initMsg.lat = lat;
-    if (lng) initMsg.lng = lng;
-    ws.send(JSON.stringify(initMsg));
-    setStatus('已連線，準備說話');
-  };
+    geminiWs = new WebSocket(`${GEMINI_WS_URL}?access_token=${encodeURIComponent(access_token)}`);
 
-  ws.onmessage = (evt) => handleServerMessage(evt);
+    geminiWs.onopen = () => {
+      // Send setup — model is pre-configured in ephemeral token, but setup is required
+      geminiWs.send(JSON.stringify({ setup: { model: MODEL } }));
+    };
 
-  ws.onerror = () => showError('連線錯誤，請重新整理頁面');
+    geminiWs.onmessage = (evt) => handleGeminiMessage(evt);
 
-  ws.onclose = () => {
-    if (attempt < 3) {
-      setStatus(`連線中斷，重新連線中… (${attempt + 1}/3)`);
-      setTimeout(() => connectWebSocket(userId, lat, lng, attempt + 1), 2000);
+    geminiWs.onerror = (e) => {
+      console.error('Gemini WS error', e);
+    };
+
+    geminiWs.onclose = () => {
+      if (connectAttempt < 3) {
+        connectAttempt++;
+        setStatus(`連線中斷，重連中… (${connectAttempt}/3)`);
+        setTimeout(connectToGemini, 2000);
+      } else {
+        setStatus('連線失敗');
+        showError('連線已中斷，請重新整理頁面');
+      }
+    };
+  } catch (e) {
+    console.error('connectToGemini error:', e);
+    if (connectAttempt < 3) {
+      connectAttempt++;
+      setStatus(`連線失敗，重試中… (${connectAttempt}/3)`);
+      setTimeout(connectToGemini, 2000);
     } else {
-      setStatus('連線失敗');
-      showError('連線已中斷，請重新整理頁面');
+      showError('無法連線語音服務，請重新整理頁面');
     }
-  };
+  }
 }
 
-// ── Server message dispatcher ─────────────────────────────────────────────
-function handleServerMessage(evt) {
-  if (evt.data instanceof ArrayBuffer) {
-    // Binary: PCM audio from Gemini Live
-    playPCMChunk(evt.data);
-    if (currentState !== STATE.SPEAKING) {
-      setState(STATE.SPEAKING);
-      currentAiBubble = addBubble('ai', '');
+// ── Gemini message handler ─────────────────────────────────────────────────
+function handleGeminiMessage(evt) {
+  let msg;
+  try {
+    msg = JSON.parse(evt.data);
+  } catch {
+    return;
+  }
+
+  // Setup complete
+  if (msg.setupComplete) {
+    connectAttempt = 0;
+    setStatus('已連線，準備說話');
+    return;
+  }
+
+  // Server content
+  if (msg.serverContent) {
+    const sc = msg.serverContent;
+
+    // AI audio output
+    if (sc.modelTurn && sc.modelTurn.parts) {
+      for (const part of sc.modelTurn.parts) {
+        if (part.inlineData && part.inlineData.data) {
+          if (currentState !== STATE.SPEAKING) {
+            setState(STATE.SPEAKING);
+            if (!currentAiBubble) currentAiBubble = addBubble('ai', '');
+          }
+          audioPlayer.play(part.inlineData.data).catch(console.error);
+        }
+      }
     }
-  } else {
-    const msg = JSON.parse(evt.data);
-    if (msg.type === 'text_chunk') {
-      if (!currentAiBubble) currentAiBubble = addBubble('ai', '');
-      appendToBubble(currentAiBubble, msg.text);
-    } else if (msg.type === 'turn_complete') {
+
+    // AI output transcription (text version of AI speech)
+    if (sc.outputTranscription && sc.outputTranscription.text) {
+      const t = sc.outputTranscription.text;
+      aiTextAccum.push(t);
+      if (!currentAiBubble) {
+        if (currentState !== STATE.SPEAKING) setState(STATE.SPEAKING);
+        currentAiBubble = addBubble('ai', '');
+      }
+      appendToBubble(currentAiBubble, t);
+    }
+
+    // Input transcription (user's speech-to-text)
+    if (sc.inputTranscription && sc.inputTranscription.text) {
+      const t = sc.inputTranscription.text;
+      userTextAccum.push(t);
+      if (currentUserBubble) {
+        currentUserBubble.textContent = userTextAccum.join('');
+      }
+    }
+
+    // Turn complete
+    if (sc.turnComplete || sc.generationComplete) {
+      handleTurnComplete();
+    }
+  }
+}
+
+async function handleTurnComplete() {
+  const userText = userTextAccum.join('').trim();
+  const aiText = aiTextAccum.join('').trim();
+  aiTextAccum = [];
+  userTextAccum = [];
+  currentAiBubble = null;
+  currentUserBubble = null;
+  setState(STATE.IDLE);
+
+  // Push conversation to LINE
+  if (aiText && userId) {
+    try {
+      await fetch('/api/liff-turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, user_text: userText, ai_text: aiText }),
+      });
+    } catch (e) {
+      console.warn('LINE push failed:', e);
+    }
+  }
+}
+
+// ── AudioStreamer (AudioWorkletNode) ───────────────────────────────────────
+class AudioStreamer {
+  constructor() {
+    this.audioContext = null;
+    this.workletNode = null;
+    this.mediaStream = null;
+    this.isStreaming = false;
+  }
+
+  async start() {
+    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+
+    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: 16000,
+    });
+
+    await this.audioContext.audioWorklet.addModule(
+      '/static/liff/audio-processors/capture.worklet.js'
+    );
+
+    this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-capture-processor');
+    this.workletNode.port.onmessage = (event) => {
+      if (!this.isStreaming) return;
+      if (event.data.type !== 'audio') return;
+
+      const float32 = event.data.data;
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+      }
+      const bytes = new Uint8Array(int16.buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+
+      if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        geminiWs.send(JSON.stringify({
+          realtimeInput: {
+            audio: { mimeType: 'audio/pcm;rate=16000', data: base64 },
+          },
+        }));
+      }
+    };
+
+    const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+    source.connect(this.workletNode);
+    this.isStreaming = true;
+  }
+
+  stop() {
+    this.isStreaming = false;
+    if (this.workletNode) { this.workletNode.disconnect(); this.workletNode = null; }
+    if (this.audioContext) { this.audioContext.close(); this.audioContext = null; }
+    if (this.mediaStream) { this.mediaStream.getTracks().forEach(t => t.stop()); this.mediaStream = null; }
+  }
+}
+
+// ── AudioPlayer (AudioWorkletNode, 24kHz) ─────────────────────────────────
+class AudioPlayer {
+  constructor() {
+    this.audioContext = null;
+    this.workletNode = null;
+    this.gainNode = null;
+    this.isInitialized = false;
+  }
+
+  async init() {
+    if (this.isInitialized) return;
+    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: 24000,  // Gemini outputs 24kHz
+    });
+    await this.audioContext.audioWorklet.addModule(
+      '/static/liff/audio-processors/playback.worklet.js'
+    );
+    this.workletNode = new AudioWorkletNode(this.audioContext, 'pcm-processor');
+    this.gainNode = this.audioContext.createGain();
+    this.gainNode.gain.value = 1.0;
+    this.workletNode.connect(this.gainNode);
+    this.gainNode.connect(this.audioContext.destination);
+    this.isInitialized = true;
+  }
+
+  async play(base64Audio) {
+    await this.init();
+    if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+
+    const binary = atob(base64Audio);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const int16 = new Int16Array(bytes.buffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+    this.workletNode.port.postMessage(float32);
+  }
+
+  interrupt() {
+    if (this.workletNode) this.workletNode.port.postMessage('interrupt');
+  }
+
+  destroy() {
+    if (this.workletNode) { this.workletNode.disconnect(); this.workletNode = null; }
+    if (this.audioContext) { this.audioContext.close(); this.audioContext = null; }
+    this.isInitialized = false;
+  }
+}
+
+// ── Push-to-talk button ───────────────────────────────────────────────────
+function setupMicButton() {
+  const onPressStart = async (e) => {
+    e.preventDefault();
+
+    if (currentState === STATE.SPEAKING) {
+      // Interrupt AI
+      audioPlayer.interrupt();
+      aiTextAccum = [];
+      userTextAccum = [];
       currentAiBubble = null;
       currentUserBubble = null;
       setState(STATE.IDLE);
-    } else if (msg.type === 'error') {
-      showError(msg.message || '發生錯誤');
-      setState(STATE.IDLE);
+      return;
     }
+
+    if (currentState !== STATE.IDLE || handsfreeEnabled) return;
+
+    setState(STATE.RECORDING);
+    currentUserBubble = addBubble('user', '🎤 說話中...');
+
+    try {
+      audioStreamer = new AudioStreamer();
+      await audioStreamer.start();
+    } catch {
+      showError('請允許麥克風權限才能使用語音功能');
+      setState(STATE.IDLE);
+      return;
+    }
+
+    // Race condition: user released before getUserMedia resolved
+    if (currentState !== STATE.RECORDING) {
+      audioStreamer.stop();
+      audioStreamer = null;
+    }
+  };
+
+  const onPressEnd = (e) => {
+    e.preventDefault();
+    if (currentState !== STATE.RECORDING) return;
+
+    if (audioStreamer) { audioStreamer.stop(); audioStreamer = null; }
+
+    // Signal end of user speech
+    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+      geminiWs.send(JSON.stringify({ clientContent: { turnComplete: true } }));
+    }
+
+    if (currentUserBubble) currentUserBubble.textContent = '（語音輸入）';
+    setState(STATE.SPEAKING);
+  };
+
+  micBtn.addEventListener('mousedown', onPressStart);
+  micBtn.addEventListener('mouseup', onPressEnd);
+  micBtn.addEventListener('touchstart', onPressStart, { passive: false });
+  micBtn.addEventListener('touchend', onPressEnd, { passive: false });
+}
+
+// ── Hands-free mode ────────────────────────────────────────────────────────
+function toggleHandsfree() {
+  handsfreeEnabled = !handsfreeEnabled;
+  handsfreeSwitch.classList.toggle('on', handsfreeEnabled);
+  handsfreeWarning.classList.toggle('visible', handsfreeEnabled);
+  if (handsfreeEnabled) {
+    startHandsfreeRecording();
+  } else {
+    stopHandsfreeRecording();
   }
+  setState(STATE.IDLE);
+}
+
+async function startHandsfreeRecording() {
+  if (currentState !== STATE.IDLE) return;
+  setState(STATE.RECORDING);
+  try {
+    audioStreamer = new AudioStreamer();
+    await audioStreamer.start();
+  } catch {
+    showError('請允許麥克風權限才能使用語音功能');
+    setState(STATE.IDLE);
+  }
+}
+
+function stopHandsfreeRecording() {
+  if (audioStreamer) { audioStreamer.stop(); audioStreamer = null; }
 }
 
 // ── UI helpers ─────────────────────────────────────────────────────────────
@@ -148,151 +435,4 @@ function showError(msg) {
   errorToast.textContent = msg;
   errorToast.classList.add('visible');
   setTimeout(() => errorToast.classList.remove('visible'), 4000);
-}
-
-function toggleHandsfree() {
-  handsfreeEnabled = !handsfreeEnabled;
-  handsfreeSwitch.classList.toggle('on', handsfreeEnabled);
-  handsfreeWarning.classList.toggle('visible', handsfreeEnabled);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'toggle_handsfree', enabled: handsfreeEnabled }));
-  }
-  if (handsfreeEnabled) startHandsfreeRecording();
-  else stopHandsfreeRecording();
-  setState(STATE.IDLE);
-}
-
-// ── PCM conversion ────────────────────────────────────────────────────────
-function float32ToInt16(float32) {
-  const int16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
-  }
-  return int16;
-}
-
-// ── Microphone setup ──────────────────────────────────────────────────────
-async function startRecording() {
-  try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch {
-    showError('請允許麥克風權限才能使用語音功能');
-    setState(STATE.IDLE);
-    return;
-  }
-
-  audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-  const source = audioContext.createMediaStreamSource(mediaStream);
-
-  // ScriptProcessor for PCM extraction (4096 samples @ 16kHz ≈ 256ms per chunk)
-  scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-  scriptProcessor.onaudioprocess = (e) => {
-    if (currentState !== STATE.RECORDING) return;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const float32 = e.inputBuffer.getChannelData(0);
-    const int16 = float32ToInt16(float32);
-    ws.send(int16.buffer);
-  };
-
-  source.connect(scriptProcessor);
-  scriptProcessor.connect(audioContext.destination);
-}
-
-function stopRecording() {
-  if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
-  if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-  if (audioContext) { audioContext.close(); audioContext = null; }
-}
-
-// ── Push-to-talk button ───────────────────────────────────────────────────
-function setupMicButton() {
-  const onPressStart = async (e) => {
-    e.preventDefault();
-    if (currentState === STATE.SPEAKING) {
-      // Interrupt AI
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'interrupt' }));
-      }
-      stopAudioPlayback();
-      setState(STATE.IDLE);
-      return;
-    }
-    if (currentState !== STATE.IDLE || handsfreeEnabled) return;
-    setState(STATE.RECORDING);
-    currentUserBubble = addBubble('user', '🎤 說話中...');
-    await startRecording();
-    // If user released button before getUserMedia resolved, clean up
-    if (currentState !== STATE.RECORDING) {
-      stopRecording();
-    }
-  };
-
-  const onPressEnd = (e) => {
-    e.preventDefault();
-    if (currentState !== STATE.RECORDING) return;
-    stopRecording();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'end_of_speech' }));
-    }
-    if (currentUserBubble) {
-      currentUserBubble.textContent = '（語音輸入）';
-      currentUserBubble.classList.remove('recording');
-    }
-    setState(STATE.SPEAKING);
-  };
-
-  micBtn.addEventListener('mousedown', onPressStart);
-  micBtn.addEventListener('mouseup', onPressEnd);
-  micBtn.addEventListener('touchstart', onPressStart, { passive: false });
-  micBtn.addEventListener('touchend', onPressEnd, { passive: false });
-}
-
-// ── Hands-free recording ──────────────────────────────────────────────────
-async function startHandsfreeRecording() {
-  if (currentState !== STATE.IDLE) return;
-  setState(STATE.RECORDING);
-  await startRecording();
-  // In hands-free mode, VAD on Gemini side handles turn detection.
-  // Keep audio flowing continuously.
-}
-
-function stopHandsfreeRecording() {
-  stopRecording();
-}
-
-// ── Audio playback ─────────────────────────────────────────────────────────
-let playbackContext = null;
-
-function ensurePlaybackContext() {
-  if (!playbackContext || playbackContext.state === 'closed') {
-    playbackContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    nextPlayTime = 0;
-  }
-}
-
-function playPCMChunk(arrayBuffer) {
-  ensurePlaybackContext();
-  const int16 = new Int16Array(arrayBuffer);
-  const float32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) {
-    float32[i] = int16[i] / 32768.0;
-  }
-  const audioBuffer = playbackContext.createBuffer(1, float32.length, 16000);
-  audioBuffer.getChannelData(0).set(float32);
-
-  const source = playbackContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(playbackContext.destination);
-
-  const startAt = Math.max(nextPlayTime, playbackContext.currentTime + 0.01);
-  source.start(startAt);
-  nextPlayTime = startAt + audioBuffer.duration;
-}
-
-function stopAudioPlayback() {
-  if (playbackContext) {
-    playbackContext.close();
-    playbackContext = null;
-    nextPlayTime = 0;
-  }
 }
