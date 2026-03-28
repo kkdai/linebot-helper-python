@@ -320,6 +320,13 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         client = live_genai.Client(vertexai=True, project=VERTEX_PROJECT_LIVE, location="us-central1")
         config = live_types.LiveConnectConfig(
             response_modalities=["AUDIO"],
+            speech_config=live_types.SpeechConfig(
+                voice_config=live_types.VoiceConfig(
+                    prebuilt_voice_config=live_types.PrebuiltVoiceConfig(
+                        voice_name="Aoede"
+                    )
+                )
+            ),
             output_audio_transcription=live_types.AudioTranscriptionConfig(),
             input_audio_transcription=live_types.AudioTranscriptionConfig(),
             system_instruction=live_types.Content(
