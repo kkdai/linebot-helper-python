@@ -185,6 +185,7 @@ async def handle_webhook_callback(request: Request):
 LIFF_ID = os.getenv("LIFF_ID", "")
 if not LIFF_ID:
     logger.warning("LIFF_ID env var not set — /liff/ will serve with unsubstituted placeholder")
+GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", "")
 VERTEX_PROJECT_LIVE = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 
 
@@ -316,8 +317,8 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         # Step 2: Build system instruction
         system_instruction = _build_voice_system_instruction(lat, lng)
 
-        # Step 3: Open Gemini Live session
-        client = live_genai.Client(vertexai=True, project=VERTEX_PROJECT_LIVE, location="us-central1")
+        # Step 3: Open Gemini Live session via Google AI Studio (supports gemini-3.1-flash-live-preview + voice_config)
+        client = live_genai.Client(api_key=GOOGLE_AI_API_KEY)
         config = live_types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=live_types.SpeechConfig(
@@ -337,9 +338,7 @@ async def voice_ws(websocket: WebSocket, session_id: str):
 
         state = {"interrupted": False, "handsfree": False}
 
-        # gemini-2.0-flash-live-001 supports voice_config (TTS-based, Aoede female voice)
-        # gemini-live-2.5-flash-native-audio generates audio natively (voice_config ignored)
-        async with client.aio.live.connect(model="gemini-2.0-flash-live-001", config=config) as session:
+        async with client.aio.live.connect(model="gemini-3.1-flash-live-preview", config=config) as session:
             t1 = asyncio.create_task(_browser_to_gemini(websocket, session, state))
             t2 = asyncio.create_task(_gemini_to_browser(websocket, session, state, user_id))
             done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
