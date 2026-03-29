@@ -327,10 +327,6 @@ async def voice_ws(websocket: WebSocket, session_id: str):
                 role="system",
                 parts=[live_types.Part(text=system_instruction)]
             ),
-            context_window_compression=live_types.ContextWindowCompressionConfig(
-                trigger_tokens=104857,
-                sliding_window=live_types.SlidingWindow(target_tokens=52428),
-            ),
         )
         state = {"interrupted": False, "handsfree": False}
 
