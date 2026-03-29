@@ -14,12 +14,12 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-LIVE_MODEL = "gemini-2.0-flash-live-001"
+LIVE_MODEL = "gemini-2.0-flash-exp"
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY")
 
 # Zephyr: bright, upbeat female voice — suitable for lively read-aloud
 TTS_VOICE = "Zephyr"
-# gemini-3.1-flash-live-preview outputs 24kHz PCM (24000 * 2 bytes = 48000 bytes/sec)
+# gemini-2.0-flash-exp outputs 24kHz PCM (24000 * 2 bytes = 48000 bytes/sec)
 PCM_SAMPLE_RATE = 24000
 
 
@@ -41,7 +41,7 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
     client = genai.Client(
         api_key=GOOGLE_AI_API_KEY,
         vertexai=False,
-        http_options={"api_version": "v1alpha"},
+        http_options={"api_version": "v1beta"},
     )
 
     config = types.LiveConnectConfig(
