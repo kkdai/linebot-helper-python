@@ -10,7 +10,7 @@ from urllib.parse import parse_qs
 
 import aiohttp
 import PIL.Image
-from fastapi import Request, FastAPI, HTTPException
+from fastapi import Request, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, HTMLResponse
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
@@ -216,60 +216,133 @@ def _build_voice_system_instruction(lat: float | None, lng: float | None) -> str
 請用繁體中文回應，語氣自然口語，適合直接用語音播放。不要使用條列符號或 markdown 格式，改用自然的說話方式。每次回應控制在 50 字以內。"""
 
 
-@app.get("/api/liff-token")
-async def get_liff_token(user_id: str, lat: float = None, lng: float = None):
-    """Generate ephemeral Gemini Live token for direct browser-to-Gemini connection."""
-    system_instruction = _build_voice_system_instruction(lat, lng)
-    client = live_genai.Client(api_key=GOOGLE_AI_API_KEY, vertexai=False)
+async def _browser_to_gemini(websocket: WebSocket, session, state: dict):
+    """Relay PCM audio and control events from browser to Gemini Live session."""
     try:
-        token = await client.aio.auth_tokens.create(
-            config=live_types.CreateAuthTokenConfig(
-                uses=1,
-                live_connect_constraints=live_types.LiveConnectConstraints(
-                    model="models/gemini-3.1-flash-live-preview",
-                    config=live_types.LiveConnectConfig(
-                        response_modalities=["AUDIO"],
-                        speech_config=live_types.SpeechConfig(
-                            voice_config=live_types.VoiceConfig(
-                                prebuilt_voice_config=live_types.PrebuiltVoiceConfig(
-                                    voice_name="Aoede"
-                                )
-                            )
-                        ),
-                        output_audio_transcription=live_types.AudioTranscriptionConfig(),
-                        input_audio_transcription=live_types.AudioTranscriptionConfig(),
-                        system_instruction=live_types.Content(
-                            role="system",
-                            parts=[live_types.Part(text=system_instruction)]
-                        ),
-                    )
+        while True:
+            data = await websocket.receive()
+            if data.get("type") == "websocket.disconnect":
+                break
+            if data.get("bytes"):
+                await session.send_realtime_input(
+                    audio=live_types.Blob(data=data["bytes"], mime_type="audio/pcm;rate=16000")
                 )
-            )
-        )
-        logger.info(f"LIFF token created for user={user_id}")
-        return {"access_token": token.name}
+            elif data.get("text"):
+                event = json.loads(data["text"])
+                etype = event.get("type")
+                if etype == "end_of_speech":
+                    await session.send_client_content(turn_complete=True)
+                elif etype == "interrupt":
+                    state["interrupted"] = True
+                elif etype == "toggle_handsfree":
+                    state["handsfree"] = event.get("enabled", False)
     except Exception as e:
-        logger.error(f"LIFF token creation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create voice session token")
+        logger.debug(f"browser_to_gemini ended: {e}")
 
 
-class LiffTurnData(BaseModel):
-    user_id: str
-    user_text: str = ""
-    ai_text: str = ""
-
-
-@app.post("/api/liff-turn")
-async def liff_turn_push(data: LiffTurnData):
-    """Push a completed LIFF voice turn to LINE chat."""
-    if not data.ai_text or not data.user_id:
-        return {"ok": False}
-    push_text = f"🎤 你說：{data.user_text or '（語音輸入）'}\n\n🤖 AI：{data.ai_text}"
+async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id: str):
+    """Relay Gemini Live responses back to browser; push to LINE on turn_complete."""
+    ai_text_accum = []
+    user_text_accum = []
     try:
-        await line_bot_api.push_message(data.user_id, [TextSendMessage(text=push_text)])
+        async for msg in session.receive():
+            if state.get("interrupted"):
+                state["interrupted"] = False
+                ai_text_accum.clear()
+                continue
+
+            if msg.server_content:
+                if hasattr(msg.server_content, "input_transcription") and msg.server_content.input_transcription:
+                    t = msg.server_content.input_transcription.text or ""
+                    if t:
+                        user_text_accum.append(t)
+
+                if msg.server_content.model_turn:
+                    for part in msg.server_content.model_turn.parts:
+                        if part.inline_data and part.inline_data.data:
+                            await websocket.send_bytes(part.inline_data.data)
+
+                if hasattr(msg.server_content, "output_transcription") and msg.server_content.output_transcription:
+                    t = msg.server_content.output_transcription.text or ""
+                    if t:
+                        ai_text_accum.append(t)
+                        await websocket.send_text(json.dumps({"type": "text_chunk", "text": t}))
+
+                if msg.server_content.turn_complete or msg.server_content.generation_complete:
+                    await websocket.send_text(json.dumps({"type": "turn_complete"}))
+                    user_speech = "".join(user_text_accum).strip() or "（語音輸入）"
+                    ai_response = "".join(ai_text_accum).strip()
+                    if ai_response and user_id:
+                        push_text = f"🎤 你說：{user_speech}\n\n🤖 AI：{ai_response}"
+                        try:
+                            await line_bot_api.push_message(user_id, [TextSendMessage(text=push_text)])
+                        except Exception as e:
+                            logger.error(f"push_message failed for {user_id}: {e}")
+                    ai_text_accum.clear()
+                    user_text_accum.clear()
+
     except Exception as e:
-        logger.error(f"liff_turn push_message failed for {data.user_id}: {e}")
-    return {"ok": True}
+        logger.debug(f"gemini_to_browser ended: {e}")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": "語音服務發生錯誤"}))
+        except Exception:
+            pass
+
+
+@app.websocket("/ws/voice/{session_id}")
+async def voice_ws(websocket: WebSocket, session_id: str):
+    """Real-time voice assistant WebSocket — relay between LIFF and Gemini Live."""
+    await websocket.accept()
+    logger.info(f"Voice WS connected: {session_id}")
+    try:
+        init_raw = await asyncio.wait_for(websocket.receive_text(), timeout=15.0)
+        init_data = json.loads(init_raw)
+        user_id = init_data.get("user_id", session_id)
+        lat = init_data.get("lat")
+        lng = init_data.get("lng")
+        system_instruction = _build_voice_system_instruction(lat, lng)
+
+        client = live_genai.Client(api_key=GOOGLE_AI_API_KEY, vertexai=False)
+        config = live_types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            speech_config=live_types.SpeechConfig(
+                voice_config=live_types.VoiceConfig(
+                    prebuilt_voice_config=live_types.PrebuiltVoiceConfig(voice_name="Aoede")
+                )
+            ),
+            output_audio_transcription=live_types.AudioTranscriptionConfig(),
+            input_audio_transcription=live_types.AudioTranscriptionConfig(),
+            system_instruction=live_types.Content(
+                role="system",
+                parts=[live_types.Part(text=system_instruction)]
+            ),
+        )
+        state = {"interrupted": False, "handsfree": False}
+
+        async with client.aio.live.connect(model="gemini-3.1-flash-live-preview", config=config) as session:
+            t1 = asyncio.create_task(_browser_to_gemini(websocket, session, state))
+            t2 = asyncio.create_task(_gemini_to_browser(websocket, session, state, user_id))
+            done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    except asyncio.TimeoutError:
+        logger.warning(f"Voice WS init timeout: {session_id}")
+        await websocket.send_text(json.dumps({"type": "error", "message": "初始化逾時"}))
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"Voice WS error: {e}", exc_info=True)
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": "語音服務暫時無法使用"}))
+        except Exception:
+            pass
+    finally:
+        logger.info(f"Voice WS disconnected: {session_id}")
 
 
 @app.get("/")
