@@ -224,13 +224,15 @@ async def _browser_to_gemini(websocket: WebSocket, session, state: dict):
             if data.get("type") == "websocket.disconnect":
                 break
             if data.get("bytes"):
-                # Use session.send() per cookbook sample pattern
-                await session.send(input={"data": data["bytes"], "mime_type": "audio/pcm"})
+                # send_realtime_input uses the non-deprecated `audio` field
+                await session.send_realtime_input(
+                    audio=live_types.Blob(data=data["bytes"], mime_type="audio/pcm;rate=16000")
+                )
             elif data.get("text"):
                 event = json.loads(data["text"])
                 etype = event.get("type")
                 if etype == "end_of_speech":
-                    await session.send(input=".", end_of_turn=True)
+                    await session.send_client_content(turn_complete=True)
                 elif etype == "interrupt":
                     state["interrupted"] = True
                 elif etype == "toggle_handsfree":
