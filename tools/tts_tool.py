@@ -14,9 +14,13 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-LIVE_MODEL = "gemini-live-2.5-flash-native-audio"
-VERTEX_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
-VERTEX_LOCATION = "us-central1"  # Live API requires regional endpoint, not global
+LIVE_MODEL = "gemini-3.1-flash-live-preview"
+GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY")
+
+# Zephyr: bright, upbeat female voice — suitable for lively read-aloud
+TTS_VOICE = "Zephyr"
+# gemini-3.1-flash-live-preview outputs 24kHz PCM (24000 * 2 bytes = 48000 bytes/sec)
+PCM_SAMPLE_RATE = 24000
 
 
 async def text_to_speech(text: str) -> tuple[bytes, int]:
@@ -35,12 +39,19 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
         Exception: On any other failure
     """
     client = genai.Client(
-        vertexai=True,
-        project=VERTEX_PROJECT,
-        location=VERTEX_LOCATION,
+        api_key=GOOGLE_AI_API_KEY,
+        vertexai=False,
+        http_options={"api_version": "v1beta"},
     )
 
-    config = {"response_modalities": ["AUDIO"]}
+    config = types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=TTS_VOICE)
+            )
+        ),
+    )
 
     async with client.aio.live.connect(model=LIVE_MODEL, config=config) as session:
         await session.send_client_content(
@@ -62,8 +73,8 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
     if not pcm_bytes:
         raise RuntimeError("No audio received from Gemini Live")
 
-    # PCM: 16kHz x 16-bit mono = 32000 bytes/sec
-    duration_ms = int(len(pcm_bytes) / 32000 * 1000)
+    # PCM: 24kHz x 16-bit mono = 48000 bytes/sec
+    duration_ms = int(len(pcm_bytes) / (PCM_SAMPLE_RATE * 2) * 1000)
 
     # Convert PCM -> m4a via ffmpeg (temp file mode avoids moov atom issues)
     pcm_path = None
@@ -79,7 +90,7 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
             subprocess.run(
                 [
                     "ffmpeg", "-y",
-                    "-f", "s16le", "-ar", "16000", "-ac", "1",
+                    "-f", "s16le", "-ar", str(PCM_SAMPLE_RATE), "-ac", "1",
                     "-i", pcm_path,
                     "-c:a", "aac",
                     m4a_path,
