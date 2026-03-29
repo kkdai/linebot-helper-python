@@ -41,7 +41,7 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
     client = genai.Client(
         api_key=GOOGLE_AI_API_KEY,
         vertexai=False,
-        http_options={"api_version": "v1beta"},
+        http_options={"api_version": "v1alpha"},
     )
 
     config = types.LiveConnectConfig(
