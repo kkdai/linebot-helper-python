@@ -14,7 +14,7 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-LIVE_MODEL = "gemini-3.1-flash-live-preview"
+LIVE_MODEL = "gemini-2.0-flash-live-001"
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY")
 
 # Zephyr: bright, upbeat female voice — suitable for lively read-aloud
