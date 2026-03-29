@@ -54,19 +54,14 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
     )
 
     async with client.aio.live.connect(model=LIVE_MODEL, config=config) as session:
-        await session.send_client_content(
-            turns=types.Content(role="user", parts=[types.Part(text=text)]),
-            turn_complete=True,
-        )
+        # Use session.send() per cookbook pattern (send_client_content causes 1007)
+        await session.send(input=text, end_of_turn=True)
 
         pcm_chunks = []
-        async for message in session.receive():
-            if message.server_content and message.server_content.model_turn:
-                for part in message.server_content.model_turn.parts:
-                    if part.inline_data and part.inline_data.data:
-                        pcm_chunks.append(part.inline_data.data)
-            if message.server_content and message.server_content.turn_complete:
-                break
+        # Turn-based receive: for-loop ending = turn complete
+        async for response in session.receive():
+            if response.data:
+                pcm_chunks.append(response.data)
 
     pcm_bytes = b"".join(pcm_chunks)
 
