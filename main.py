@@ -236,7 +236,7 @@ async def _browser_to_gemini(websocket: WebSocket, session, state: dict):
                 elif etype == "toggle_handsfree":
                     state["handsfree"] = event.get("enabled", False)
     except Exception as e:
-        logger.debug(f"browser_to_gemini ended: {e}")
+        logger.error(f"browser_to_gemini error: {e}", exc_info=True)
 
 
 async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id: str):
@@ -286,7 +286,7 @@ async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id
                 user_text_accum.clear()
 
     except Exception as e:
-        logger.debug(f"gemini_to_browser ended: {e}")
+        logger.error(f"gemini_to_browser error: {e}", exc_info=True)
         try:
             await websocket.send_text(json.dumps({"type": "error", "message": "語音服務發生錯誤"}))
         except Exception:
