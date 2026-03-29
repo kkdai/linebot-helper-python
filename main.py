@@ -224,14 +224,13 @@ async def _browser_to_gemini(websocket: WebSocket, session, state: dict):
             if data.get("type") == "websocket.disconnect":
                 break
             if data.get("bytes"):
-                await session.send_realtime_input(
-                    audio=live_types.Blob(data=data["bytes"], mime_type="audio/pcm;rate=16000")
-                )
+                # Use session.send() per cookbook sample pattern
+                await session.send(input={"data": data["bytes"], "mime_type": "audio/pcm"})
             elif data.get("text"):
                 event = json.loads(data["text"])
                 etype = event.get("type")
                 if etype == "end_of_speech":
-                    await session.send_client_content(turn_complete=True)
+                    await session.send(input=".", end_of_turn=True)
                 elif etype == "interrupt":
                     state["interrupted"] = True
                 elif etype == "toggle_handsfree":
@@ -245,41 +244,46 @@ async def _gemini_to_browser(websocket: WebSocket, session, state: dict, user_id
     ai_text_accum = []
     user_text_accum = []
     try:
-        async for msg in session.receive():
-            if state.get("interrupted"):
-                state["interrupted"] = False
-                ai_text_accum.clear()
-                continue
+        while True:
+            # Turn-based iteration: the for-loop ending signals turn_complete
+            # (pattern from google-gemini/cookbook Get_started_LiveAPI.py)
+            turn = session.receive()
+            async for response in turn:
+                # Audio output
+                if response.data:
+                    await websocket.send_bytes(response.data)
 
-            if msg.server_content:
-                if hasattr(msg.server_content, "input_transcription") and msg.server_content.input_transcription:
-                    t = msg.server_content.input_transcription.text or ""
+                # Text (AI speech transcription via output_audio_transcription)
+                if response.text:
+                    ai_text_accum.append(response.text)
+                    await websocket.send_text(json.dumps({"type": "text_chunk", "text": response.text}))
+
+                # Input transcription (user's speech-to-text)
+                sc = response.server_content
+                if sc and hasattr(sc, "input_transcription") and sc.input_transcription:
+                    t = sc.input_transcription.text or ""
                     if t:
                         user_text_accum.append(t)
 
-                if msg.server_content.model_turn:
-                    for part in msg.server_content.model_turn.parts:
-                        if part.inline_data and part.inline_data.data:
-                            await websocket.send_bytes(part.inline_data.data)
-
-                if hasattr(msg.server_content, "output_transcription") and msg.server_content.output_transcription:
-                    t = msg.server_content.output_transcription.text or ""
-                    if t:
-                        ai_text_accum.append(t)
-                        await websocket.send_text(json.dumps({"type": "text_chunk", "text": t}))
-
-                if msg.server_content.turn_complete or msg.server_content.generation_complete:
-                    await websocket.send_text(json.dumps({"type": "turn_complete"}))
-                    user_speech = "".join(user_text_accum).strip() or "（語音輸入）"
-                    ai_response = "".join(ai_text_accum).strip()
-                    if ai_response and user_id:
-                        push_text = f"🎤 你說：{user_speech}\n\n🤖 AI：{ai_response}"
-                        try:
-                            await line_bot_api.push_message(user_id, [TextSendMessage(text=push_text)])
-                        except Exception as e:
-                            logger.error(f"push_message failed for {user_id}: {e}")
-                    ai_text_accum.clear()
-                    user_text_accum.clear()
+            # For-loop ended = turn_complete (or interrupt cleared the queue)
+            if state.get("interrupted"):
+                state["interrupted"] = False
+                # Drain any remaining buffered audio per cookbook comment:
+                # "For interruptions to work, we need to stop playback"
+                ai_text_accum.clear()
+                user_text_accum.clear()
+            else:
+                await websocket.send_text(json.dumps({"type": "turn_complete"}))
+                user_speech = "".join(user_text_accum).strip() or "（語音輸入）"
+                ai_response = "".join(ai_text_accum).strip()
+                if ai_response and user_id:
+                    push_text = f"🎤 你說：{user_speech}\n\n🤖 AI：{ai_response}"
+                    try:
+                        await line_bot_api.push_message(user_id, [TextSendMessage(text=push_text)])
+                    except Exception as e:
+                        logger.error(f"push_message failed for {user_id}: {e}")
+                ai_text_accum.clear()
+                user_text_accum.clear()
 
     except Exception as e:
         logger.debug(f"gemini_to_browser ended: {e}")
@@ -302,7 +306,12 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         lng = init_data.get("lng")
         system_instruction = _build_voice_system_instruction(lat, lng)
 
-        client = live_genai.Client(api_key=GOOGLE_AI_API_KEY, vertexai=False)
+        # api_version="v1beta" required for gemini-3.1-flash-live-preview per cookbook sample
+        client = live_genai.Client(
+            api_key=GOOGLE_AI_API_KEY,
+            vertexai=False,
+            http_options={"api_version": "v1beta"},
+        )
         config = live_types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=live_types.SpeechConfig(
@@ -315,6 +324,10 @@ async def voice_ws(websocket: WebSocket, session_id: str):
             system_instruction=live_types.Content(
                 role="system",
                 parts=[live_types.Part(text=system_instruction)]
+            ),
+            context_window_compression=live_types.ContextWindowCompressionConfig(
+                trigger_tokens=104857,
+                sliding_window=live_types.SlidingWindow(target_tokens=52428),
             ),
         )
         state = {"interrupted": False, "handsfree": False}
