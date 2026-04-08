@@ -219,7 +219,7 @@ def summarize_youtube_video(
                 }
 
         except ClientError as e:
-            if e.status_code == 429:
+            if e.code == 429:
                 if attempt < max_retries - 1:
                     logger.warning(
                         f"Rate limit hit (429), retrying in {retry_delay}s... "
@@ -240,7 +240,7 @@ def summarize_youtube_video(
                 logger.error(f"Vertex AI API error: {e}", exc_info=True)
                 return {
                     "status": "error",
-                    "error_message": f"Vertex AI 錯誤 ({e.status_code}): {str(e)[:100]}"
+                    "error_message": f"Vertex AI 錯誤 ({e.code}): {str(e)[:100]}"
                 }
 
         except Exception as e:

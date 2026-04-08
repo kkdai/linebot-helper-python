@@ -173,7 +173,7 @@ async def load_transcript_from_youtube(youtube_url: str, mode: str = "normal") -
 
         except ClientError as e:
             # Handle 429 Rate Limit errors
-            if e.status_code == 429:
+            if e.code == 429:
                 if attempt < max_retries - 1:
                     logging.warning(
                         f"Rate limit hit (429), retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})"
@@ -191,7 +191,7 @@ async def load_transcript_from_youtube(youtube_url: str, mode: str = "normal") -
                     )
             else:
                 logging.error(f"Vertex AI API error: {e}", exc_info=True)
-                return f"❌ Vertex AI 錯誤 ({e.status_code}): {str(e)[:100]}"
+                return f"❌ Vertex AI 錯誤 ({e.code}): {str(e)[:100]}"
 
         except Exception as e:
             logging.error(
