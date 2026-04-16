@@ -73,7 +73,7 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
         types.Content(
             role="user",
             parts=[
-                types.Part.from_text(text=f"## Transcript:\n{text}"),
+                types.Part.from_text(text=f"請使用台灣用語的繁體中文，以親切且自然的語氣朗讀以下摘要內容。## Transcript:\n{text}"),
             ],
         ),
     ]
