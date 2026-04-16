@@ -1,34 +1,59 @@
 """
 Tool: Text-to-Speech
 
-Converts text to m4a audio using Gemini 3.1 Flash Live API.
+Converts text to m4a audio using Gemini 3.1 Flash TTS API.
 """
 
 import logging
 import os
 import subprocess
 import tempfile
+import struct
 
 from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-LIVE_MODEL = "gemini-2.0-flash-exp"
-GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY")
+# New model for native TTS
+TTS_MODEL = "gemini-3.1-flash-tts-preview"
+GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GEMINI_API_KEY")
 
 # Zephyr: bright, upbeat female voice — suitable for lively read-aloud
 TTS_VOICE = "Zephyr"
-# gemini-2.0-flash-exp outputs 24kHz PCM (24000 * 2 bytes = 48000 bytes/sec)
-PCM_SAMPLE_RATE = 24000
+# Default sample rate if not specified in mime type
+DEFAULT_SAMPLE_RATE = 24000
+
+
+def parse_audio_mime_type(mime_type: str) -> dict:
+    """Parses bits per sample and rate from an audio MIME type string."""
+    bits_per_sample = 16
+    rate = DEFAULT_SAMPLE_RATE
+
+    parts = mime_type.split(";")
+    for param in parts:
+        param = param.strip()
+        if param.lower().startswith("rate="):
+            try:
+                rate_str = param.split("=", 1)[1]
+                rate = int(rate_str)
+            except (ValueError, IndexError):
+                pass
+        elif param.startswith("audio/L"):
+            try:
+                bits_per_sample = int(param.split("L", 1)[1])
+            except (ValueError, IndexError):
+                pass
+
+    return {"bits_per_sample": bits_per_sample, "rate": rate}
 
 
 async def text_to_speech(text: str) -> tuple[bytes, int]:
     """
-    Convert text to speech using Gemini Live API.
+    Convert text to speech using Gemini 3.1 Flash TTS API.
 
     Args:
-        text: Text to synthesize. Keep under ~250 Chinese chars (~1 minute of speech).
+        text: Text to synthesize.
 
     Returns:
         (m4a_bytes, duration_ms) — duration_ms is an int
@@ -44,8 +69,17 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
         http_options={"api_version": "v1beta"},
     )
 
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(text=f"## Transcript:\n{text}"),
+            ],
+        ),
+    ]
+
+    config = types.GenerateContentConfig(
+        response_modalities=["audio"],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=TTS_VOICE)
@@ -53,25 +87,43 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
         ),
     )
 
-    async with client.aio.live.connect(model=LIVE_MODEL, config=config) as session:
-        # Use session.send() per cookbook pattern (send_client_content causes 1007)
-        await session.send(input=text, end_of_turn=True)
+    pcm_chunks = []
+    sample_rate = DEFAULT_SAMPLE_RATE
 
-        pcm_chunks = []
-        # Turn-based receive: for-loop ending = turn complete
-        async for response in session.receive():
-            if response.data:
-                pcm_chunks.append(response.data)
+    try:
+        async for chunk in client.aio.models.generate_content_stream(
+            model=TTS_MODEL,
+            contents=contents,
+            config=config,
+        ):
+            if not chunk.parts:
+                continue
+
+            for part in chunk.parts:
+                if part.inline_data and part.inline_data.data:
+                    inline_data = part.inline_data
+                    pcm_chunks.append(inline_data.data)
+
+                    # Extract sample rate from first chunk with mime_type
+                    if inline_data.mime_type:
+                        params = parse_audio_mime_type(inline_data.mime_type)
+                        sample_rate = params["rate"]
+                elif part.text:
+                    logger.debug(f"Gemini TTS text part: {part.text}")
+
+    except Exception as e:
+        logger.error(f"Error calling Gemini TTS: {e}")
+        raise
 
     pcm_bytes = b"".join(pcm_chunks)
 
     if not pcm_bytes:
-        raise RuntimeError("No audio received from Gemini Live")
+        raise RuntimeError("No audio received from Gemini TTS")
 
-    # PCM: 24kHz x 16-bit mono = 48000 bytes/sec
-    duration_ms = int(len(pcm_bytes) / (PCM_SAMPLE_RATE * 2) * 1000)
+    # s16le = 2 bytes per sample
+    duration_ms = int(len(pcm_bytes) / (sample_rate * 2) * 1000)
 
-    # Convert PCM -> m4a via ffmpeg (temp file mode avoids moov atom issues)
+    # Convert PCM -> m4a via ffmpeg
     pcm_path = None
     m4a_path = None
     try:
@@ -85,7 +137,7 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
             subprocess.run(
                 [
                     "ffmpeg", "-y",
-                    "-f", "s16le", "-ar", str(PCM_SAMPLE_RATE), "-ac", "1",
+                    "-f", "s16le", "-ar", str(sample_rate), "-ac", "1",
                     "-i", pcm_path,
                     "-c:a", "aac",
                     m4a_path,
@@ -106,5 +158,6 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
         if m4a_path and os.path.exists(m4a_path):
             os.unlink(m4a_path)
 
-    logger.info(f"TTS complete: {len(m4a_bytes)} bytes, {duration_ms}ms")
+    logger.info(f"TTS complete: {len(m4a_bytes)} bytes, {duration_ms}ms, SR={sample_rate}")
     return m4a_bytes, duration_ms
+
