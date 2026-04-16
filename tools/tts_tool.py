@@ -91,11 +91,12 @@ async def text_to_speech(text: str) -> tuple[bytes, int]:
     sample_rate = DEFAULT_SAMPLE_RATE
 
     try:
-        async for chunk in client.aio.models.generate_content_stream(
+        response_stream = await client.aio.models.generate_content_stream(
             model=TTS_MODEL,
             contents=contents,
             config=config,
-        ):
+        )
+        async for chunk in response_stream:
             if not chunk.parts:
                 continue
 
