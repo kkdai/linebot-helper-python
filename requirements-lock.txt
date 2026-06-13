@@ -3,7 +3,7 @@
 # No LangChain - Pure Vertex AI implementation
 
 # Google AI (Vertex AI)
-google-genai==1.49.0
+google-genai==2.7.0
 
 # Web framework
 fastapi==0.115.5
