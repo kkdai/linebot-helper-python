@@ -1042,8 +1042,13 @@ async def run_foodie_deep_analysis_background(user_id: str, latitude: float, lon
             return
             
         # 2. Submit Batch Job
-        # Get WEBHOOK_DOMAIN from env to pass to Batch API
+        # Get WEBHOOK_DOMAIN from env or fallback to app_base_url domain
         webhook_domain = os.getenv("WEBHOOK_DOMAIN")
+        if not webhook_domain and app_base_url:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(app_base_url)
+            webhook_domain = parsed_url.netloc
+            logger.info(f"Using auto-detected webhook domain from app_base_url: {webhook_domain}")
         
         batch_service = BatchService()
         logger.info(f"Background task: Submitting Batch Job for user {user_id}")
