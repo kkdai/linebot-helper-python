@@ -192,10 +192,13 @@ class BatchService:
                 )
                 logger.info(f"Configuring dynamic webhook calling to {webhook_uri}")
             
-            config = types.CreateBatchJobConfig(
-                display_name=f"FoodieAnalysis_{int(time.time())}",
-                webhook_config=webhook_config
-            )
+            config_args = {
+                "display_name": f"FoodieAnalysis_{int(time.time())}"
+            }
+            if webhook_config:
+                config_args["webhook_config"] = webhook_config
+                
+            config = types.CreateBatchJobConfig(**config_args)
             
             job = self.client.batches.create(
                 model="gemini-2.5-flash",
