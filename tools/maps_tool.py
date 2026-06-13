@@ -236,7 +236,21 @@ def get_nearby_restaurants_for_batch(
         )
 
         # Parse JSON output robustly
-        text = response.text.strip()
+        text = response.text.strip() if response.text else ""
+        logger.info(f"get_nearby_restaurants_for_batch raw response text: {repr(text)}")
+        
+        if not text:
+            # Diagnostics for empty response
+            try:
+                candidates_info = []
+                if response.candidates:
+                    for i, c in enumerate(response.candidates):
+                        candidates_info.append(f"Candidate {i}: finish_reason={c.finish_reason}, safety_ratings={c.safety_ratings}")
+                logger.error(f"Response text is empty. Candidates: {candidates_info}")
+            except Exception as e_diag:
+                logger.error(f"Failed to log diagnostics: {e_diag}")
+            raise ValueError("Vertex AI returned an empty response. It might have been blocked or Maps grounding returned nothing.")
+            
         if text.startswith("```"):
             lines = text.split("\n")
             if lines[0].startswith("```"):
@@ -245,7 +259,12 @@ def get_nearby_restaurants_for_batch(
                 lines = lines[:-1]
             text = "\n".join(lines).strip()
 
-        result_json = json.loads(text)
+        try:
+            result_json = json.loads(text)
+        except Exception as json_err:
+            logger.error(f"JSON parsing failed. Raw text was: {repr(text)}")
+            raise json_err
+
         return {
             "status": "success",
             "restaurants": result_json.get("restaurants", []),
