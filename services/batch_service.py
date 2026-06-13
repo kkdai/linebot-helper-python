@@ -193,7 +193,7 @@ class BatchService:
                 logger.info(f"Configuring dynamic webhook calling to {webhook_uri}")
             
             config_args = {
-                "display_name": f"FoodieAnalysis_{int(time.time())}"
+                "display_name": f"FoodieAnalysis_{user_id}_{int(time.time())}"
             }
             if webhook_config:
                 config_args["webhook_config"] = webhook_config
