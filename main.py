@@ -4,13 +4,18 @@ import sys
 import json  # added import for JSON conversion
 import uuid
 import time
+import hmac
+import hashlib
+import base64
+import jwt
+import requests
 from io import BytesIO
-from typing import Dict
+from typing import Dict, Optional, List, Any
 from urllib.parse import parse_qs
 
 import aiohttp
 import PIL.Image
-from fastapi import Request, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Request, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Header
 from fastapi.responses import Response, HTMLResponse
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
@@ -26,8 +31,10 @@ from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 from httpx import HTTPStatusError
 
 # local files
-from loader.url import is_youtube_url
+from loader.url import is_youtube_url, load_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
+from loader.langtools import summarize_text
+from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
 from google import genai as live_genai
@@ -624,13 +631,35 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
             logger.warning(f"Response too long ({len(response_text)} chars), truncating")
             response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
 
-        reply_msg = TextSendMessage(text=response_text)
+        # Check if restaurant search is successful and has location to add Quick Reply button
+        quick_reply = None
+        for resp in result.responses:
+            if resp.get('intent') == 'restaurant_search' and resp.get('has_location') and resp.get('status') == 'success':
+                quick_reply = QuickReply(
+                    items=[
+                        QuickReplyButton(
+                            action=PostbackAction(
+                                label="🔍 深度評論分析 (Batch)",
+                                data=json.dumps({
+                                    "action": "foodie_deep_analysis",
+                                    "latitude": resp.get('latitude'),
+                                    "longitude": resp.get('longitude')
+                                }),
+                                display_text="🔍 進行深度評論與招牌菜色分析"
+                            )
+                        )
+                    ]
+                )
+                break
+
+        reply_msg = TextSendMessage(text=response_text, quick_reply=quick_reply)
         if push_user_id:
             await line_bot_api.push_message(push_user_id, [reply_msg])
         else:
             await line_bot_api.reply_message(event.reply_token, [reply_msg])
 
         logger.info(f"Orchestrator successfully responded to user {user_id}")
+
 
     except Exception as e:
         logger.error(f"Error in Orchestrator: {e}", exc_info=True)
@@ -862,6 +891,23 @@ async def handle_location_message(event: MessageEvent):
         ]
     )
 
+    # Save coordinates to user session metadata
+    user_id = event.source.user_id if isinstance(event.source, SourceUser) else None
+    if user_id:
+        try:
+            # Ensure session is created
+            orchestrator.chat_agent.get_or_create_session(user_id)
+            session = orchestrator.chat_agent.session_manager.get_session(user_id)
+            if session:
+                session.metadata["last_location"] = {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "address": address or ""
+                }
+                logger.info(f"Saved location coordinates for user {user_id} in session metadata")
+        except Exception as e:
+            logger.error(f"Failed to save location in session: {e}")
+
     # Send reply with Quick Reply buttons
     reply_msg = TextSendMessage(
         text=f"📍 已收到你的位置\n\n{address or '位置已記錄'}\n\n請選擇要搜尋的類型：",
@@ -869,6 +915,7 @@ async def handle_location_message(event: MessageEvent):
     )
 
     await line_bot_api.reply_message(event.reply_token, [reply_msg])
+
 
 
 async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: str):
@@ -906,10 +953,30 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
 
         # Format and send result
         response_text = format_location_response(result)
-        result_msg = TextSendMessage(text=response_text)
+        
+        quick_reply = None
+        if place_type == "restaurant" and result.get("status") == "success":
+            quick_reply = QuickReply(
+                items=[
+                    QuickReplyButton(
+                        action=PostbackAction(
+                            label="🔍 深度評論分析 (Batch)",
+                            data=json.dumps({
+                                "action": "foodie_deep_analysis",
+                                "latitude": latitude,
+                                "longitude": longitude
+                            }),
+                            display_text="🔍 進行深度評論與招牌菜色分析"
+                        )
+                    )
+                ]
+            )
+            
+        result_msg = TextSendMessage(text=response_text, quick_reply=quick_reply)
 
         if user_id:
             await line_bot_api.push_message(user_id, [result_msg])
+
         else:
             logger.warning("No user_id available, cannot push result message")
 
@@ -920,6 +987,86 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
         )
         if user_id:
             await line_bot_api.push_message(user_id, [error_msg])
+
+
+async def handle_foodie_deep_analysis_postback(event: PostbackEvent, data: dict, user_id: str):
+    """
+    Handle deep restaurant review analysis using Batch API and Webhooks
+    """
+    try:
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+        
+        if latitude is None or longitude is None or not user_id:
+            logger.error(f"Missing latitude/longitude/user_id for foodie deep analysis: {data}")
+            error_msg = TextSendMessage(text="❌ 位置資訊不完整，請重新傳送位置。")
+            await line_bot_api.reply_message(event.reply_token, [error_msg])
+            return
+
+        logger.info(f"Starting foodie deep analysis for user {user_id} at ({latitude}, {longitude})")
+
+        # Reply to user immediately to prevent LINE bot timeout
+        ack_msg = TextSendMessage(
+            text="⏳ 正在為您搜集附近餐廳的 50+ 則最新評論，並建立 Gemini Batch API 批次大數據分析任務。\n\n本分析包含招牌菜推薦、整體口味與雷點摘要，預計需要 1~2 分鐘，分析完成後我會主動將專屬報告推播給您！"
+        )
+        await line_bot_api.reply_message(event.reply_token, [ack_msg])
+
+        # Run the heavy work in background task to avoid blocking FastAPI workers
+        asyncio.create_task(
+            run_foodie_deep_analysis_background(user_id, latitude, longitude)
+        )
+
+    except Exception as e:
+        logger.error(f"Foodie deep analysis trigger error: {e}", exc_info=True)
+        if user_id:
+            error_msg = TextSendMessage(text=f"❌ 啟動深度分析時發生錯誤：{str(e)[:100]}")
+            await line_bot_api.push_message(user_id, [error_msg])
+
+
+async def run_foodie_deep_analysis_background(user_id: str, latitude: float, longitude: float):
+    try:
+        from tools.maps_tool import get_nearby_restaurants_for_batch
+        from services.batch_service import BatchService
+        
+        # 1. Fetch nearby restaurants with reviews
+        logger.info(f"Background task: Fetching restaurants with reviews for {user_id}")
+        search_res = get_nearby_restaurants_for_batch(latitude, longitude)
+        if search_res.get("status") != "success":
+            error_text = search_res.get("error_message", "搜尋餐廳失敗")
+            await line_bot_api.push_message(user_id, [TextSendMessage(text=f"⚠️ {error_text}")])
+            return
+            
+        restaurants = search_res.get("restaurants", [])
+        if not restaurants:
+            await line_bot_api.push_message(user_id, [TextSendMessage(text="⚠️ 附近似乎沒有找到合適的餐廳進行深度分析。")])
+            return
+            
+        # 2. Submit Batch Job
+        # Get WEBHOOK_DOMAIN from env to pass to Batch API
+        webhook_domain = os.getenv("WEBHOOK_DOMAIN")
+        
+        batch_service = BatchService()
+        logger.info(f"Background task: Submitting Batch Job for user {user_id}")
+        submit_res = await batch_service.submit_restaurant_batch_job(
+            user_id=user_id,
+            coordinates={"latitude": latitude, "longitude": longitude},
+            restaurants=restaurants,
+            webhook_domain=webhook_domain
+        )
+        
+        if submit_res.get("status") != "success":
+            error_text = submit_res.get("error_message", "建立批次分析工作失敗")
+            await line_bot_api.push_message(user_id, [TextSendMessage(text=f"❌ {error_text}")])
+            return
+            
+        # Job submitted successfully
+        job_id = submit_res.get("batch_job_id")
+        logger.info(f"Batch job {job_id} submitted successfully for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Background foodie analysis error: {e}", exc_info=True)
+        await line_bot_api.push_message(user_id, [TextSendMessage(text=f"❌ 背景深度分析處理失敗：{str(e)[:100]}")])
+
 
 
 async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
@@ -1033,6 +1180,12 @@ async def handle_postback_event(event: PostbackEvent):
         if action_value == "search_nearby":
             await handle_map_search_postback(event, data, user_id)
             return
+
+        # Handle foodie deep analysis requests
+        if action_value == "foodie_deep_analysis":
+            await handle_foodie_deep_analysis_postback(event, data, user_id)
+            return
+
 
         # Handle image analysis requests
         if action_value == "image_analyze":
@@ -1171,3 +1324,225 @@ async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, 
 
 def replace_domain(url, old_domain, new_domain):
     return url.replace(old_domain, new_domain)
+
+
+# Webhook verification and handlers for Gemini Batch API and Webhooks
+
+def verify_static_webhook(payload: str, headers: dict, secret: str) -> bool:
+    webhook_id = headers.get("webhook-id") or headers.get("Webhook-Id")
+    webhook_timestamp = headers.get("webhook-timestamp") or headers.get("Webhook-Timestamp")
+    webhook_signature = headers.get("webhook-signature") or headers.get("Webhook-Signature")
+    
+    if not webhook_id or not webhook_timestamp or not webhook_signature:
+        return False
+        
+    if "," not in webhook_signature:
+        return False
+    sig_version, sig_val = webhook_signature.split(",", 1)
+    if sig_version != "v1":
+        return False
+        
+    to_sign = f"{webhook_id}.{webhook_timestamp}.{payload}"
+    computed_sig = hmac.new(
+        secret.encode("utf-8"),
+        to_sign.encode("utf-8"),
+        hashlib.sha256
+    ).digest()
+    
+    computed_sig_b64 = base64.b64encode(computed_sig).decode("utf-8")
+    return hmac.compare_digest(sig_val, computed_sig_b64)
+
+
+def verify_dynamic_webhook(token: str) -> Optional[dict]:
+    try:
+        unverified_headers = jwt.get_unverified_header(token)
+        kid = unverified_headers.get("kid")
+        if not kid:
+            logger.error("No kid found in JWT header")
+            return None
+            
+        JWKS_URI = "https://generativelanguage.googleapis.com/.well-known/jwks.json"
+        response = requests.get(JWKS_URI)
+        jwks = response.json()
+        
+        public_key = None
+        for key in jwks.get("keys", []):
+            if key.get("kid") == kid:
+                public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
+                break
+                
+        if not public_key:
+            logger.error(f"JWK matching kid {kid} not found in JWKS")
+            return None
+            
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            options={"verify_aud": False}
+        )
+        return payload
+    except Exception as e:
+        logger.error(f"Dynamic Webhook JWT verification failed: {e}", exc_info=True)
+        return None
+
+
+@app.post("/api/gemini-callback/static")
+async def gemini_static_webhook(request: Request):
+    """
+    Static Webhook Endpoint from Gemini.
+    Verifies signature using HMAC SHA256 standard webhook signature.
+    """
+    raw_body = await request.body()
+    body_str = raw_body.decode("utf-8")
+    headers = request.headers
+    
+    webhook_secret = os.getenv("WEBHOOK_SIGNING_SECRET")
+    if webhook_secret:
+        verified = verify_static_webhook(body_str, headers, webhook_secret)
+        if not verified:
+            logger.error("Static Webhook signature verification failed.")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        logger.warning("WEBHOOK_SIGNING_SECRET is not configured. Signature validation skipped.")
+            
+    try:
+        payload = json.loads(body_str)
+        event_type = payload.get("type")
+        event_data = payload.get("data", {})
+        
+        logger.info(f"Received static webhook event: {event_type}")
+        
+        if event_type == "batch.succeeded":
+            batch_id = event_data.get("id") or event_data.get("name")
+            output_file_uri = event_data.get("output_file_uri")
+            if batch_id and output_file_uri:
+                asyncio.create_task(
+                    process_batch_completed_webhook(batch_id, output_file_uri)
+                )
+        elif event_type == "batch.failed":
+            batch_id = event_data.get("id") or event_data.get("name")
+            logger.error(f"Batch job failed: {batch_id}")
+            asyncio.create_task(
+                process_batch_failed_webhook(batch_id)
+            )
+            
+    except Exception as e:
+        logger.error(f"Error parsing static webhook body: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Bad Request")
+        
+    return {"status": "received"}
+
+
+@app.post("/api/gemini-callback/dynamic")
+async def gemini_dynamic_webhook(request: Request, webhook_signature: Optional[str] = Header(None)):
+    """
+    Dynamic Webhook Endpoint from Gemini LROs.
+    Verifies signature using RS256 JWT from Google's JWKS.
+    """
+    raw_body = await request.body()
+    body_str = raw_body.decode("utf-8")
+    
+    token = webhook_signature or request.headers.get("Webhook-Signature")
+    if not token:
+        logger.error("Missing Webhook-Signature header in dynamic webhook callback")
+        raise HTTPException(status_code=400, detail="Missing signature header")
+        
+    jwt_payload = verify_dynamic_webhook(token)
+    if not jwt_payload:
+        logger.error("Dynamic Webhook signature verification failed")
+        raise HTTPException(status_code=400, detail="Invalid JWT signature")
+        
+    try:
+        event_type = jwt_payload.get("type")
+        event_data = jwt_payload.get("data", {})
+        
+        logger.info(f"Received dynamic webhook event: {event_type}")
+        
+        if event_type == "batch.succeeded":
+            batch_id = event_data.get("id") or event_data.get("name")
+            output_file_uri = event_data.get("output_file_uri")
+            
+            user_metadata = event_data.get("user_metadata") or jwt_payload.get("user_metadata") or {}
+            user_id = user_metadata.get("user_id")
+            
+            if batch_id and output_file_uri:
+                asyncio.create_task(
+                    process_batch_completed_webhook(batch_id, output_file_uri, user_id)
+                )
+        elif event_type == "batch.failed":
+            batch_id = event_data.get("id") or event_data.get("name")
+            logger.error(f"Dynamic Batch job failed: {batch_id}")
+            asyncio.create_task(
+                process_batch_failed_webhook(batch_id)
+            )
+            
+    except Exception as e:
+        logger.error(f"Error parsing dynamic webhook body: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Bad Request")
+        
+    return {"status": "received"}
+
+
+async def process_batch_completed_webhook(batch_job_id: str, output_file_uri: str, user_id: Optional[str] = None):
+    """
+    Process completed batch job and push results to user
+    """
+    try:
+        from services.batch_service import BatchService
+        batch_service = BatchService()
+        
+        if not user_id:
+            mapping = batch_service.get_job_mapping(batch_job_id)
+            if mapping:
+                user_id = mapping.get("user_id")
+                
+        if not user_id:
+            logger.error(f"Cannot process batch {batch_job_id}: no user_id associated")
+            return
+            
+        results = batch_service.download_and_parse_batch_results(output_file_uri)
+        if not results:
+            error_msg = TextSendMessage(text="⚠️ 深度美食評論分析處理完成，但無法解析分析結果。")
+            await line_bot_api.push_message(user_id, [error_msg])
+            return
+            
+        logger.info(f"Successfully retrieved batch analysis for {len(results)} restaurants")
+        
+        intro_msg = TextSendMessage(text="🎉 **您的附近餐廳深度評論與菜色大數據分析已出爐！** 👇")
+        
+        messages = [intro_msg]
+        for item in results:
+            name = item["name"]
+            analysis = item["analysis"]
+            
+            rest_text = f"🍴 **{name}**\n\n{analysis}"
+            messages.append(TextSendMessage(text=rest_text))
+            
+        from services.line_service import LineService
+        line_service = LineService(line_bot_api)
+        await line_service.push_messages(user_id, messages)
+        logger.info(f"Pushed deep analysis results to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to process batch completed webhook: {e}", exc_info=True)
+        if user_id:
+            await line_bot_api.push_message(user_id, [TextSendMessage(text="❌ 處理批次分析結果時發生錯誤。")])
+
+
+async def process_batch_failed_webhook(batch_job_id: str):
+    """
+    Process failed batch job
+    """
+    try:
+        from services.batch_service import BatchService
+        batch_service = BatchService()
+        mapping = batch_service.get_job_mapping(batch_job_id)
+        if mapping:
+            user_id = mapping.get("user_id")
+            if user_id:
+                error_msg = TextSendMessage(text="❌ 很抱歉，您的美食深度評論分析任務執行失敗，請稍後重試。")
+                await line_bot_api.push_message(user_id, [error_msg])
+    except Exception as e:
+        logger.error(f"Failed to process batch failed webhook: {e}", exc_info=True)
+

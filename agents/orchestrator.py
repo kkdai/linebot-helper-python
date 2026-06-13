@@ -39,7 +39,9 @@ class IntentType(Enum):
     LOCATION_SEARCH = "location"     # Location-based search
     GITHUB_SUMMARY = "github"        # GitHub operations
     COMMAND = "command"              # System commands (/clear, /help, etc.)
+    RESTAURANT_SEARCH = "restaurant_search" # Restaurant/food search intent
     UNKNOWN = "unknown"
+
 
 
 @dataclass
@@ -206,6 +208,15 @@ class Orchestrator:
                         data={'url': url}
                     ))
 
+        # Check for restaurant / food keywords
+        restaurant_keywords = ["餐廳", "美食", "好吃", "小吃", "餐酒館", "咖啡廳", "早午餐", "火鍋", "燒肉", "壽司", "拉麵", "牛肉麵", "吃什麼", "點餐", "吃東西"]
+        if not intents and any(kw in message_lower for kw in restaurant_keywords):
+            intents.append(Intent(
+                type=IntentType.RESTAURANT_SEARCH,
+                confidence=0.9,
+                data={'message': message}
+            ))
+
         # If no special intents, it's a chat message
         if not intents:
             intents.append(Intent(
@@ -215,6 +226,7 @@ class Orchestrator:
             ))
 
         return intents
+
 
     async def process_text(
         self,
@@ -312,10 +324,36 @@ class Orchestrator:
                 result['intent'] = 'url'
                 return result
 
+            elif intent.type == IntentType.RESTAURANT_SEARCH:
+                session = self.chat_agent.session_manager.get_session(user_id)
+                last_location = session.metadata.get("last_location") if session else None
+                
+                if not last_location:
+                    return {
+                        'status': 'success',
+                        'response': "📍 偵測到您想要尋找美食！請點選下方按鈕或加號傳送您的『位置資訊』，我將利用 Google Maps Grounding 與 Gemini Batch API 為您進行深度評論與菜色分析！",
+                        'intent': 'restaurant_search',
+                        'need_location': True
+                    }
+                
+                # Trigger restaurant search at last known location
+                latitude = last_location['latitude']
+                longitude = last_location['longitude']
+                address = last_location.get('address', '')
+                
+                result = await self.location_agent.search(latitude, longitude, "restaurant")
+                result['intent'] = 'restaurant_search'
+                result['latitude'] = latitude
+                result['longitude'] = longitude
+                result['address'] = address
+                result['has_location'] = True
+                return result
+
             elif intent.type == IntentType.CHAT:
                 result = await self.chat_agent.chat(user_id, intent.data['message'])
                 result['intent'] = 'chat'
                 return result
+
 
             else:
                 return {
@@ -541,10 +579,16 @@ def format_orchestrator_response(result: OrchestratorResult) -> str:
             return format_content_response(response)
         elif intent == 'location':
             return format_location_response(response)
+        elif intent == 'restaurant_search':
+            if response.get('has_location'):
+                return format_location_response(response)
+            else:
+                return response.get('response', '')
         elif intent == 'image':
             return format_vision_response(response)
         elif intent == 'github':
             return format_github_response(response)
+
         else:
             return response.get('response', response.get('content', ''))
 
