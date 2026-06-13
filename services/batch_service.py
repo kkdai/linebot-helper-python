@@ -23,7 +23,7 @@ class BatchService:
         self.api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             logger.warning("Neither GOOGLE_AI_API_KEY nor GEMINI_API_KEY is configured in the environment.")
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(api_key=self.api_key, vertexai=False)
         self._ensure_mapping_file_exists()
 
     def _ensure_mapping_file_exists(self):
