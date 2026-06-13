@@ -184,7 +184,7 @@ class BatchService:
                 webhook_uri = f"https://{webhook_domain}/api/gemini-callback/dynamic"
                 webhook_config = types.WebhookConfig(
                     uris=[webhook_uri],
-                    userMetadata={
+                    user_metadata={
                         "user_id": user_id,
                         "lat": coordinates.get("latitude"),
                         "lng": coordinates.get("longitude")
@@ -193,8 +193,8 @@ class BatchService:
                 logger.info(f"Configuring dynamic webhook calling to {webhook_uri}")
             
             config = types.CreateBatchJobConfig(
-                displayName=f"FoodieAnalysis_{int(time.time())}",
-                webhookConfig=webhook_config
+                display_name=f"FoodieAnalysis_{int(time.time())}",
+                webhook_config=webhook_config
             )
             
             job = self.client.batches.create(
