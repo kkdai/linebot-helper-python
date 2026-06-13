@@ -251,18 +251,22 @@ def get_nearby_restaurants_for_batch(
                 logger.error(f"Failed to log diagnostics: {e_diag}")
             raise ValueError("Vertex AI returned an empty response. It might have been blocked or Maps grounding returned nothing.")
             
-        if text.startswith("```"):
-            lines = text.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
+        # 1. Try regex to find content inside ```json ... ``` or ``` ... ```
+        import re
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+        else:
+            # 2. Fallback: find the first '{' and last '}'
+            start_idx = text.find('{')
+            end_idx = text.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                text = text[start_idx:end_idx + 1].strip()
 
         try:
             result_json = json.loads(text)
         except Exception as json_err:
-            logger.error(f"JSON parsing failed. Raw text was: {repr(text)}")
+            logger.error(f"JSON parsing failed. Extracted text was: {repr(text)}")
             raise json_err
 
         return {
