@@ -33,3 +33,5 @@ pydantic==2.10.3
 
 # Additional dependencies
 aiohttp==3.11.10
+PyJWT==2.10.1
+cryptography==45.0.4
