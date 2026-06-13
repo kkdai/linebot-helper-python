@@ -187,7 +187,22 @@ def get_nearby_restaurants_for_batch(
             "error_message": "Google Cloud 專案未設定。Maps 搜尋需要 Vertex AI 配置。"
         }
 
-    query = "請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳，並擷取每家餐廳的 5 到 10 則最新用戶評論評論內容。"
+    query = """請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳，並擷取每家餐廳的 5 到 10 則最新用戶評論。
+請務必以 JSON 格式返回，格式必須符合以下 JSON 結構：
+{
+  "restaurants": [
+    {
+      "name": "餐廳名稱",
+      "address": "餐廳地址",
+      "rating": "綜合評分",
+      "reviews": [
+        "評論內容1",
+        "評論內容2"
+      ]
+    }
+  ]
+}
+請直接輸出 JSON，不要包含任何額外的說明文字。"""
 
     logger.info(f"Retrieving nearby restaurants with reviews for batch at ({latitude}, {longitude}) using Vertex AI")
 
@@ -217,13 +232,20 @@ def get_nearby_restaurants_for_batch(
                         language_code=language_code,
                     ),
                 ),
-                response_mime_type="application/json",
-                response_schema=RestaurantList,
             ),
         )
 
-        # Parse JSON output
-        result_json = json.loads(response.text)
+        # Parse JSON output robustly
+        text = response.text.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        result_json = json.loads(text)
         return {
             "status": "success",
             "restaurants": result_json.get("restaurants", []),
