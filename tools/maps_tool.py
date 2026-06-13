@@ -187,7 +187,22 @@ def get_nearby_restaurants_for_batch(
             "error_message": "Google Cloud 專案未設定。Maps 搜尋需要 Vertex AI 配置。"
         }
 
-    query = "請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳，並擷取每家餐廳的 5 到 10 則最新用戶評論評論內容。"
+    query = """請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳，並擷取每家餐廳的 5 到 10 則最新用戶評論。
+請務必以 JSON 格式返回，格式必須符合以下 JSON 結構：
+{
+  "restaurants": [
+    {
+      "name": "餐廳名稱",
+      "address": "餐廳地址",
+      "rating": "綜合評分",
+      "reviews": [
+        "評論內容1",
+        "評論內容2"
+      ]
+    }
+  ]
+}
+請直接輸出 JSON，不要包含任何額外的說明文字。"""
 
     logger.info(f"Retrieving nearby restaurants with reviews for batch at ({latitude}, {longitude}) using Vertex AI")
 
@@ -217,13 +232,43 @@ def get_nearby_restaurants_for_batch(
                         language_code=language_code,
                     ),
                 ),
-                response_mime_type="application/json",
-                response_schema=RestaurantList,
             ),
         )
 
-        # Parse JSON output
-        result_json = json.loads(response.text)
+        # Parse JSON output robustly
+        text = response.text.strip() if response.text else ""
+        logger.info(f"get_nearby_restaurants_for_batch raw response text: {repr(text)}")
+        
+        if not text:
+            # Diagnostics for empty response
+            try:
+                candidates_info = []
+                if response.candidates:
+                    for i, c in enumerate(response.candidates):
+                        candidates_info.append(f"Candidate {i}: finish_reason={c.finish_reason}, safety_ratings={c.safety_ratings}")
+                logger.error(f"Response text is empty. Candidates: {candidates_info}")
+            except Exception as e_diag:
+                logger.error(f"Failed to log diagnostics: {e_diag}")
+            raise ValueError("Vertex AI returned an empty response. It might have been blocked or Maps grounding returned nothing.")
+            
+        # 1. Try regex to find content inside ```json ... ``` or ``` ... ```
+        import re
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+        else:
+            # 2. Fallback: find the first '{' and last '}'
+            start_idx = text.find('{')
+            end_idx = text.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                text = text[start_idx:end_idx + 1].strip()
+
+        try:
+            result_json = json.loads(text)
+        except Exception as json_err:
+            logger.error(f"JSON parsing failed. Extracted text was: {repr(text)}")
+            raise json_err
+
         return {
             "status": "success",
             "restaurants": result_json.get("restaurants", []),
