@@ -243,7 +243,7 @@ class BatchService:
             logger.info(f"Downloading batch results from: {output_file_uri}")
             # output_file_uri is in format 'files/file-id'
             # We can download it using the genai Client
-            content_bytes = self.client.files.download_bytes(name=output_file_uri)
+            content_bytes = self.client.files.download(file=output_file_uri)
             content_str = content_bytes.decode("utf-8")
             
             for line in content_str.strip().split("\n"):
