@@ -145,6 +145,10 @@ async def startup_event():
     await session_manager.start_cleanup_task()
     logger.info("Session cleanup background task started")
 
+    # Start batch job status polling background task
+    asyncio.create_task(poll_batch_jobs_loop())
+    logger.info("Batch job polling background task started")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1042,8 +1046,13 @@ async def run_foodie_deep_analysis_background(user_id: str, latitude: float, lon
             return
             
         # 2. Submit Batch Job
-        # Get WEBHOOK_DOMAIN from env to pass to Batch API
+        # Get WEBHOOK_DOMAIN from env or fallback to app_base_url domain
         webhook_domain = os.getenv("WEBHOOK_DOMAIN")
+        if not webhook_domain and app_base_url:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(app_base_url)
+            webhook_domain = parsed_url.netloc
+            logger.info(f"Using auto-detected webhook domain from app_base_url: {webhook_domain}")
         
         batch_service = BatchService()
         logger.info(f"Background task: Submitting Batch Job for user {user_id}")
@@ -1498,6 +1507,18 @@ async def process_batch_completed_webhook(batch_job_id: str, output_file_uri: st
                 user_id = mapping.get("user_id")
                 
         if not user_id:
+            try:
+                job_info = batch_service.client.batches.get(name=batch_job_id)
+                display_name = job_info.display_name or ""
+                if display_name.startswith("FoodieAnalysis_"):
+                    parts = display_name.split("_")
+                    if len(parts) >= 2:
+                        user_id = parts[1]
+                        logger.info(f"Resolved user_id {user_id} from batch display_name: {display_name}")
+            except Exception as ex:
+                logger.error(f"Failed to fetch job info for fallback user resolution: {ex}")
+                
+        if not user_id:
             logger.error(f"Cannot process batch {batch_job_id}: no user_id associated")
             return
             
@@ -1545,4 +1566,64 @@ async def process_batch_failed_webhook(batch_job_id: str):
                 await line_bot_api.push_message(user_id, [error_msg])
     except Exception as e:
         logger.error(f"Failed to process batch failed webhook: {e}", exc_info=True)
+
+
+async def poll_batch_jobs_loop():
+    """
+    Periodically polls Gemini Batch API for completed jobs.
+    Acts as a fallback if the webhooks are not delivered.
+    """
+    logger.info("Starting batch job status polling loop...")
+    while True:
+        try:
+            # Sleep for 60 seconds between polls
+            await asyncio.sleep(60)
+            
+            from services.batch_service import BatchService
+            batch_service = BatchService()
+            
+            if not batch_service.api_key:
+                continue
+                
+            jobs = list(batch_service.client.batches.list())
+            if not jobs:
+                continue
+                
+            for job in jobs:
+                display_name = job.display_name or ""
+                if not display_name.startswith("FoodieAnalysis_"):
+                    continue
+                    
+                # Split by underscore: FoodieAnalysis_{user_id}_{timestamp}
+                parts = display_name.split("_")
+                if len(parts) < 3:
+                    continue
+                    
+                user_id = parts[1]
+                
+                state_str = str(job.state)
+                is_succeeded = "JOB_STATE_SUCCEEDED" in state_str or getattr(job.state, "name", None) == "JOB_STATE_SUCCEEDED"
+                is_failed = "JOB_STATE_FAILED" in state_str or getattr(job.state, "name", None) == "JOB_STATE_FAILED"
+                
+                if is_succeeded:
+                    dest_file = getattr(job.dest, "file_name", None)
+                    if not dest_file:
+                        dest_file = f"files/batch-{job.name.split('/')[-1]}"
+                    
+                    logger.info(f"Polling found succeeded batch job {job.name} for user {user_id}. Processing...")
+                    await process_batch_completed_webhook(job.name, dest_file, user_id)
+                    
+                    batch_service.client.batches.delete(name=job.name)
+                    logger.info(f"Deleted batch job {job.name} after successful processing.")
+                    
+                elif is_failed:
+                    logger.error(f"Polling found failed batch job {job.name} for user {user_id}. Processing failure...")
+                    await process_batch_failed_webhook(job.name)
+                    
+                    batch_service.client.batches.delete(name=job.name)
+                    logger.info(f"Deleted failed batch job {job.name}.")
+                    
+        except Exception as e:
+            logger.error(f"Error in poll_batch_jobs_loop: {e}", exc_info=True)
+
 

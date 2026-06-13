@@ -23,7 +23,7 @@ class BatchService:
         self.api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             logger.warning("Neither GOOGLE_AI_API_KEY nor GEMINI_API_KEY is configured in the environment.")
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(api_key=self.api_key, vertexai=False)
         self._ensure_mapping_file_exists()
 
     def _ensure_mapping_file_exists(self):
@@ -184,7 +184,7 @@ class BatchService:
                 webhook_uri = f"https://{webhook_domain}/api/gemini-callback/dynamic"
                 webhook_config = types.WebhookConfig(
                     uris=[webhook_uri],
-                    userMetadata={
+                    user_metadata={
                         "user_id": user_id,
                         "lat": coordinates.get("latitude"),
                         "lng": coordinates.get("longitude")
@@ -192,10 +192,13 @@ class BatchService:
                 )
                 logger.info(f"Configuring dynamic webhook calling to {webhook_uri}")
             
-            config = types.CreateBatchJobConfig(
-                displayName=f"FoodieAnalysis_{int(time.time())}",
-                webhookConfig=webhook_config
-            )
+            config_args = {
+                "display_name": f"FoodieAnalysis_{user_id}_{int(time.time())}"
+            }
+            if webhook_config:
+                config_args["webhook_config"] = webhook_config
+                
+            config = types.CreateBatchJobConfig(**config_args)
             
             job = self.client.batches.create(
                 model="gemini-2.5-flash",
@@ -240,7 +243,7 @@ class BatchService:
             logger.info(f"Downloading batch results from: {output_file_uri}")
             # output_file_uri is in format 'files/file-id'
             # We can download it using the genai Client
-            content_bytes = self.client.files.download_bytes(name=output_file_uri)
+            content_bytes = self.client.files.download(file=output_file_uri)
             content_str = content_bytes.decode("utf-8")
             
             for line in content_str.strip().split("\n"):
