@@ -5,8 +5,11 @@ Provides location-based search using Google Maps Grounding via Vertex AI.
 """
 
 import os
+import json
 import logging
 from typing import Literal, Optional
+from pydantic import BaseModel, Field
+
 
 try:
     from google import genai
@@ -147,3 +150,93 @@ def search_nearby_places(
             "status": "error",
             "error_message": f"無法取得附近地點資訊: {str(e)[:100]}"
         }
+
+
+class RestaurantDetail(BaseModel):
+    name: str = Field(description="餐廳名稱")
+    address: str = Field(description="餐廳地址")
+    rating: str = Field(description="Google 地圖評分（如 4.5）")
+    reviews: list[str] = Field(description="此餐廳的 5 到 10 則熱門或最新用戶評論")
+
+
+class RestaurantList(BaseModel):
+    restaurants: list[RestaurantDetail]
+
+
+def get_nearby_restaurants_for_batch(
+    latitude: float,
+    longitude: float,
+    language_code: str = "zh-TW"
+) -> dict:
+    """
+    Search for nearby restaurants and get details including reviews in JSON format
+    for Batch API processing.
+    """
+    if not GENAI_AVAILABLE:
+        return {
+            "status": "error",
+            "error_message": "Maps 搜尋功能目前無法使用 (google-genai 未安裝)"
+        }
+
+    project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+    location = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
+
+    if not project_id:
+        return {
+            "status": "error",
+            "error_message": "Google Cloud 專案未設定。Maps 搜尋需要 Vertex AI 配置。"
+        }
+
+    query = "請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳，並擷取每家餐廳的 5 到 10 則最新用戶評論評論內容。"
+
+    logger.info(f"Retrieving nearby restaurants with reviews for batch at ({latitude}, {longitude}) using Vertex AI")
+
+    try:
+        client = genai.Client(
+            vertexai=True,
+            project=project_id,
+            location=location,
+            http_options=types.HttpOptions(api_version="v1")
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=query,
+            config=types.GenerateContentConfig(
+                tools=[
+                    types.Tool(google_maps=types.GoogleMaps(
+                        enable_widget=False
+                    ))
+                ],
+                tool_config=types.ToolConfig(
+                    retrieval_config=types.RetrievalConfig(
+                        lat_lng=types.LatLng(
+                            latitude=latitude,
+                            longitude=longitude
+                        ),
+                        language_code=language_code,
+                    ),
+                ),
+                response_mime_type="application/json",
+                response_schema=RestaurantList,
+            ),
+        )
+
+        # Parse JSON output
+        result_json = json.loads(response.text)
+        return {
+            "status": "success",
+            "restaurants": result_json.get("restaurants", []),
+            "coordinates": {
+                "latitude": latitude,
+                "longitude": longitude
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"get_nearby_restaurants_for_batch error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error_message": f"搜尋餐廳與評論失敗: {str(e)[:100]}"
+        }
+

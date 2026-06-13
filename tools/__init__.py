@@ -8,7 +8,7 @@ Each tool is a function that can be used by ADK Agents.
 from .summarizer import summarize_text, analyze_image
 from .url_loader import load_url_content
 from .youtube_tool import summarize_youtube_video
-from .maps_tool import search_nearby_places
+from .maps_tool import search_nearby_places, get_nearby_restaurants_for_batch
 from .pdf_tool import load_pdf_content
 from .audio_tool import transcribe_audio
 from .tts_tool import text_to_speech
@@ -24,6 +24,7 @@ __all__ = [
     "summarize_youtube_video",
     # Maps tools
     "search_nearby_places",
+    "get_nearby_restaurants_for_batch",
     # Audio tools
     "transcribe_audio",
     # TTS tools
