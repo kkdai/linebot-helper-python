@@ -134,6 +134,31 @@ def search_nearby_places(
         place_name = PLACE_TYPE_NAMES.get(place_type, "地點")
         formatted_result = f"{emoji} 附近的{place_name}：\n\n{result}"
 
+        # 擷取前三大餐廳名稱以供 Quick Reply 使用
+        names = []
+        if place_type == "restaurant":
+            try:
+                extract_prompt = f"請從以下文字中擷取所有餐廳的名稱，並以 JSON 陣列格式返回（例如：[\"餐廳A\", \"餐廳B\"]）。請直接輸出 JSON 陣列，不要包含任何 markdown 標記（如 ```json）或說明文字。\n\n{result}"
+                extract_res = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=extract_prompt
+                )
+                extract_text = extract_res.text.strip() if extract_res.text else ""
+                
+                try:
+                    names = json.loads(extract_text)
+                except Exception:
+                    import re
+                    array_match = re.search(r"\[(.*?)\]", extract_text, re.DOTALL)
+                    if array_match:
+                        import ast
+                        names = ast.literal_eval(f"[{array_match.group(1)}]")
+                
+                names = [str(n).strip() for n in names if n]
+                logger.info(f"Extracted restaurant names for Quick Reply: {names}")
+            except Exception as e_extract:
+                logger.error(f"Failed to extract restaurant names: {e_extract}")
+
         return {
             "status": "success",
             "places": formatted_result,
@@ -141,8 +166,10 @@ def search_nearby_places(
             "coordinates": {
                 "latitude": latitude,
                 "longitude": longitude
-            }
+            },
+            "restaurant_names": names[:3]
         }
+
 
     except Exception as e:
         logger.error(f"Maps Grounding API error: {e}", exc_info=True)

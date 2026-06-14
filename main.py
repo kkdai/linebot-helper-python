@@ -984,21 +984,27 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
         
         quick_reply = None
         if place_type == "restaurant" and result.get("status") == "success":
-            quick_reply = QuickReply(
-                items=[
-                    QuickReplyButton(
-                        action=PostbackAction(
-                            label="🔍 深度評論分析 (Batch)",
-                            data=json.dumps({
-                                "action": "foodie_deep_analysis",
-                                "latitude": latitude,
-                                "longitude": longitude
-                            }),
-                            display_text="🔍 進行深度評論與招牌菜色分析"
+            restaurant_names = result.get("restaurant_names", [])
+            if restaurant_names:
+                buttons = []
+                for name in restaurant_names[:3]:
+                    clean_label = name
+                    # LINE label limit is 20 characters
+                    if len(clean_label) > 10:
+                        clean_label = clean_label[:9] + "…"
+                    buttons.append(
+                        QuickReplyButton(
+                            action=PostbackAction(
+                                label=f"🍴 分析 {clean_label}",
+                                data=json.dumps({
+                                    "action": "specific_foodie_deep_analysis",
+                                    "restaurant_name": name
+                                }),
+                                display_text=f"🔍 進行「{name}」深度評論與招牌菜色分析"
+                            )
                         )
                     )
-                ]
-            )
+                quick_reply = QuickReply(items=buttons)
             
         result_msg = TextSendMessage(text=response_text, quick_reply=quick_reply)
 
@@ -1015,6 +1021,45 @@ async def handle_map_search_postback(event: PostbackEvent, data: dict, user_id: 
         )
         if user_id:
             await line_bot_api.push_message(user_id, [error_msg])
+
+
+
+async def handle_specific_foodie_deep_analysis_postback(event: PostbackEvent, data: dict, user_id: str):
+    """
+    處理點擊 Quick Reply 指定餐廳按鈕時的分析請求
+    """
+    try:
+        restaurant_name = data.get('restaurant_name')
+        if not restaurant_name or not user_id:
+            logger.error(f"Missing restaurant_name/user_id for specific foodie analysis: {data}")
+            error_msg = TextSendMessage(text="❌ 餐廳資訊不完整。")
+            await line_bot_api.reply_message(event.reply_token, [error_msg])
+            return
+
+        logger.info(f"Starting specific foodie deep analysis for user {user_id} for restaurant {restaurant_name}")
+        
+        # 檢查是否有正在執行的 Batch Job，避免重複提交
+        from services.batch_service import BatchService
+        batch_service = BatchService()
+        jobs = list(batch_service.client.batches.list())
+        active_jobs = [j for j in jobs if j.display_name and j.display_name.startswith(f"FoodieAnalysis_{user_id}_") and "JOB_STATE_SUCCEEDED" not in str(j.state) and "JOB_STATE_FAILED" not in str(j.state)]
+        
+        if active_jobs:
+            logger.warning(f"Active foodie analysis job already exists for user {user_id}: {active_jobs[0].name}")
+            info_msg = TextSendMessage(text="⏳ 您的深度分析任務正在執行中，請耐心等候結果送達。")
+            await line_bot_api.reply_message(event.reply_token, [info_msg])
+            return
+
+        # 發送即時確認訊息
+        ack_text = f"🔍 收到！正在為您對「{restaurant_name}」進行深度評論與招牌菜色大數據分析，大約需要 1-2 分鐘，請稍候..."
+        await line_bot_api.reply_message(event.reply_token, [TextSendMessage(text=ack_text)])
+        
+        # 啟動背景單一餐廳分析任務
+        asyncio.create_task(run_specific_restaurant_analysis_background(user_id, restaurant_name, user_id))
+    except Exception as e:
+        logger.error(f"Specific foodie analysis postback error: {e}", exc_info=True)
+        if user_id:
+            await line_bot_api.push_message(user_id, [TextSendMessage(text=f"❌ 處理指定餐廳分析請求失敗：{str(e)[:100]}")])
 
 
 async def handle_foodie_deep_analysis_postback(event: PostbackEvent, data: dict, user_id: str):
@@ -1267,6 +1312,11 @@ async def handle_postback_event(event: PostbackEvent):
         # Handle foodie deep analysis requests
         if action_value == "foodie_deep_analysis":
             await handle_foodie_deep_analysis_postback(event, data, user_id)
+            return
+
+        # Handle specific restaurant foodie deep analysis requests
+        if action_value == "specific_foodie_deep_analysis":
+            await handle_specific_foodie_deep_analysis_postback(event, data, user_id)
             return
 
 
