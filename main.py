@@ -1345,21 +1345,39 @@ def verify_static_webhook(payload: str, headers: dict, secret: str) -> bool:
     if not webhook_id or not webhook_timestamp or not webhook_signature:
         return False
         
-    if "," not in webhook_signature:
-        return False
-    sig_version, sig_val = webhook_signature.split(",", 1)
-    if sig_version != "v1":
+    signatures = webhook_signature.split(" ")
+    
+    # Clean and decode the secret
+    secret_clean = secret
+    if secret.startswith("whsec_"):
+        secret_clean = secret[6:]
+    try:
+        key_bytes = base64.b64decode(secret_clean)
+    except Exception as e:
+        logger.error(f"Failed to base64 decode signing secret: {e}")
         return False
         
     to_sign = f"{webhook_id}.{webhook_timestamp}.{payload}"
     computed_sig = hmac.new(
-        secret.encode("utf-8"),
+        key_bytes,
         to_sign.encode("utf-8"),
         hashlib.sha256
     ).digest()
     
-    computed_sig_b64 = base64.b64encode(computed_sig).decode("utf-8")
-    return hmac.compare_digest(sig_val, computed_sig_b64)
+    for sig_item in signatures:
+        if "," not in sig_item:
+            continue
+        sig_version, sig_val = sig_item.split(",", 1)
+        if sig_version != "v1":
+            continue
+        try:
+            sig_bytes = base64.b64decode(sig_val)
+            if hmac.compare_digest(computed_sig, sig_bytes):
+                return True
+        except Exception:
+            continue
+            
+    return False
 
 
 def verify_dynamic_webhook(token: str) -> Optional[dict]:
