@@ -25,7 +25,7 @@ from linebot.aiohttp_async_http_client import AiohttpAsyncHttpClient
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextSendMessage, ImageSendMessage, AudioSendMessage, PostbackEvent, TextMessage, ImageMessage, LocationMessage, AudioMessage,
-    QuickReply, QuickReplyButton, PostbackAction
+    QuickReply, QuickReplyButton, PostbackAction, SendMessage
 )
 from linebot.models.sources import SourceGroup, SourceRoom, SourceUser
 from httpx import HTTPStatusError
@@ -33,7 +33,7 @@ from httpx import HTTPStatusError
 # local files
 from loader.url import is_youtube_url, load_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
-from loader.langtools import summarize_text
+from loader.langtools import summarize_text, generate_social_media_posts
 from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
@@ -97,6 +97,30 @@ class StoreMessage:
     def __init__(self, text: str, url: str):
         self.text = text
         self.url = url
+
+
+class CustomFlexSendMessage(SendMessage):
+    """
+    Custom Flex Message class that bypasses standard SDK deserialization
+    to preserve new action types like 'clipboard'.
+    """
+    def __init__(self, alt_text: str, contents: dict, quick_reply=None, **kwargs):
+        super(CustomFlexSendMessage, self).__init__(quick_reply=quick_reply, **kwargs)
+        self.type = 'flex'
+        self.alt_text = alt_text
+        self.contents = contents
+
+    def as_json_dict(self) -> dict:
+        res = {
+            'type': 'flex',
+            'altText': self.alt_text,
+            'contents': self.contents
+        }
+        if self.quick_reply:
+            res['quickReply'] = self.quick_reply.as_json_dict()
+        if self.sender:
+            res['sender'] = self.sender.as_json_dict()
+        return res
 
 
 # Initialize the FastAPI app for LINEBot
@@ -521,92 +545,203 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal"):
     """
-    Handle URL messages via Orchestrator's ContentAgent
+    Handle URL messages by crawling the content and generating 3 viral social media posts
+    for FB, LinkedIn, and Threads, returned as Flex Messages with copy-to-clipboard buttons.
 
     Args:
         event: LINE message event
         urls: List of URLs to process
-        mode: Summary mode - "short", "normal", or "detailed"
+        mode: Summary mode (not used directly now since we always generate social media posts)
     """
     results = []
 
-    # Add mode indicator if not normal
-    if mode != "normal":
-        mode_desc = get_mode_description(mode)
-        mode_indicator = TextSendMessage(text=f"📝 {mode_desc}")
-        results.append(mode_indicator)
-
     for url in urls:
         try:
-            # Use Orchestrator's content_agent to process URL
-            result = await orchestrator.content_agent.process_url(url, mode=mode)
-
-            if result["status"] != "success":
-                error_msg = result.get("error_message", "無法處理此網址")
-                logger.error(f"ContentAgent failed for URL: {url} - {error_msg}")
-                reply_msg = TextSendMessage(text=f"{url}\n\n⚠️ {error_msg}")
+            logger.info(f"Crawling URL: {url}")
+            # Fetch webpage content using load_url
+            crawled_text = await load_url(url)
+            
+            if not crawled_text or not crawled_text.strip():
+                logger.error(f"No content extracted from URL: {url}")
+                reply_msg = TextSendMessage(text=f"⚠️ 無法從此網址擷取內容：\n{url}")
                 results.append(reply_msg)
                 continue
 
-            # Format response
-            formatted_result = format_content_response(result, include_url=True)
-            content_type = result.get("content_type", "html")
+            logger.info(f"Successfully crawled content from {url}. Length: {len(crawled_text)} characters.")
+            
+            # Generate the social media posts
+            posts = generate_social_media_posts(crawled_text)
+            
+            fb_text = posts.get("facebook", "")
+            li_text = posts.get("linkedin", "")
+            th_text = posts.get("threads", "")
 
-            # Store summary for read-aloud (sweep-on-write cleanup)
-            now = time.time()
-            expired_summaries = [k for k, v in summary_store.items() if now - v["created_at"] > SUMMARY_TTL]
-            for k in expired_summaries:
-                summary_store.pop(k, None)
-            summary_id = str(uuid.uuid4())
-            summary_store[summary_id] = {"text": formatted_result, "created_at": now}
+            # Create Flex Messages
+            # 1. Facebook
+            fb_flex = {
+                "type": "bubble",
+                "size": "mega",
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "📘 Facebook 爆款文案",
+                            "weight": "bold",
+                            "color": "#ffffff",
+                            "size": "lg"
+                        }
+                    ],
+                    "backgroundColor": "#1877F2",
+                    "paddingAll": "md"
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": fb_text,
+                            "wrap": True,
+                            "size": "sm",
+                            "color": "#333333"
+                        }
+                    ],
+                    "paddingAll": "lg"
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#1877F2",
+                            "height": "sm",
+                            "action": {
+                                "type": "clipboard",
+                                "label": "📋 複製 FB 文案",
+                                "clipboardText": fb_text
+                            }
+                        }
+                    ],
+                    "paddingAll": "md"
+                }
+            }
 
-            read_aloud_button = QuickReplyButton(
-                action=PostbackAction(
-                    label="🔊 朗讀",
-                    data=json.dumps({"action": "read_aloud", "summary_id": summary_id}),
-                    display_text="🔊 朗讀摘要"
-                )
-            )
+            # 2. LinkedIn
+            li_flex = {
+                "type": "bubble",
+                "size": "mega",
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "💼 LinkedIn 專業貼文",
+                            "weight": "bold",
+                            "color": "#ffffff",
+                            "size": "lg"
+                        }
+                    ],
+                    "backgroundColor": "#0A66C2",
+                    "paddingAll": "md"
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": li_text,
+                            "wrap": True,
+                            "size": "sm",
+                            "color": "#333333"
+                        }
+                    ],
+                    "paddingAll": "lg"
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#0A66C2",
+                            "height": "sm",
+                            "action": {
+                                "type": "clipboard",
+                                "label": "📋 複製 LinkedIn 文案",
+                                "clipboardText": li_text
+                            }
+                        }
+                    ],
+                    "paddingAll": "md"
+                }
+            }
 
-            logger.info(f"URL processed: {url} (type: {content_type})")
+            # 3. Threads
+            th_flex = {
+                "type": "bubble",
+                "size": "mega",
+                "header": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "💬 Threads 脆友討論",
+                            "weight": "bold",
+                            "color": "#ffffff",
+                            "size": "lg"
+                        }
+                    ],
+                    "backgroundColor": "#000000",
+                    "paddingAll": "md"
+                },
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": th_text,
+                            "wrap": True,
+                            "size": "sm",
+                            "color": "#333333"
+                        }
+                    ],
+                    "paddingAll": "lg"
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#000000",
+                            "height": "sm",
+                            "action": {
+                                "type": "clipboard",
+                                "label": "📋 複製 Threads 文案",
+                                "clipboardText": th_text
+                            }
+                        }
+                    ],
+                    "paddingAll": "md"
+                }
+            }
 
-            # Add Quick Reply for YouTube URLs
-            if content_type == "youtube":
-                quick_reply_buttons = QuickReply(
-                    items=[
-                        QuickReplyButton(
-                            action=PostbackAction(
-                                label="📄 Detail",
-                                data=json.dumps({
-                                    "action": "youtube_summary",
-                                    "mode": "detail",
-                                    "url": url
-                                }),
-                                display_text="📄 詳細摘要"
-                            )
-                        ),
-                        QuickReplyButton(
-                            action=PostbackAction(
-                                label="🐦 Post on X",
-                                data=json.dumps({
-                                    "action": "youtube_summary",
-                                    "mode": "twitter",
-                                    "url": url
-                                }),
-                                display_text="🐦 Twitter 分享文案"
-                            )
-                        ),
-                        read_aloud_button,
-                    ]
-                )
-                reply_msg = TextSendMessage(text=formatted_result, quick_reply=quick_reply_buttons)
-            else:
-                reply_msg = TextSendMessage(
-                    text=formatted_result,
-                    quick_reply=QuickReply(items=[read_aloud_button])
-                )
+            # Construct CustomFlexSendMessage objects
+            fb_msg = CustomFlexSendMessage(alt_text="📘 Facebook 爆款文案", contents=fb_flex)
+            li_msg = CustomFlexSendMessage(alt_text="💼 LinkedIn 專業貼文", contents=li_flex)
+            th_msg = CustomFlexSendMessage(alt_text="💬 Threads 脆友討論", contents=th_flex)
 
-            results.append(reply_msg)
+            results.extend([fb_msg, li_msg, th_msg])
 
         except Exception as e:
             logger.error(f"Unexpected error processing URL: {e}", exc_info=True)
@@ -615,7 +750,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             results.append(reply_msg)
 
     if results:
-        await line_bot_api.reply_message(event.reply_token, results)
+        await line_bot_api.reply_message(event.reply_token, results[:5])
+
 
 
 async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str, text: str = None, push_user_id: str = None):
