@@ -102,9 +102,9 @@ class StoreMessage:
 # Initialize the FastAPI app for LINEBot
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
-session = aiohttp.ClientSession()
-async_http_client = AiohttpAsyncHttpClient(session)
-line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
+session = None
+async_http_client = None
+line_bot_api = None
 parser = WebhookParser(channel_secret)
 msg_memory_store: Dict[str, StoreMessage] = {}
 # Temporary image store for quick reply flow (keyed by user_id)
@@ -141,6 +141,13 @@ line_service = None
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on application startup"""
+    global session, async_http_client, line_bot_api
+    
+    # Initialize aiohttp session and LINE API client with a longer timeout
+    session = aiohttp.ClientSession()
+    async_http_client = AiohttpAsyncHttpClient(session, timeout=60)
+    line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
+
     # Start session cleanup background task
     await session_manager.start_cleanup_task()
     logger.info("Session cleanup background task started")
@@ -158,7 +165,8 @@ async def shutdown_event():
     logger.info("Session cleanup background task stopped")
 
     # Close aiohttp session
-    await session.close()
+    if session:
+        await session.close()
     logger.info("Application shutdown complete")
 
 
@@ -1321,7 +1329,7 @@ async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, 
     if results and linebot_user_id and linebot_token:
         try:
             # Create async client for this specific token
-            temp_async_client = AiohttpAsyncHttpClient(session)
+            temp_async_client = AiohttpAsyncHttpClient(session, timeout=60)
             temp_line_bot_api = AsyncLineBotApi(linebot_token, temp_async_client)
             await temp_line_bot_api.push_message(linebot_user_id, results)
         except Exception as push_error:
@@ -1511,7 +1519,7 @@ async def gemini_dynamic_webhook(request: Request, webhook_signature: Optional[s
     return {"status": "received"}
 
 
-async def process_batch_completed_webhook(batch_job_id: str, output_file_uri: str, user_id: Optional[str] = None):
+async def process_batch_completed_webhook(batch_job_id: str, output_file_uri: str, user_id: Optional[str] = None) -> bool:
     """
     Process completed batch job and push results to user
     """
@@ -1538,13 +1546,13 @@ async def process_batch_completed_webhook(batch_job_id: str, output_file_uri: st
                 
         if not user_id:
             logger.error(f"Cannot process batch {batch_job_id}: no user_id associated")
-            return
+            return True
             
         results = batch_service.download_and_parse_batch_results(output_file_uri)
         if not results:
             error_msg = TextSendMessage(text="⚠️ 深度美食評論分析處理完成，但無法解析分析結果。")
             await line_bot_api.push_message(user_id, [error_msg])
-            return
+            return True
             
         logger.info(f"Successfully retrieved batch analysis for {len(results)} restaurants")
         
@@ -1562,14 +1570,19 @@ async def process_batch_completed_webhook(batch_job_id: str, output_file_uri: st
         line_service = LineService(line_bot_api)
         await line_service.push_messages(user_id, messages)
         logger.info(f"Pushed deep analysis results to user {user_id}")
+        return True
         
     except Exception as e:
         logger.error(f"Failed to process batch completed webhook: {e}", exc_info=True)
         if user_id:
-            await line_bot_api.push_message(user_id, [TextSendMessage(text="❌ 處理批次分析結果時發生錯誤。")])
+            try:
+                await line_bot_api.push_message(user_id, [TextSendMessage(text="❌ 處理批次分析結果時發生錯誤。")])
+            except Exception as push_err:
+                logger.error(f"Failed to push error message to user: {push_err}")
+        return False
 
 
-async def process_batch_failed_webhook(batch_job_id: str):
+async def process_batch_failed_webhook(batch_job_id: str) -> bool:
     """
     Process failed batch job
     """
@@ -1582,8 +1595,10 @@ async def process_batch_failed_webhook(batch_job_id: str):
             if user_id:
                 error_msg = TextSendMessage(text="❌ 很抱歉，您的美食深度評論分析任務執行失敗，請稍後重試。")
                 await line_bot_api.push_message(user_id, [error_msg])
+        return True
     except Exception as e:
         logger.error(f"Failed to process batch failed webhook: {e}", exc_info=True)
+        return False
 
 
 async def poll_batch_jobs_loop():
@@ -1629,17 +1644,21 @@ async def poll_batch_jobs_loop():
                         dest_file = f"files/batch-{job.name.split('/')[-1]}"
                     
                     logger.info(f"Polling found succeeded batch job {job.name} for user {user_id}. Processing...")
-                    await process_batch_completed_webhook(job.name, dest_file, user_id)
-                    
-                    batch_service.client.batches.delete(name=job.name)
-                    logger.info(f"Deleted batch job {job.name} after successful processing.")
+                    success = await process_batch_completed_webhook(job.name, dest_file, user_id)
+                    if success:
+                        batch_service.client.batches.delete(name=job.name)
+                        logger.info(f"Deleted batch job {job.name} after successful processing.")
+                    else:
+                        logger.error(f"Skipped deleting batch job {job.name} due to processing failure.")
                     
                 elif is_failed:
                     logger.error(f"Polling found failed batch job {job.name} for user {user_id}. Processing failure...")
-                    await process_batch_failed_webhook(job.name)
-                    
-                    batch_service.client.batches.delete(name=job.name)
-                    logger.info(f"Deleted failed batch job {job.name}.")
+                    success = await process_batch_failed_webhook(job.name)
+                    if success:
+                        batch_service.client.batches.delete(name=job.name)
+                        logger.info(f"Deleted failed batch job {job.name}.")
+                    else:
+                        logger.error(f"Skipped deleting failed batch job {job.name} due to processing failure.")
                     
         except Exception as e:
             logger.error(f"Error in poll_batch_jobs_loop: {e}", exc_info=True)
