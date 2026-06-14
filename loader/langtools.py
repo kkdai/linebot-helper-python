@@ -4,6 +4,8 @@ import logging
 import PIL.Image
 from io import BytesIO
 from typing import Any
+from pydantic import BaseModel, Field
+
 
 # Use google-genai SDK for Vertex AI
 try:
@@ -243,3 +245,88 @@ def docs_to_str(docs: list) -> str:
             result.append(str(doc))
 
     return "\n".join(result)
+
+
+class SocialMediaPosts(BaseModel):
+    facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案，包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
+    linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案，著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
+    threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
+
+
+def generate_social_media_posts(text: str) -> dict:
+    """
+    Generate viral social media posts for FB, LinkedIn, and Threads from article text.
+
+    Args:
+        text: The text content of the crawled webpage.
+
+    Returns:
+        dict: A dictionary containing:
+            - facebook: FB copy
+            - linkedin: LinkedIn copy
+            - threads: Threads copy
+    """
+    if not text or not text.strip():
+        return {
+            "facebook": "無法取得網頁內容，無法產生文案。",
+            "linkedin": "無法取得網頁內容，無法產生文案。",
+            "threads": "無法取得網頁內容，無法產生文案。"
+        }
+
+    prompt = f"""請針對以下網頁內容，為三個不同的社群平台（Facebook、LinkedIn、Meta Threads）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
+
+網頁內容：
+{text}
+
+# 寫作指南：
+
+## 1. Facebook 爆款貼文：
+- 吸引人的 Hook：第一句話必須非常吸睛，善用好奇心、痛點或誇張的開頭。
+- 版面排版：多用 Emoji，段落清晰，使用條列式（Bullet points）整理核心觀點。
+- 呼籲行動（CTA）：結尾提出一個好回答的問題，引導讀者留言或分享。
+- Hashtags：加入 3-5 個相關的熱門 Hashtag。
+- 長度：約 200-400 字。
+
+## 2. LinkedIn 專業貼文：
+- 專業 Hook：第一句從商業洞察、職場學習、趨勢分析或個人省思出發。
+- 內容結構：語氣專業、理性，分享文章的核心價值、給職場人士或企業的 3 個具體 Takeaways。
+- 呼籲行動：徵求專業意見或開啟思辨討論，例如：「你怎麼看這個趨勢？」
+- Hashtags：加入 3-5 個專業領域的 Hashtag。
+- 長度：約 300-500 字。
+
+## 3. Meta Threads 脆友討論：
+- Threads 脆友 Hook：極度口語化、像跟朋友講話，第一句要帶有強烈共鳴、槽點、吐槽、或一針見血的觀點。
+- 內容風格：段落極短（每段 1-2 句話），善用白話文、網路用語或迷因感。以分享八卦、大實話或內行人才懂的梗為佳。
+- 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
+- Hashtags：不使用或僅使用 1 個 Hashtag。
+- 長度：約 150-300 字。
+"""
+
+    try:
+        client = _get_vertex_client()
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                response_mime_type="application/json",
+                response_schema=SocialMediaPosts,
+                max_output_tokens=4096,
+            )
+        )
+
+        import json
+        if response.text:
+            return json.loads(response.text)
+        else:
+            raise Exception("Empty response text from Gemini")
+
+    except Exception as e:
+        logging.error(f"Error generating social media posts: {e}")
+        # Fallback dictionary
+        return {
+            "facebook": f"生成 Facebook 文案失敗：{str(e)[:100]}",
+            "linkedin": f"生成 LinkedIn 文案失敗：{str(e)[:100]}",
+            "threads": f"生成 Threads 文案失敗：{str(e)[:100]}"
+        }
+
