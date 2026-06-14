@@ -629,6 +629,22 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
     """
     msg = text if text is not None else event.message.text.strip()
 
+    # 攔截指定餐廳菜色查詢
+    import re
+    match = re.search(r"幫我查一下\s*(.*?)\s*(?:的)?菜色", msg)
+    if match:
+        restaurant_name = match.group(1).strip()
+        target_uid = push_user_id or user_id
+        
+        ack_text = f"🔍 收到！正在為您對「{restaurant_name}」進行深度評論與招牌菜色大數據分析，大約需要 1-2 分鐘，請稍候..."
+        if event.reply_token:
+            await line_bot_api.reply_message(event.reply_token, [TextSendMessage(text=ack_text)])
+        else:
+            await line_bot_api.push_message(target_uid, [TextSendMessage(text=ack_text)])
+            
+        asyncio.create_task(run_specific_restaurant_analysis_background(user_id, restaurant_name, target_uid))
+        return
+
     try:
         logger.info(f"Processing via Orchestrator for user {user_id}: {msg[:50]}...")
 
@@ -1040,9 +1056,9 @@ async def run_foodie_deep_analysis_background(user_id: str, latitude: float, lon
         from tools.maps_tool import get_nearby_restaurants_for_batch
         from services.batch_service import BatchService
         
-        # 1. Fetch nearby restaurants with reviews
+        # 1. Fetch nearby restaurants with reviews (limit to 1 restaurant for speed)
         logger.info(f"Background task: Fetching restaurants with reviews for {user_id}")
-        search_res = await asyncio.to_thread(get_nearby_restaurants_for_batch, latitude, longitude)
+        search_res = await asyncio.to_thread(get_nearby_restaurants_for_batch, latitude, longitude, limit=1)
         if search_res.get("status") != "success":
             error_text = search_res.get("error_message", "搜尋餐廳失敗")
             await line_bot_api.push_message(user_id, [TextSendMessage(text=f"⚠️ {error_text}")])
@@ -1083,6 +1099,56 @@ async def run_foodie_deep_analysis_background(user_id: str, latitude: float, lon
     except Exception as e:
         logger.error(f"Background foodie analysis error: {e}", exc_info=True)
         await line_bot_api.push_message(user_id, [TextSendMessage(text=f"❌ 背景深度分析處理失敗：{str(e)[:100]}")])
+
+
+async def run_specific_restaurant_analysis_background(user_id: str, restaurant_name: str, push_user_id: str):
+    """
+    Background task to search specific restaurant and submit Batch Job
+    """
+    try:
+        from tools.maps_tool import search_specific_restaurant_by_name
+        from services.batch_service import BatchService
+        
+        # 1. Search specific restaurant details
+        logger.info(f"Background task: Searching for specific restaurant {restaurant_name}")
+        search_res = await asyncio.to_thread(search_specific_restaurant_by_name, restaurant_name)
+        if search_res.get("status") != "success":
+            error_text = search_res.get("error_message", "搜尋餐廳失敗")
+            await line_bot_api.push_message(push_user_id, [TextSendMessage(text=f"⚠️ {error_text}")])
+            return
+            
+        restaurant = search_res.get("restaurant")
+        if not restaurant or not restaurant.get("name"):
+            await line_bot_api.push_message(push_user_id, [TextSendMessage(text=f"⚠️ 找不到關於餐廳「{restaurant_name}」的評價資訊。")])
+            return
+            
+        # 2. Submit Batch Job
+        webhook_domain = os.getenv("WEBHOOK_DOMAIN")
+        if not webhook_domain and app_base_url:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(app_base_url)
+            webhook_domain = parsed_url.netloc
+            
+        batch_service = BatchService()
+        logger.info(f"Background task: Submitting Batch Job for specific restaurant {restaurant.get('name')}")
+        submit_res = await batch_service.submit_restaurant_batch_job(
+            user_id=user_id,
+            coordinates={"latitude": 0.0, "longitude": 0.0},
+            restaurants=[restaurant],
+            webhook_domain=webhook_domain
+        )
+        
+        if submit_res.get("status") != "success":
+            error_text = submit_res.get("error_message", "建立批次分析工作失敗")
+            await line_bot_api.push_message(push_user_id, [TextSendMessage(text=f"❌ {error_text}")])
+            return
+            
+        job_id = submit_res.get("batch_job_id")
+        logger.info(f"Batch job {job_id} submitted successfully for specific restaurant {restaurant.get('name')}")
+        
+    except Exception as e:
+        logger.error(f"Background specific restaurant analysis error: {e}", exc_info=True)
+        await line_bot_api.push_message(push_user_id, [TextSendMessage(text=f"❌ 背景深度分析處理失敗：{str(e)[:100]}")])
 
 
 
