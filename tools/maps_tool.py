@@ -166,6 +166,7 @@ class RestaurantList(BaseModel):
 def get_nearby_restaurants_for_batch(
     latitude: float,
     longitude: float,
+    limit: int = 3,
     language_code: str = "zh-TW"
 ) -> dict:
     """
@@ -187,19 +188,19 @@ def get_nearby_restaurants_for_batch(
             "error_message": "Google Cloud 專案未設定。Maps 搜尋需要 Vertex AI 配置。"
         }
 
-    query = """請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳。
+    query = f"""請幫我搜尋此座標附近的 {limit} 家評價不錯的熱門餐廳。
 請務必以 JSON 格式返回，格式必須符合以下 JSON 結構：
-{
+{{
   "restaurants": [
-    {
+    {{
       "name": "餐廳名稱",
       "address": "餐廳地址",
       "rating": "綜合評分",
       "reviews": []
-    }
+    }}
   ]
-}
-注意：請將 reviews 欄位保留為空陣列 []，我們後續會透過搜尋補充。請直接輸出 JSON，不要包含任何額外的說明文字。"""
+}}
+注意：請將 reviews 欄位保留為空陣列 []，我們後續會透過搜尋補充。請直接輸出 JSON，不要包含任何說明文字。"""
 
     logger.info(f"Retrieving nearby restaurants with reviews for batch at ({latitude}, {longitude}) using Vertex AI")
 
@@ -267,7 +268,7 @@ def get_nearby_restaurants_for_batch(
             raise json_err
 
         # 2. For each restaurant, use Google Search Grounding to search for reviews, atmosphere, and signature dishes
-        for rest in result_json.get("restaurants", []):
+        for rest in result_json.get("restaurants", [])[:limit]:
             name = rest.get("name")
             address = rest.get("address")
             if not name:
@@ -307,5 +308,69 @@ def get_nearby_restaurants_for_batch(
         return {
             "status": "error",
             "error_message": f"搜尋餐廳與評論失敗: {str(e)[:100]}"
+        }
+
+
+def search_specific_restaurant_by_name(restaurant_name: str) -> dict:
+    """
+    Search for a specific restaurant by name using Google Search Grounding
+    and return structured details for Batch API.
+    """
+    project_id = os.getenv('GOOGLE_CLOUD_PROJECT')
+    location = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
+    
+    if not project_id:
+        return {"status": "error", "error_message": "GOOGLE_CLOUD_PROJECT 未設定"}
+        
+    query = f"""請搜尋這家餐廳的正確名稱、完整地址、目前 Google Map 評分、以及綜合評價與菜色特色：{restaurant_name}。
+請務必以 JSON 格式返回，格式必須符合以下 JSON 結構：
+{{
+  "name": "餐廳名稱",
+  "address": "餐廳地址",
+  "rating": "綜合評分",
+  "reviews": [
+    "網友評價、招牌特色菜色、用餐感受與氛圍的綜合心得摘要"
+  ]
+}}
+請直接輸出 JSON，不要包含任何額外的說明文字。"""
+
+    try:
+        client = genai.Client(
+            vertexai=True,
+            project=project_id,
+            location=location,
+            http_options=types.HttpOptions(api_version="v1")
+        )
+        
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=query,
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())]
+            )
+        )
+        
+        text = response.text.strip() if response.text else ""
+        
+        import re
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+        if match:
+            text = match.group(1).strip()
+        else:
+            start_idx = text.find('{')
+            end_idx = text.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                text = text[start_idx:end_idx + 1].strip()
+                
+        result_json = json.loads(text)
+        return {
+            "status": "success",
+            "restaurant": result_json
+        }
+    except Exception as e:
+        logger.error(f"search_specific_restaurant_by_name error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error_message": f"搜尋指定餐廳失敗: {str(e)[:100]}"
         }
 
