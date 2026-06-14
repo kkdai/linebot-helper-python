@@ -1042,7 +1042,7 @@ async def run_foodie_deep_analysis_background(user_id: str, latitude: float, lon
         
         # 1. Fetch nearby restaurants with reviews
         logger.info(f"Background task: Fetching restaurants with reviews for {user_id}")
-        search_res = get_nearby_restaurants_for_batch(latitude, longitude)
+        search_res = await asyncio.to_thread(get_nearby_restaurants_for_batch, latitude, longitude)
         if search_res.get("status") != "success":
             error_text = search_res.get("error_message", "搜尋餐廳失敗")
             await line_bot_api.push_message(user_id, [TextSendMessage(text=f"⚠️ {error_text}")])

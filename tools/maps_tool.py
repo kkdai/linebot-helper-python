@@ -187,7 +187,7 @@ def get_nearby_restaurants_for_batch(
             "error_message": "Google Cloud 專案未設定。Maps 搜尋需要 Vertex AI 配置。"
         }
 
-    query = """請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳，並擷取每家餐廳的 5 到 10 則最新用戶評論。
+    query = """請幫我搜尋此座標附近的 3 家評價不錯的熱門餐廳。
 請務必以 JSON 格式返回，格式必須符合以下 JSON 結構：
 {
   "restaurants": [
@@ -195,14 +195,11 @@ def get_nearby_restaurants_for_batch(
       "name": "餐廳名稱",
       "address": "餐廳地址",
       "rating": "綜合評分",
-      "reviews": [
-        "評論內容1",
-        "評論內容2"
-      ]
+      "reviews": []
     }
   ]
 }
-請直接輸出 JSON，不要包含任何額外的說明文字。"""
+注意：請將 reviews 欄位保留為空陣列 []，我們後續會透過搜尋補充。請直接輸出 JSON，不要包含任何額外的說明文字。"""
 
     logger.info(f"Retrieving nearby restaurants with reviews for batch at ({latitude}, {longitude}) using Vertex AI")
 
@@ -268,6 +265,33 @@ def get_nearby_restaurants_for_batch(
         except Exception as json_err:
             logger.error(f"JSON parsing failed. Extracted text was: {repr(text)}")
             raise json_err
+
+        # 2. For each restaurant, use Google Search Grounding to search for reviews, atmosphere, and signature dishes
+        for rest in result_json.get("restaurants", []):
+            name = rest.get("name")
+            address = rest.get("address")
+            if not name:
+                continue
+            
+            search_query = f"請搜尋該餐廳的網路評價、推薦特色菜色、用餐感受與氛圍：{name}，地址：{address}。請給出大約 5 句話，總結該餐廳的熱門招牌菜、給人的環境與服務感受、以及網友的真實評論心得。"
+            logger.info(f"Searching Google Search for reviews of {name}...")
+            
+            try:
+                search_response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=search_query,
+                    config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                    )
+                )
+                search_text = search_response.text.strip() if search_response.text else ""
+                if search_text:
+                    rest["reviews"] = [search_text]
+                else:
+                    rest["reviews"] = ["暫無網路評價資訊"]
+            except Exception as search_err:
+                logger.error(f"Failed to search reviews for {name}: {search_err}")
+                rest["reviews"] = ["暫無網路評價資訊"]
 
         return {
             "status": "success",
