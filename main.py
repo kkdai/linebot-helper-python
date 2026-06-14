@@ -546,7 +546,8 @@ async def handle_message_event(event: MessageEvent):
 async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal"):
     """
     Handle URL messages by crawling the content and generating 3 viral social media posts
-    for FB, LinkedIn, and Threads, returned as Flex Messages with copy-to-clipboard buttons.
+    for FB, LinkedIn, and Threads. Returns a single Carousel Flex Message with copy-to-clipboard buttons,
+    followed by 3 text messages containing the raw text copy of the posts for easy copying on computers.
 
     Args:
         event: LINE message event
@@ -572,11 +573,12 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             # Generate the social media posts
             posts = generate_social_media_posts(crawled_text)
             
-            fb_text = posts.get("facebook", "")
-            li_text = posts.get("linkedin", "")
-            th_text = posts.get("threads", "")
+            # Append original article link to each post
+            fb_text = f"{posts.get('facebook', '')}\n\n🔗 原文連結： {url}"
+            li_text = f"{posts.get('linkedin', '')}\n\n🔗 原文連結： {url}"
+            th_text = f"{posts.get('threads', '')}\n\n🔗 原文連結： {url}"
 
-            # Create Flex Messages
+            # Create Flex Message Bubbles
             # 1. Facebook
             fb_flex = {
                 "type": "bubble",
@@ -736,12 +738,25 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
                 }
             }
 
-            # Construct CustomFlexSendMessage objects
-            fb_msg = CustomFlexSendMessage(alt_text="📘 Facebook 爆款文案", contents=fb_flex)
-            li_msg = CustomFlexSendMessage(alt_text="💼 LinkedIn 專業貼文", contents=li_flex)
-            th_msg = CustomFlexSendMessage(alt_text="💬 Threads 脆友討論", contents=th_flex)
+            # Combine them into a Carousel Flex Message
+            carousel_flex = {
+                "type": "carousel",
+                "contents": [
+                    fb_flex,
+                    li_flex,
+                    th_flex
+                ]
+            }
 
-            results.extend([fb_msg, li_msg, th_msg])
+            carousel_msg = CustomFlexSendMessage(alt_text="📝 社群爆款文案摘要", contents=carousel_flex)
+            results.append(carousel_msg)
+
+            # Construct separate text messages for easy copying on computers
+            fb_text_msg = TextSendMessage(text=f"📘 Facebook 爆款文案：\n--------------------\n{fb_text}")
+            li_text_msg = TextSendMessage(text=f"💼 LinkedIn 專業貼文：\n--------------------\n{li_text}")
+            th_text_msg = TextSendMessage(text=f"💬 Threads 脆友討論：\n--------------------\n{th_text}")
+
+            results.extend([fb_text_msg, li_text_msg, th_text_msg])
 
         except Exception as e:
             logger.error(f"Unexpected error processing URL: {e}", exc_info=True)
@@ -751,6 +766,7 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
     if results:
         await line_bot_api.reply_message(event.reply_token, results[:5])
+
 
 
 
