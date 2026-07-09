@@ -102,6 +102,7 @@ async def search_nearby_places(
                         language_code=language_code,
                     ),
                 ),
+                labels={"client_id": "info_helper"},
             ),
         )
 

@@ -156,6 +156,7 @@ def summarized_yesterday_github_issues() -> str:
             config=types.GenerateContentConfig(
                 temperature=0,
                 max_output_tokens=2048,
+                labels={"client_id": "info_helper"},
             )
         )
 

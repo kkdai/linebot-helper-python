@@ -96,6 +96,7 @@ class ChatSessionManager:
                 max_output_tokens=2048,
                 # 關鍵：啟用 Google Search
                 tools=[types.Tool(google_search=types.GoogleSearch())],
+                labels={"client_id": "info_helper"},
             )
 
             # 創建 chat session（使用共享的 client）

@@ -66,6 +66,9 @@ def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite-preview",
             contents=prompt,
+            config=types.GenerateContentConfig(
+                labels={"client_id": "info_helper"},
+            ),
         )
 
         # 處理回應，將文字分割成關鍵字列表
