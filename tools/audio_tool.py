@@ -49,6 +49,9 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/mp4") -> 
                 ],
             )
         ],
+        config=types.GenerateContentConfig(
+            labels={"client_id": "info_helper"},
+        ),
     )
 
     transcription = response.text or ""

@@ -11,7 +11,7 @@ from typing import Literal
 
 try:
     from google import genai
-    from google.genai.types import HttpOptions, Part
+    from google.genai.types import HttpOptions, Part, GenerateContentConfig
     from google.genai.errors import ClientError
     GENAI_AVAILABLE = True
 except ImportError:
@@ -203,6 +203,9 @@ def summarize_youtube_video(
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=contents,
+                config=GenerateContentConfig(
+                    labels={"client_id": "info_helper"},
+                ),
             )
 
             if response.text:

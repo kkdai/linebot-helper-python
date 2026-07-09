@@ -123,6 +123,7 @@ def search_nearby_places(
                         language_code=language_code,
                     ),
                 ),
+                labels={"client_id": "info_helper"},
             ),
         )
 
@@ -141,7 +142,10 @@ def search_nearby_places(
                 extract_prompt = f"請從以下文字中擷取所有餐廳的名稱，並以 JSON 陣列格式返回（例如：[\"餐廳A\", \"餐廳B\"]）。請直接輸出 JSON 陣列，不要包含任何 markdown 標記（如 ```json）或說明文字。\n\n{result}"
                 extract_res = client.models.generate_content(
                     model="gemini-2.5-flash",
-                    contents=extract_prompt
+                    contents=extract_prompt,
+                    config=types.GenerateContentConfig(
+                        labels={"client_id": "info_helper"},
+                    ),
                 )
                 extract_text = extract_res.text.strip() if extract_res.text else ""
                 
@@ -257,6 +261,7 @@ def get_nearby_restaurants_for_batch(
                         language_code=language_code,
                     ),
                 ),
+                labels={"client_id": "info_helper"},
             ),
         )
 
@@ -309,7 +314,8 @@ def get_nearby_restaurants_for_batch(
                     model="gemini-2.5-flash",
                     contents=search_query,
                     config=types.GenerateContentConfig(
-                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                        labels={"client_id": "info_helper"},
                     )
                 )
                 search_text = search_response.text.strip() if search_response.text else ""
@@ -373,7 +379,8 @@ def search_specific_restaurant_by_name(restaurant_name: str) -> dict:
             model="gemini-2.5-flash",
             contents=query,
             config=types.GenerateContentConfig(
-                tools=[types.Tool(google_search=types.GoogleSearch())]
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                labels={"client_id": "info_helper"},
             )
         )
         

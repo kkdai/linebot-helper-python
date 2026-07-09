@@ -161,6 +161,7 @@ def summarize_text(
             config=types.GenerateContentConfig(
                 temperature=0,
                 max_output_tokens=2048,
+                labels={"client_id": "info_helper"},
             )
         )
 
@@ -232,6 +233,7 @@ def analyze_image_agentic(
                 thinking_config=types.ThinkingConfig(
                     thinkingBudget=2048
                 ),
+                labels={"client_id": "info_helper"},
             )
         )
 
@@ -325,6 +327,7 @@ def analyze_image(
                 thinking_config=types.ThinkingConfig(
                     thinkingBudget=0
                 ),
+                labels={"client_id": "info_helper"},
             )
         )
 

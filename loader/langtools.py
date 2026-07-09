@@ -163,6 +163,7 @@ reply in zh-TW"""
             config=types.GenerateContentConfig(
                 temperature=0,
                 max_output_tokens=2048,
+                labels={"client_id": "info_helper"},
             )
         )
 
@@ -207,6 +208,7 @@ def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
             config=types.GenerateContentConfig(
                 temperature=0.5,
                 max_output_tokens=2048,
+                labels={"client_id": "info_helper"},
             )
         )
 
@@ -312,6 +314,7 @@ def generate_social_media_posts(text: str) -> dict:
                 response_mime_type="application/json",
                 response_schema=SocialMediaPosts,
                 max_output_tokens=4096,
+                labels={"client_id": "info_helper"},
             )
         )
 

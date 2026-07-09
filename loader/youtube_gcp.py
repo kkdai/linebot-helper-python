@@ -5,7 +5,7 @@ import time
 # Use new google-genai SDK with Vertex AI
 try:
     from google import genai
-    from google.genai.types import HttpOptions, Part
+    from google.genai.types import HttpOptions, Part, GenerateContentConfig
     from google.genai.errors import ClientError
     GENAI_AVAILABLE = True
 except ImportError:
@@ -161,6 +161,9 @@ async def load_transcript_from_youtube(youtube_url: str, mode: str = "normal") -
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=contents,
+                config=GenerateContentConfig(
+                    labels={"client_id": "info_helper"},
+                ),
             )
 
             if response.text:

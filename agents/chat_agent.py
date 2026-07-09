@@ -124,10 +124,12 @@ class ChatAgent:
                 temperature=self.config.temperature,
                 max_output_tokens=self.config.max_output_tokens,
                 tools=[types.Tool(google_search=types.GoogleSearch())],
+                labels={"client_id": "info_helper"},
             )
         return types.GenerateContentConfig(
             temperature=self.config.temperature,
             max_output_tokens=self.config.max_output_tokens,
+            labels={"client_id": "info_helper"},
         )
 
     def _chat_factory(self):
