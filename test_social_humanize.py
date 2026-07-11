@@ -55,8 +55,10 @@ def test_per_platform_tuning_present():
     prompt = _build_social_media_prompt(SAMPLE_TEXT)
     # Facebook：開場改真實痛點、禁假掰誇張
     assert "禁止假掰誇張詞" in prompt
-    # LinkedIn：禁 buzzword 空堆
+    # LinkedIn：守則權重高、禁 buzzword 空堆、禁 AI 正式腔套語
     assert "buzzword 空堆" in prompt
+    assert "人性化守則權重高" in prompt
+    assert "禁 AI 正式腔套語" in prompt or "嚴禁 AI 正式腔套語" in prompt
     # Threads：人性化守則權重最高
     assert "人性化守則權重最高" in prompt
 
