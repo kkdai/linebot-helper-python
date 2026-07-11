@@ -45,9 +45,20 @@ def test_prompt_contains_article_text():
 def test_key_humanize_rules_present():
     """抽查幾條關鍵人性化規則確實存在。"""
     prompt = _build_social_media_prompt(SAMPLE_TEXT)
-    assert "禁 AI 開場定型句" in prompt
-    assert "誇張要真實" in prompt
+    assert "先保事實" in prompt
+    assert "AI 開場定型句" in prompt
     assert "具體 ＞ 抽象" in prompt
+
+
+def test_taiwan_localization_rules_present():
+    """speak-human-tw 的台灣在地化規則（中國用語替換、全形標點、語氣詞）必須注入。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    # 中國用語替換表抽查
+    assert "視頻→影片" in prompt
+    assert "質量→品質" in prompt
+    # 全形標點與台灣語氣詞
+    assert "全形標點" in prompt
+    assert "台灣語氣詞" in prompt
 
 
 def test_per_platform_tuning_present():
