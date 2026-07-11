@@ -255,6 +255,61 @@ class SocialMediaPosts(BaseModel):
     threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
 
 
+# 人性化守則：萃取自 humanizer (github.com/blader/humanizer) 的「語言無關」原則，
+# 翻成繁中並針對「爆款社群貼文」場景調整。目的是去掉「一看就知道是 AI 寫的」痕跡，
+# 同時保留爆款鉤子與分享動力。放在排版技巧「之前」並標最高優先，
+# 讓模型在「人味 vs 排版花招」衝突時優先保住真實感。
+HUMANIZE_GUIDELINES = """# 人性化守則（最高優先，凌駕以下排版技巧）：
+寫得像一個真實、有觀點的台灣人，而不是 AI 在「生成內容」。
+
+1. 禁 AI 開場定型句：不要用「在當今這個時代」「讓我們一起來看看」「老實說？」「你有沒有想過…」這類罐頭開場。第一句就講真東西。
+2. 誇張要真實，不要假掰：Hook 可以有情緒張力，但必須是真的痛點或真的觀察，不要無中生有的浮誇形容詞（如「震撼」「顛覆」「劃時代」）。
+3. 具體 ＞ 抽象：用實際的數字、例子、場景，取代空泛大詞。能講「一個月省 3 小時」就不要講「大幅提升效率」。
+4. 句長要有節奏：長短句交錯，不要每句都一樣長、一樣工整。
+5. 不要硬湊三點：需要幾點就寫幾點，不為對稱而強行湊成三項。
+6. 少用防禦性 hedging：「可能」「或許」「某種程度上」堆一起會很 AI，有觀點就直接講。
+7. 不要諂媚、不要萬用金句結尾：避免「希望這對你有幫助」「總而言之，這是一個值得思考的議題」這種空心結論。
+8. Emoji 是調味不是裝飾：point 到就好，不要每行都放。
+"""
+
+
+def _build_social_media_prompt(text: str) -> str:
+    """Build the viral social-media generation prompt for a given article text.
+
+    Extracted so the prompt (humanize guidelines + per-platform tuning) can be
+    unit-tested without calling the Gemini API.
+    """
+    return f"""請針對以下網頁內容，為三個不同的社群平台（Facebook、LinkedIn、Meta Threads）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
+
+網頁內容：
+{text}
+
+{HUMANIZE_GUIDELINES}
+# 寫作指南：
+
+## 1. Facebook 爆款貼文：
+- 吸引人的 Hook：第一句話必須非常吸睛，善用好奇心、痛點或誇張的開頭。但依人性化守則，開場改用「真實痛點／真實場景」，禁止假掰誇張詞。
+- 版面排版：多用 Emoji，段落清晰，使用條列式（Bullet points）整理核心觀點。
+- 呼籲行動（CTA）：結尾提出一個好回答的問題，引導讀者留言或分享。
+- Hashtags：加入 3-5 個相關的熱門 Hashtag。
+- 長度：約 200-400 字。
+
+## 2. LinkedIn 專業貼文：
+- 專業 Hook：第一句從商業洞察、職場學習、趨勢分析或個人省思出發。
+- 內容結構：語氣專業、理性，分享文章的核心價值、給職場人士或企業的具體 Takeaways。去八股，禁止 buzzword 空堆（如「賦能」「數位轉型」「無縫接軌」連發），每個 Takeaway 要具體可執行。
+- 呼籲行動：徵求專業意見或開啟思辨討論，例如：「你怎麼看這個趨勢？」
+- Hashtags：加入 3-5 個專業領域的 Hashtag。
+- 長度：約 300-500 字。
+
+## 3. Meta Threads 脆友討論：
+- Threads 脆友 Hook：極度口語化、像跟朋友講話，第一句要帶有強烈共鳴、槽點、吐槽、或一針見血的觀點。
+- 內容風格：段落極短（每段 1-2 句話），善用白話文、網路用語或迷因感。以分享八卦、大實話或內行人才懂的梗為佳。此平台人性化守則權重最高：要像真的脆友在講話，容許不完美、口語破碎感，嚴禁任何 AI 腔。
+- 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
+- Hashtags：不使用或僅使用 1 個 Hashtag。
+- 長度：約 150-300 字。
+"""
+
+
 def generate_social_media_posts(text: str) -> dict:
     """
     Generate viral social media posts for FB, LinkedIn, and Threads from article text.
@@ -275,34 +330,7 @@ def generate_social_media_posts(text: str) -> dict:
             "threads": "無法取得網頁內容，無法產生文案。"
         }
 
-    prompt = f"""請針對以下網頁內容，為三個不同的社群平台（Facebook、LinkedIn、Meta Threads）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
-
-網頁內容：
-{text}
-
-# 寫作指南：
-
-## 1. Facebook 爆款貼文：
-- 吸引人的 Hook：第一句話必須非常吸睛，善用好奇心、痛點或誇張的開頭。
-- 版面排版：多用 Emoji，段落清晰，使用條列式（Bullet points）整理核心觀點。
-- 呼籲行動（CTA）：結尾提出一個好回答的問題，引導讀者留言或分享。
-- Hashtags：加入 3-5 個相關的熱門 Hashtag。
-- 長度：約 200-400 字。
-
-## 2. LinkedIn 專業貼文：
-- 專業 Hook：第一句從商業洞察、職場學習、趨勢分析或個人省思出發。
-- 內容結構：語氣專業、理性，分享文章的核心價值、給職場人士或企業的 3 個具體 Takeaways。
-- 呼籲行動：徵求專業意見或開啟思辨討論，例如：「你怎麼看這個趨勢？」
-- Hashtags：加入 3-5 個專業領域的 Hashtag。
-- 長度：約 300-500 字。
-
-## 3. Meta Threads 脆友討論：
-- Threads 脆友 Hook：極度口語化、像跟朋友講話，第一句要帶有強烈共鳴、槽點、吐槽、或一針見血的觀點。
-- 內容風格：段落極短（每段 1-2 句話），善用白話文、網路用語或迷因感。以分享八卦、大實話或內行人才懂的梗為佳。
-- 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
-- Hashtags：不使用或僅使用 1 個 Hashtag。
-- 長度：約 150-300 字。
-"""
+    prompt = _build_social_media_prompt(text)
 
     try:
         client = _get_vertex_client()
