@@ -220,7 +220,7 @@ async def main():
         return
 
     print(f"\n✅ Vertex AI Project: {os.getenv('GOOGLE_CLOUD_PROJECT')}")
-    print(f"✅ Location: {os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')}")
+    print(f"✅ Location: {os.getenv('GOOGLE_CLOUD_LOCATION', 'global')}")
 
     print("\n請選擇測試模式：")
     print("1. 自動測試（運行所有測試）")

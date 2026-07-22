@@ -201,7 +201,7 @@ class BatchService:
             config = types.CreateBatchJobConfig(**config_args)
             
             job = self.client.batches.create(
-                model="gemini-2.5-flash",
+                model="gemini-3.1-flash-lite",
                 src=uploaded_file.name,
                 config=config
             )

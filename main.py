@@ -64,7 +64,7 @@ firecrawl_key = os.getenv('firecrawl_key')
 
 # Vertex AI configuration
 vertex_project = os.getenv('GOOGLE_CLOUD_PROJECT')
-vertex_location = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+vertex_location = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 # Validate required environment variables
 if not channel_secret:

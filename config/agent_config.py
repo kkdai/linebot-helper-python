@@ -18,9 +18,9 @@ class AgentConfig:
     location: str
 
     # Model settings
-    chat_model: str = "gemini-2.5-flash"
+    chat_model: str = "gemini-3.1-flash-lite"
     orchestrator_model: str = "gemini-2.5-pro"
-    fast_model: str = "gemini-3.1-flash-lite-preview"
+    fast_model: str = "gemini-3.1-flash-lite"
 
     # Session settings
     session_timeout_minutes: int = 30
@@ -49,14 +49,14 @@ def get_agent_config() -> AgentConfig:
     if not project_id:
         raise ValueError("GOOGLE_CLOUD_PROJECT environment variable is required")
 
-    location = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+    location = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
     return AgentConfig(
         project_id=project_id,
         location=location,
-        chat_model=os.getenv('CHAT_MODEL', 'gemini-2.5-flash'),
+        chat_model=os.getenv('CHAT_MODEL', 'gemini-3.1-flash-lite'),
         orchestrator_model=os.getenv('ORCHESTRATOR_MODEL', 'gemini-2.5-pro'),
-        fast_model=os.getenv('FAST_MODEL', 'gemini-3.1-flash-lite-preview'),
+        fast_model=os.getenv('FAST_MODEL', 'gemini-3.1-flash-lite'),
         session_timeout_minutes=int(os.getenv('SESSION_TIMEOUT_MINUTES', '30')),
         max_history_length=int(os.getenv('MAX_HISTORY_LENGTH', '20')),
         max_output_tokens=int(os.getenv('MAX_OUTPUT_TOKENS', '2048')),

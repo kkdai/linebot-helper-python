@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Vertex AI configuration
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
-VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 
 def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
@@ -64,7 +64,7 @@ def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
 
         # 生成回應
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 labels={"client_id": "info_helper"},
