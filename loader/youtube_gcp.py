@@ -14,7 +14,7 @@ except ImportError:
 
 # Vertex AI configuration
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
-VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 if not VERTEX_PROJECT:
     logging.error("GOOGLE_CLOUD_PROJECT environment variable not set")
@@ -159,7 +159,7 @@ async def load_transcript_from_youtube(youtube_url: str, mode: str = "normal") -
 
             # Generate content
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.1-flash-lite",
                 contents=contents,
                 config=GenerateContentConfig(
                     labels={"client_id": "info_helper"},

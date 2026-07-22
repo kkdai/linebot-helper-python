@@ -32,7 +32,7 @@ These environment variables must be set for the application to work:
 - `LINE_USER_ID`: LINE user ID to send push notifications to
 - `ChannelAccessTokenHF`: Hugging Face channel access token
 - `GOOGLE_CLOUD_PROJECT`: Google Cloud project ID for Vertex AI (required)
-- `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (optional, defaults to `us-central1`)
+- `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (optional, defaults to `global`; `global` is required for Gemini 3.x models like `gemini-3.1-flash-lite`)
 
 ### Optional Environment Variables
 
@@ -70,7 +70,7 @@ These environment variables enable additional features:
 
 3. **Configure Environment Variables:**
    - `GOOGLE_CLOUD_PROJECT`: Your Google Cloud project ID (required)
-   - `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (optional, defaults to `us-central1`)
+   - `GOOGLE_CLOUD_LOCATION`: Region for Vertex AI (optional, defaults to `global`; `global` is required for Gemini 3.x models like `gemini-3.1-flash-lite`)
 
 **Note:** For Maps Grounding specifically, `global` location is recommended.
 

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Vertex AI configuration
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
-VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 # YouTube summarization prompts
 YOUTUBE_PROMPTS = {
@@ -201,7 +201,7 @@ def summarize_youtube_video(
             ]
 
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.1-flash-lite",
                 contents=contents,
                 config=GenerateContentConfig(
                     labels={"client_id": "info_helper"},

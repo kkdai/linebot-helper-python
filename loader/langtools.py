@@ -24,7 +24,7 @@ os.environ["USER_AGENT"] = "myagent"
 
 # Vertex AI configuration
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
-VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 
 def _get_vertex_client():
@@ -158,7 +158,7 @@ reply in zh-TW"""
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,
@@ -203,7 +203,7 @@ def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
         ]
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             contents=contents,
             config=types.GenerateContentConfig(
                 temperature=0.5,
@@ -354,13 +354,13 @@ def generate_social_media_posts(text: str) -> dict:
     try:
         client = _get_vertex_client()
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
                 response_mime_type="application/json",
                 response_schema=SocialMediaPosts,
-                # gemini-2.5-flash 是思考模型，此上限為「思考 + 輸出」共用。
+                # gemini-3.1-flash-lite 是思考模型，此上限為「思考 + 輸出」共用。
                 # 人性化守則變豐富後思考 token 增加，4096 會偶爾把 JSON 輸出擠爆
                 # 導致截斷、json.loads 失敗。拉高留餘裕（實際只產出約 800-1200 tokens）。
                 max_output_tokens=8192,

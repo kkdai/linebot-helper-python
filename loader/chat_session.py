@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Vertex AI configuration
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
-VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 
 class ChatSessionManager:

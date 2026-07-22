@@ -15,7 +15,7 @@ except ImportError:
 
 # Vertex AI configuration
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
-VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
+VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,7 @@ def summarized_yesterday_github_issues() -> str:
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,
