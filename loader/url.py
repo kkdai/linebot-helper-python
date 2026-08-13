@@ -1,3 +1,4 @@
+import asyncio
 from urllib.parse import urlparse, urlunparse
 import httpx
 import logging
@@ -14,6 +15,47 @@ from .pdf import load_pdf
 from .youtube_gcp import load_transcript_from_youtube
 
 logger = logging.getLogger(__name__)
+
+# 每種抓取方法的時間預算（秒）。任何一種方法卡住都不能拖垮整個 webhook request，
+# 逾時就立刻換 fallback chain 的下一種方法。
+DEFAULT_LOADER_TIMEOUT = 30.0
+LOADER_TIMEOUTS = {
+    "singlefile": 60.0,   # 要啟動 headless Chromium，給最長
+    "httpx": 20.0,
+    "cloudscraper": 30.0,
+}
+
+HEAD_REQUEST_TIMEOUT = 10.0
+
+
+async def _call_loader(method_name: str, method_func) -> str:
+    """以統一的時間預算執行單一抓取方法。
+
+    同步 loader（httpx/cloudscraper）丟進 thread 執行，一方面不會卡住
+    event loop，一方面才能套 asyncio.wait_for。逾時時 thread 本身不會被
+    中斷，但呼叫端會立即放棄並換下一種方法。
+    """
+    timeout = LOADER_TIMEOUTS.get(method_name, DEFAULT_LOADER_TIMEOUT)
+    if method_name == "singlefile":
+        return await asyncio.wait_for(method_func(), timeout=timeout)
+    return await asyncio.wait_for(asyncio.to_thread(method_func), timeout=timeout)
+
+
+async def _try_fallback_chain(url: str, methods, error_message: str) -> str:
+    """依序嘗試 methods，每種方法各自有時間預算，全數失敗才丟例外。"""
+    for method_name, method_func in methods:
+        try:
+            logger.info(f"Trying {method_name} for URL: {url}")
+            return await _call_loader(method_name, method_func)
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"{method_name} timed out after "
+                f"{LOADER_TIMEOUTS.get(method_name, DEFAULT_LOADER_TIMEOUT)}s for {url}")
+        except Exception as e:
+            logger.warning(f"{method_name} failed for {url}: {e}")
+
+    logger.error(f"All methods failed for URL: {url}")
+    raise Exception(error_message)
 
 
 def is_ptt_url(url: str) -> bool:
@@ -36,11 +78,16 @@ def is_pdf_url(url: str) -> bool:
     }
 
     try:
-        resp = httpx.head(url=url, headers=headers, follow_redirects=True)
+        resp = httpx.head(url=url, headers=headers, follow_redirects=True,
+                          timeout=HEAD_REQUEST_TIMEOUT)
         resp.raise_for_status()
         return resp.headers.get("content-type") == "application/pdf"
     except httpx.HTTPStatusError as e:
         logger.warning(f"HTTP error checking for PDF: {e}")
+        return False
+    except httpx.HTTPError as e:
+        # timeout、連線失敗等：當作非 PDF 繼續走一般 HTML 流程
+        logger.warning(f"HEAD request failed checking for PDF: {e}")
         return False
 
 
@@ -118,65 +165,26 @@ async def load_url(url: str, youtube_mode: str = "normal") -> str:
 
         # For PTT, use cloudscraper as the first fallback
         if url.startswith("https://www.ptt.cc/bbs"):
-            fallback_methods = [
+            return await _try_fallback_chain(url, [
                 ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
                 ("httpx", lambda: load_html_with_httpx(url)),
                 ("singlefile", lambda: load_html_with_singlefile(url)),
-            ]
-
-            for method_name, method_func in fallback_methods:
-                try:
-                    logger.info(f"Trying {method_name} for PTT URL: {url}")
-                    if method_name == "singlefile":
-                        return await method_func()
-                    return method_func()
-                except Exception as e:
-                    logger.warning(f"{method_name} failed for PTT: {e}")
-                    continue
-
-            logger.error(f"All methods failed for PTT URL: {url}")
-            raise Exception("無法從 PTT 讀取內容，請稍後再試")
+            ], "無法從 PTT 讀取內容，請稍後再試")
 
         # For OpenAI, try SingleFile then httpx as fallback
         elif url.startswith("https://openai.com"):
-            fallback_methods = [
+            return await _try_fallback_chain(url, [
                 ("singlefile", lambda: load_html_with_singlefile(url)),
                 ("httpx", lambda: load_html_with_httpx(url)),
-            ]
-
-            for method_name, method_func in fallback_methods:
-                try:
-                    logger.info(f"Trying {method_name} for OpenAI URL: {url}")
-                    if method_name == "singlefile":
-                        return await method_func()
-                    return method_func()
-                except Exception as e:
-                    logger.warning(f"{method_name} failed for OpenAI: {e}")
-                    continue
-
-            logger.error(f"All methods failed for OpenAI URL: {url}")
-            raise Exception("無法從 OpenAI 讀取內容，請稍後再試")
+            ], "無法從 OpenAI 讀取內容，請稍後再試")
 
         # For Medium, try multiple fallbacks
         elif "medium.com" in url:
-            fallback_methods = [
+            return await _try_fallback_chain(url, [
                 ("httpx", lambda: load_html_with_httpx(url)),
                 ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
                 ("singlefile", lambda: load_html_with_singlefile(url)),
-            ]
-
-            for method_name, method_func in fallback_methods:
-                try:
-                    logger.info(f"Trying {method_name} for Medium URL: {url}")
-                    if method_name == "singlefile":
-                        return await method_func()
-                    return method_func()
-                except Exception as e:
-                    logger.warning(f"{method_name} failed for Medium: {e}")
-                    continue
-
-            logger.error(f"All methods failed for Medium URL: {url}")
-            raise Exception("無法從 Medium 讀取內容，請稍後再試")
+            ], "無法從 Medium 讀取內容，請稍後再試")
 
     # Handle non-Firecrawl URLs
     try:
@@ -197,41 +205,25 @@ async def load_url(url: str, youtube_mode: str = "normal") -> str:
     ]
     for domain in httpx_domains:
         if url.startswith(domain):
-            try:
-                return load_html_with_httpx(url)
-            except Exception as e:
-                logger.warning(f"httpx failed for {domain}, trying singlefile: {e}")
-                return await load_html_with_singlefile(url)
+            return await _try_fallback_chain(url, [
+                ("httpx", lambda: load_html_with_httpx(url)),
+                ("singlefile", lambda: load_html_with_singlefile(url)),
+            ], "無法從網址讀取內容，請確認網址是否正確或稍後再試")
 
     cloudscraper_domains = [
         "https://blog.tripplus.cc",
     ]
     for domain in cloudscraper_domains:
         if url.startswith(domain):
-            try:
-                return load_html_with_cloudscraper(url)
-            except Exception as e:
-                logger.warning(f"cloudscraper failed for {domain}, trying singlefile: {e}")
-                return await load_html_with_singlefile(url)
+            return await _try_fallback_chain(url, [
+                ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
+                ("singlefile", lambda: load_html_with_singlefile(url)),
+            ], "無法從網址讀取內容，請確認網址是否正確或稍後再試")
 
     # Default fallback chain for unknown domains
     logger.info(f"Using default fallback chain for: {url}")
-    fallback_methods = [
+    return await _try_fallback_chain(url, [
         ("singlefile", lambda: load_html_with_singlefile(url)),
         ("httpx", lambda: load_html_with_httpx(url)),
         ("cloudscraper", lambda: load_html_with_cloudscraper(url)),
-    ]
-
-    for method_name, method_func in fallback_methods:
-        try:
-            logger.info(f"Trying {method_name} for URL: {url}")
-            if method_name == "singlefile":
-                return await method_func()
-            return method_func()
-        except Exception as e:
-            logger.warning(f"{method_name} failed: {e}")
-            continue
-
-    # If all methods fail, raise exception
-    logger.error(f"All methods failed for URL: {url}")
-    raise Exception("無法從網址讀取內容，請確認網址是否正確或稍後再試")
+    ], "無法從網址讀取內容，請確認網址是否正確或稍後再試")
