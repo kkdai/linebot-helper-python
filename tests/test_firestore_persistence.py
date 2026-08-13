@@ -7,37 +7,12 @@
 """
 import os
 import time
-from datetime import datetime, timedelta
-from typing import Dict, Optional
 from unittest.mock import patch
 
 os.environ.setdefault("GOOGLE_AI_API_KEY", "fake-key-for-test")
 
 from services.session_manager import SessionManager  # noqa: E402
-
-
-class FakeStore:
-    """記憶體版 store，模擬 FirestoreKVStore 介面。"""
-
-    def __init__(self):
-        self.data: Dict[str, dict] = {}
-
-    @property
-    def is_available(self) -> bool:
-        return True
-
-    def save(self, key: str, doc: dict) -> None:
-        self.data[key] = dict(doc)
-
-    def load(self, key: str) -> Optional[dict]:
-        doc = self.data.get(key)
-        return dict(doc) if doc is not None else None
-
-    def delete(self, key: str) -> None:
-        self.data.pop(key, None)
-
-    def load_all(self) -> Dict[str, dict]:
-        return {k: dict(v) for k, v in self.data.items()}
+from tests.fakes import FakeStore  # noqa: E402
 
 
 class FakeChat:

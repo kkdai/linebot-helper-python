@@ -84,7 +84,7 @@ def test_viral_energy_preserved():
 def test_empty_input_returns_fallback():
     """空輸入應回傳含三鍵的 fallback，且不呼叫 API。"""
     result = generate_social_media_posts("")
-    assert set(result.keys()) == {"facebook", "linkedin", "threads"}
+    assert {"title", "summary_analysis", "facebook", "linkedin", "threads"} <= set(result.keys())
     for value in result.values():
         assert "無法" in value
 
@@ -92,7 +92,7 @@ def test_empty_input_returns_fallback():
 def test_whitespace_only_input_returns_fallback():
     """只有空白的輸入也走 fallback。"""
     result = generate_social_media_posts("   \n  ")
-    assert set(result.keys()) == {"facebook", "linkedin", "threads"}
+    assert {"title", "summary_analysis", "facebook", "linkedin", "threads"} <= set(result.keys())
 
 
 # --- 整合測試：需 Vertex AI，預設略過 ---
@@ -104,7 +104,7 @@ def test_whitespace_only_input_returns_fallback():
 def test_live_generation_returns_three_posts():
     """實際呼叫 Gemini，回傳三平台文案且非空。"""
     result = generate_social_media_posts(SAMPLE_TEXT)
-    assert set(result.keys()) == {"facebook", "linkedin", "threads"}
+    assert {"title", "summary_analysis", "facebook", "linkedin", "threads"} <= set(result.keys())
     for platform, value in result.items():
         assert value and value.strip(), f"{platform} 文案為空"
 
