@@ -8,22 +8,30 @@ from typing import Dict, List, Any, Optional
 from google import genai
 from google.genai import types
 
+from .firestore_store import FirestoreKVStore, _sanitize_key
+
 logger = logging.getLogger(__name__)
 
 # Path to store batch job mappings locally as a fallback or for static webhooks
 MAPPING_FILE = "config/batch_jobs.json"
 
+BATCH_JOBS_COLLECTION = "batch_jobs"
+
 class BatchService:
     """
     Service for managing Gemini Batch API requests and mapping callbacks.
     Uses Google AI Studio (Developer API) via GEMINI_API_KEY.
+
+    Job mappings persist to Firestore（Cloud Run instance 回收後 batch job
+    還在跑，mapping 不能只放本機檔案），本機檔案僅作 Firestore 不可用時的 fallback。
     """
 
-    def __init__(self):
+    def __init__(self, store=None):
         self.api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             logger.warning("Neither GOOGLE_AI_API_KEY nor GEMINI_API_KEY is configured in the environment.")
         self.client = genai.Client(api_key=self.api_key, vertexai=False)
+        self.store = store if store is not None else FirestoreKVStore(BATCH_JOBS_COLLECTION)
         self._ensure_mapping_file_exists()
 
     def _ensure_mapping_file_exists(self):
@@ -34,26 +42,39 @@ class BatchService:
                 json.dump({}, f)
 
     def save_job_mapping(self, batch_job_id: str, user_id: str, metadata: dict) -> None:
-        """Save a batch job mapping locally"""
+        """Save a batch job mapping (Firestore first, local file as fallback)"""
+        doc = {
+            "user_id": user_id,
+            "metadata": metadata,
+            "created_at": time.time()
+        }
+
+        if self.store.is_available:
+            # batch job id 形如 "batches/xxx"，先淨化才能當 Firestore 文件 ID
+            self.store.save(_sanitize_key(batch_job_id), doc)
+            logger.info(f"Saved mapping for batch job {batch_job_id} -> user {user_id} (Firestore)")
+            return
+
         try:
             with open(MAPPING_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
-            data[batch_job_id] = {
-                "user_id": user_id,
-                "metadata": metadata,
-                "created_at": time.time()
-            }
-            
+
+            data[batch_job_id] = doc
+
             with open(MAPPING_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-                
-            logger.info(f"Saved mapping for batch job {batch_job_id} -> user {user_id}")
+
+            logger.info(f"Saved mapping for batch job {batch_job_id} -> user {user_id} (local file)")
         except Exception as e:
             logger.error(f"Failed to save job mapping: {e}", exc_info=True)
 
     def get_job_mapping(self, batch_job_id: str) -> Optional[dict]:
-        """Retrieve a saved batch job mapping"""
+        """Retrieve a saved batch job mapping (Firestore first, local file as fallback)"""
+        if self.store.is_available:
+            mapping = self.store.load(_sanitize_key(batch_job_id))
+            if mapping is not None:
+                return mapping
+
         try:
             if not os.path.exists(MAPPING_FILE):
                 return None
@@ -66,20 +87,24 @@ class BatchService:
 
     def clean_old_jobs(self, max_age_days: int = 7) -> None:
         """Clean up mappings older than max_age_days"""
+        cutoff = time.time() - (max_age_days * 86400)
+
+        if self.store.is_available:
+            for key, doc in self.store.load_all().items():
+                if doc.get("created_at", 0) <= cutoff:
+                    self.store.delete(key)
+
         try:
             if not os.path.exists(MAPPING_FILE):
                 return
             with open(MAPPING_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
-            now = time.time()
-            cutoff = now - (max_age_days * 86400)
-            
+
             cleaned_data = {
                 k: v for k, v in data.items()
                 if v.get("created_at", 0) > cutoff
             }
-            
+
             with open(MAPPING_FILE, "w", encoding="utf-8") as f:
                 json.dump(cleaned_data, f, indent=2, ensure_ascii=False)
         except Exception as e:

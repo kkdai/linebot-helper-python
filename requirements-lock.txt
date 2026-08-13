@@ -4,6 +4,7 @@
 
 # Google AI (Vertex AI)
 google-genai==2.7.0
+google-cloud-firestore==2.21.0
 
 # Web framework
 fastapi==0.115.5

@@ -6,13 +6,57 @@ Provides thread-safe session handling for multi-user chat environments.
 """
 
 import asyncio
+import inspect
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from threading import Lock
 
+from .firestore_store import FirestoreKVStore
+
 logger = logging.getLogger(__name__)
+
+SESSION_COLLECTION = "chat_sessions"
+
+
+def _serialize_history(history: List[dict]) -> List[dict]:
+    """datetime 轉 epoch float，避免 Firestore 回讀時 tz-aware/naive 混用問題。"""
+    out = []
+    for msg in history:
+        m = dict(msg)
+        ts = m.get('timestamp')
+        if isinstance(ts, datetime):
+            m['timestamp'] = ts.timestamp()
+        out.append(m)
+    return out
+
+
+def _deserialize_history(raw: Optional[List[dict]]) -> List[dict]:
+    out = []
+    for msg in raw or []:
+        m = dict(msg)
+        ts = m.get('timestamp')
+        if isinstance(ts, (int, float)):
+            m['timestamp'] = datetime.fromtimestamp(ts)
+        out.append(m)
+    return out
+
+
+def _make_chat(chat_factory: Callable, history: List[dict]) -> Any:
+    """重建 chat 時盡量把歷史傳給 factory（讓模型接續上下文）。
+
+    舊式零參數 factory 不收 history，也要能正常運作。
+    """
+    try:
+        supports_history = 'history' in inspect.signature(chat_factory).parameters
+    except (TypeError, ValueError):
+        supports_history = False
+
+    if supports_history and history:
+        return chat_factory(history=history)
+    return chat_factory()
 
 
 @dataclass
@@ -65,7 +109,8 @@ class SessionManager:
         self,
         timeout_minutes: int = 30,
         max_history_length: int = 20,
-        cleanup_interval_seconds: int = 300  # 5 minutes
+        cleanup_interval_seconds: int = 300,  # 5 minutes
+        store=None
     ):
         """
         Initialize SessionManager.
@@ -74,10 +119,13 @@ class SessionManager:
             timeout_minutes: Session TTL in minutes
             max_history_length: Maximum messages to keep in history
             cleanup_interval_seconds: Interval between cleanup runs
+            store: Persistent KV store (defaults to Firestore; falls back to
+                   memory-only when Firestore is unavailable)
         """
         self.timeout = timedelta(minutes=timeout_minutes)
         self.max_history_length = max_history_length
         self.cleanup_interval = cleanup_interval_seconds
+        self._store = store if store is not None else FirestoreKVStore(SESSION_COLLECTION)
 
         self._sessions: Dict[str, SessionData] = {}
         self._lock = Lock()
@@ -115,6 +163,48 @@ class SessionManager:
     def is_expired(self, session: SessionData) -> bool:
         """Check if a session has expired"""
         return datetime.now() - session.last_active >= self.timeout
+
+    def _persist_session(self, session: SessionData) -> None:
+        """把 session（不含 chat 物件，無法序列化）寫進持久化 store。"""
+        self._store.save(session.user_id, {
+            'user_id': session.user_id,
+            'history': _serialize_history(session.history),
+            'created_at': session.created_at.timestamp(),
+            'last_active': session.last_active.timestamp(),
+        })
+
+    def _restore_session(
+        self,
+        user_id: str,
+        chat_factory: Callable[..., Any]
+    ) -> Optional[SessionData]:
+        """從持久化 store 還原 session（instance 重啟後對話記憶不遺失）。
+
+        呼叫端必須已持有 self._lock。
+        """
+        stored = self._store.load(user_id)
+        if not stored:
+            return None
+
+        last_active = datetime.fromtimestamp(stored.get('last_active', 0))
+        if datetime.now() - last_active >= self.timeout:
+            self._store.delete(user_id)
+            return None
+
+        history = _deserialize_history(stored.get('history'))
+        session = SessionData(
+            user_id=user_id,
+            chat=_make_chat(chat_factory, history),
+            history=history,
+            created_at=datetime.fromtimestamp(
+                stored.get('created_at', time.time())),
+            last_active=datetime.now()
+        )
+        self._sessions[user_id] = session
+        self._persist_session(session)
+        logger.info(f"Restored session for user {user_id} from persistent store "
+                    f"({len(history)} messages)")
+        return session
 
     def get_session(self, user_id: str) -> Optional[SessionData]:
         """
@@ -159,6 +249,11 @@ class SessionManager:
             # Log expiration
             if session:
                 logger.info(f"Session expired for user {user_id}")
+            else:
+                # 記憶體沒有：可能是 instance 重啟，試著從持久化 store 還原
+                restored = self._restore_session(user_id, chat_factory)
+                if restored:
+                    return restored
 
             # Create new session
             logger.info(f"Creating new session for user {user_id}")
@@ -171,6 +266,7 @@ class SessionManager:
                 last_active=datetime.now()
             )
             self._sessions[user_id] = new_session
+            self._persist_session(new_session)
 
             # Callback
             if self._on_session_created:
@@ -195,6 +291,7 @@ class SessionManager:
             session = self._sessions.get(user_id)
             if session:
                 session.last_active = datetime.now()
+                self._persist_session(session)
                 return True
             return False
 
@@ -236,6 +333,7 @@ class SessionManager:
             if len(session.history) > self.max_history_length:
                 session.history = session.history[-self.max_history_length:]
 
+            self._persist_session(session)
             return True
 
     def get_history(self, user_id: str) -> List[dict]:
@@ -265,6 +363,7 @@ class SessionManager:
             True if session was cleared, False if not found
         """
         with self._lock:
+            self._store.delete(user_id)
             if user_id in self._sessions:
                 del self._sessions[user_id]
                 logger.info(f"Cleared session for user {user_id}")
@@ -310,6 +409,7 @@ class SessionManager:
 
             for user_id in expired_users:
                 del self._sessions[user_id]
+                self._store.delete(user_id)
 
                 # Callback
                 if self._on_session_expired:
