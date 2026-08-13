@@ -198,6 +198,30 @@ image_prompt = '''
 Describe all the information from the image, reply in zh_tw.
 '''
 
+# 背景事件處理任務的引用集合：create_task 回傳的 task 若沒有人持有引用，
+# 可能在執行到一半被 GC 掉，所以完成前先放進這個 set。
+_background_event_tasks: set = set()
+
+
+def _schedule_event_processing(coro, event_desc: str) -> None:
+    """把單一 LINE event 的處理排進背景執行，webhook 不等它完成。
+
+    注意：Cloud Run 需啟用 --no-cpu-throttling（instance-based billing），
+    否則 request 回應後 CPU 被凍結，背景任務不會如期執行。
+    """
+    task = asyncio.create_task(coro)
+    _background_event_tasks.add(task)
+
+    def _on_done(t: asyncio.Task) -> None:
+        _background_event_tasks.discard(t)
+        if not t.cancelled() and t.exception() is not None:
+            logger.error(
+                f"Background event processing failed ({event_desc}): {t.exception()!r}",
+                exc_info=t.exception(),
+            )
+
+    task.add_done_callback(_on_done)
+
 
 @app.post("/")
 async def handle_webhook_callback(request: Request):
@@ -218,11 +242,14 @@ async def handle_webhook_callback(request: Request):
     except InvalidSignatureError:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+    # 驗完簽章就立刻回 200，讓 LINE 平台不必等實際處理完成。
+    # 爬網頁 + 呼叫 Gemini 可能耗時數十秒，超過 LINE webhook 的等待時間，
+    # 同步處理會導致使用者完全收不到回覆（handler 內部各自負責 reply/push）。
     for event in events:
         if isinstance(event, MessageEvent):
-            await handle_message_event(event)
+            _schedule_event_processing(handle_message_event(event), "message")
         elif isinstance(event, PostbackEvent):
-            await handle_postback_event(event)
+            _schedule_event_processing(handle_postback_event(event), "postback")
     return 'OK'
 
 
