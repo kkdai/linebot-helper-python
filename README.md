@@ -99,20 +99,6 @@ pip install -r requirements-lock.txt
 pip install -r requirements.txt
 ```
 
-**⚠️ Troubleshooting Dependencies:**
-
-If you encounter `ModuleNotFoundError: No module named 'langchain_core.pydantic_v1'`, use the fix script:
-
-```bash
-# Linux/macOS
-bash fix_dependencies.sh
-
-# Windows PowerShell
-.\fix_dependencies.ps1
-```
-
-See [FIX_SUMMARY.md](FIX_SUMMARY.md) for details.
-
 3. Set up environment variables
 
 4. Run the application:
@@ -179,79 +165,60 @@ Send an image to the bot and it will analyze and describe the content in Traditi
 - `POST /hf`: Endpoint for Hugging Face paper summarization
 - `POST /urls`: Multi-URL batch processing (up to 5 URLs)
 
-For detailed API documentation, see [IMPROVEMENTS.md](IMPROVEMENTS.md).
+For detailed API documentation, see [IMPROVEMENTS.md](docs/IMPROVEMENTS.md).
 
-## Deployment to Google Cloud Platform
+## Deployment to Google Cloud Run
 
-### 1. Prepare for Deployment
+This service deploys as a container (see `Dockerfile`) to Cloud Run.
+Pushes to `main` are built and deployed automatically by a Cloud Build trigger.
 
-1. Install Google Cloud SDK
-2. Initialize a Google Cloud project:
-
-```bash
-gcloud init
-```
-
-3. Create a `app.yaml` file in the project root:
-
-```yaml
-runtime: python310
-instance_class: F1
-entrypoint: uvicorn main:app --host=0.0.0.0 --port=$PORT
-
-env_variables:
-  ChannelSecret: "your_channel_secret"
-  ChannelAccessToken: "your_channel_access_token" 
-  LINE_USER_ID: "your_line_user_id"
-  ChannelAccessTokenHF: "your_huggingface_channel_token"
-  GOOGLE_API_KEY: "your_gemini_api_key"
-  firecrawl_key: "your_firecrawl_key"
-  SEARCH_API_KEY: "your_search_api_key"
-  SEARCH_ENGINE_ID: "your_search_engine_id"
-```
-
-### 2. Deploy to Google App Engine
-
-Run the following command to deploy:
+### Manual Deployment
 
 ```bash
-gcloud app deploy
+gcloud run deploy linebot-helper-python \
+  --source . \
+  --region us-central1 \
+  --no-cpu-throttling
 ```
 
-This will upload your application to Google App Engine and provide a URL where your application is running.
+**Important:** `--no-cpu-throttling` (CPU always allocated) is required.
+The webhook acks LINE immediately and processes events in background
+asyncio tasks; with the default request-based CPU allocation those tasks
+would be frozen after the response is sent. The same applies to the
+batch-job polling loop and session cleanup task.
 
-### 3. Set Up LINE Webhook
+Set the environment variables listed above on the service
+(`gcloud run services update linebot-helper-python --set-env-vars ...`
+or via the console). Conversation sessions and batch job mappings
+persist to Firestore, so the service account needs the
+`roles/datastore.user` role.
+
+### Set Up LINE Webhook
 
 1. Go to the [LINE Developers Console](https://developers.line.biz/console/)
 2. Select your bot and navigate to the Messaging API settings
-3. Set the Webhook URL to your Google App Engine URL + `/` (e.g., `https://your-project.appspot.com/`)
+3. Set the Webhook URL to the Cloud Run service URL + `/`
 4. Verify that the webhook works by sending a message to your LINE bot
 
-### 4. Using Cloud Scheduler for Cron Jobs (Optional)
-
-If you need scheduled tasks:
-
-1. Create a `cron.yaml` file:
-
-```yaml
-cron:
-- description: "Daily GitHub summary"
-  url: /daily_summary
-  schedule: every 24 hours
-```
-
-2. Deploy the cron jobs:
+### Monitoring
 
 ```bash
-gcloud app deploy cron.yaml
+# Tail recent logs
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="linebot-helper-python"' --freshness=1h --limit=50
+
+# Check for errors (e.g. request timeouts)
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="linebot-helper-python" AND severity>=WARNING' --freshness=1d
 ```
 
-### 5. Monitor Your Application
+### Testing
 
-Monitor your application using the Google Cloud Console:
+```bash
+pytest            # unit tests (no credentials needed)
+RUN_LIVE_TESTS=1 pytest   # additionally run live Vertex AI tests
+```
 
-- View logs: `https://console.cloud.google.com/logs`
-- Monitor instance usage: `https://console.cloud.google.com/appengine`
+Unit tests also run automatically on every push via GitHub Actions
+(`.github/workflows/test.yml`).
 
 ## 🎯 Recent Improvements (v2.0)
 
@@ -267,13 +234,13 @@ Monitor your application using the Google Cloud Console:
 - **Detailed Mode**: Comprehensive 500-800 character analysis
 
 For detailed documentation, see:
-- [IMPROVEMENTS.md](IMPROVEMENTS.md) - Technical details and deployment guide
-- [QUICK_START.md](QUICK_START.md) - User guide and examples
+- [IMPROVEMENTS.md](docs/IMPROVEMENTS.md) - Technical details and deployment guide
+- [QUICK_START.md](docs/QUICK_START.md) - User guide and examples
 
 ## 📚 Documentation
 
-- **Quick Start Guide**: [QUICK_START.md](QUICK_START.md)
-- **Technical Documentation**: [IMPROVEMENTS.md](IMPROVEMENTS.md)
+- **Quick Start Guide**: [QUICK_START.md](docs/QUICK_START.md)
+- **Technical Documentation**: [IMPROVEMENTS.md](docs/IMPROVEMENTS.md)
 - **N8N Workflow**: [n8n.json](n8n.json)
 
 ## Dependencies
