@@ -1,5 +1,6 @@
 # Vertex AI (no LangChain)
 google-genai>=1.0.0
+google-cloud-firestore>=2.19.0
 # Google Agent Development Kit (ADK)
 google-adk>=1.0.0
 beautifulsoup4

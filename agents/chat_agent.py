@@ -132,12 +132,32 @@ class ChatAgent:
             labels={"client_id": "info_helper"},
         )
 
-    def _chat_factory(self):
-        """Factory function for creating new chat instances"""
+    def _chat_factory(self, history: Optional[list] = None):
+        """Factory function for creating new chat instances.
+
+        history: SessionManager 從 Firestore 還原的對話紀錄
+        （[{'role': 'user'|'assistant', 'content': str}, ...]），
+        轉成 genai Content 注入新 chat，讓模型在 instance 重啟後仍接得上上下文。
+        """
         chat_config = self._create_chat_config()
+
+        genai_history = None
+        if history:
+            genai_history = []
+            for msg in history:
+                content_text = msg.get('content', '')
+                if not content_text:
+                    continue
+                role = 'user' if msg.get('role') == 'user' else 'model'
+                genai_history.append(types.Content(
+                    role=role,
+                    parts=[types.Part(text=content_text)]
+                ))
+
         return self.client.chats.create(
             model=self.config.chat_model,
-            config=chat_config
+            config=chat_config,
+            history=genai_history
         )
 
     def get_or_create_session(self, user_id: str) -> Tuple[Any, List[dict]]:
