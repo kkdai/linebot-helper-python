@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 與 Dockerfile 的 python:3.10 對齊
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-lock.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run unit tests
+        # 單元測試不需要真實憑證；需要 live API 的測試以 RUN_LIVE_TESTS 閘門排除
+        env:
+          ChannelSecret: ci-dummy
+          ChannelAccessToken: ci-dummy
+          ChannelAccessTokenHF: ci-dummy
+          LINE_USER_ID: ci-dummy
+          GOOGLE_CLOUD_PROJECT: ci-dummy-project
+          GOOGLE_AI_API_KEY: ci-dummy
+        run: pytest -v
