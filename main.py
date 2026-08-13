@@ -33,7 +33,7 @@ from httpx import HTTPStatusError
 # local files
 from loader.url import is_youtube_url, load_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
-from loader.langtools import summarize_text, generate_social_media_posts
+from loader.langtools import summarize_text, generate_social_media_posts, summarize_for_bookmark
 from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
@@ -49,6 +49,10 @@ from agents import (
 )
 from services.line_service import LineService
 from services.session_manager import get_session_manager
+from services.bookmark_service import get_bookmark_service
+from services.bookmark_flex import (
+    build_summary_bubble, build_bookmark_carousel, parse_bookmark_command,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -552,6 +556,13 @@ async def handle_message_event(event: MessageEvent):
                 await handle_agentic_vision_with_prompt(event, user_id, message_text)
                 return
 
+            # 書籤指令（/save /list /search）要在 URL 抽取之前攔截，
+            # 否則 "/save https://..." 會被當成一般網址走社群貼文流程
+            bookmark_command = parse_bookmark_command(message_text)
+            if bookmark_command:
+                await handle_bookmark_command(event, user_id, *bookmark_command)
+                return
+
             # Extract URLs and mode for URL messages
             urls, mode = extract_url_and_mode(message_text)
 
@@ -597,9 +608,23 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
             logger.info(f"Successfully crawled content from {url}. Length: {len(crawled_text)} characters.")
             
-            # Generate the social media posts
+            # Generate the social media posts (含 title 與 summary_analysis)
             posts = generate_social_media_posts(crawled_text)
-            
+
+            article_title = posts.get('title', '')
+            summary_analysis = posts.get('summary_analysis', '')
+
+            # 預寫書籤候選（saved=False），「儲存書籤」按鈕的 postback 只帶 doc id
+            bookmark_doc_id = None
+            bookmark_svc = get_bookmark_service()
+            if bookmark_svc.available and summary_analysis:
+                try:
+                    user_id = event.source.user_id
+                    bookmark_doc_id = bookmark_svc.save_candidate(
+                        user_id, url, article_title, summary_analysis)
+                except Exception as e:
+                    logger.warning(f"Failed to save bookmark candidate: {e}")
+
             # Append original article link to each post
             fb_text = f"{posts.get('facebook', '')}\n\n🔗 原文連結： {url}"
             li_text = f"{posts.get('linkedin', '')}\n\n🔗 原文連結： {url}"
@@ -766,9 +791,13 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             }
 
             # Combine them into a Carousel Flex Message
+            # 第一顆是摘要與分析（含儲存書籤按鈕），其後才是三個平台的文案
+            summary_bubble = build_summary_bubble(
+                article_title, summary_analysis, url, bookmark_doc_id)
             carousel_flex = {
                 "type": "carousel",
                 "contents": [
+                    summary_bubble,
                     fb_flex,
                     li_flex,
                     th_flex
@@ -1514,6 +1543,15 @@ async def handle_postback_event(event: PostbackEvent):
             await handle_read_aloud_postback(event, data, user_id)
             return
 
+        # Handle bookmark save/delete
+        if action_value == "save_bookmark":
+            await handle_bookmark_save_postback(event, data, user_id)
+            return
+
+        if action_value == "delete_bookmark":
+            await handle_bookmark_delete_postback(event, data, user_id)
+            return
+
     except json.JSONDecodeError:
         # Fall back to query string format (legacy format)
         query_params = parse_qs(postback_data)
@@ -1528,6 +1566,119 @@ async def handle_postback_event(event: PostbackEvent):
         if action_value not in ["gen_tweet", "gen_slack"]:
             logger.error("Invalid action value.")
             return
+
+
+async def handle_bookmark_command(event: MessageEvent, user_id: str,
+                                  command: str, argument: str):
+    """處理 /save /list /search 書籤指令。"""
+    svc = get_bookmark_service()
+
+    if not svc.available:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="🔖 書籤功能暫時無法使用，請稍後再試。")])
+        return
+
+    if command == "save":
+        url = argument.strip()
+        if not url.startswith(("http://", "https://")):
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [TextSendMessage(text="用法：/save <網址>\n例如：/save https://example.com")])
+            return
+
+        # 爬取 + 摘要可能耗時數十秒，先回 ack，完成後用 push 通知
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="🔖 收到！正在擷取內容與產生摘要，完成後通知你。")])
+
+        try:
+            crawled_text = await load_url(url)
+            result = summarize_for_bookmark(crawled_text)
+            svc.save_direct(user_id, url, result["title"], result["summary"])
+            await line_bot_api.push_message(user_id, [TextSendMessage(
+                text=f"✅ 已存入書籤：{result['title']}\n\n{result['summary']}\n\n用 /list 查看所有書籤")])
+        except Exception as e:
+            logger.error(f"/save failed for {url}: {e}", exc_info=True)
+            error_msg = LineService.format_error_message(e, "儲存書籤")
+            await line_bot_api.push_message(
+                user_id, [TextSendMessage(text=f"{url}\n\n{error_msg}")])
+        return
+
+    if command == "list":
+        bookmarks = svc.list_saved(user_id)
+        if not bookmarks:
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [TextSendMessage(text="📭 還沒有任何書籤。\n傳網址後按「🔖 儲存書籤」，或用 /save <網址> 新增。")])
+            return
+        carousel = build_bookmark_carousel(bookmarks)
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [CustomFlexSendMessage(alt_text="🔖 我的書籤", contents=carousel)])
+        return
+
+    if command == "search":
+        keyword = argument.strip()
+        if not keyword:
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [TextSendMessage(text="用法：/search <關鍵字>\n例如：/search python")])
+            return
+        results = svc.search(user_id, keyword)
+        if not results:
+            await line_bot_api.reply_message(
+                event.reply_token,
+                [TextSendMessage(text=f"🔍 找不到包含「{keyword}」的書籤。")])
+            return
+        carousel = build_bookmark_carousel(results)
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [CustomFlexSendMessage(alt_text=f"🔍 搜尋：{keyword}", contents=carousel)])
+        return
+
+
+async def handle_bookmark_save_postback(event: PostbackEvent, data: dict, user_id: str):
+    """「🔖 儲存書籤」按鈕：把候選翻成已儲存。"""
+    doc_id = data.get("id")
+    svc = get_bookmark_service()
+
+    if not doc_id or not svc.available:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="🔖 書籤功能暫時無法使用，請稍後再試。")])
+        return
+
+    doc = svc.confirm_save(user_id, doc_id)
+    if doc:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text=f"✅ 已存入書籤：{doc.get('title', '')}\n\n用 /list 查看所有書籤")])
+    else:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="⚠️ 書籤候選已過期，請重新傳送網址。")])
+
+
+async def handle_bookmark_delete_postback(event: PostbackEvent, data: dict, user_id: str):
+    """書籤 carousel 的「🗑 刪除」按鈕。"""
+    doc_id = data.get("id")
+    svc = get_bookmark_service()
+
+    if not doc_id or not svc.available:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="🔖 書籤功能暫時無法使用，請稍後再試。")])
+        return
+
+    if svc.delete(user_id, doc_id):
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="🗑 已刪除書籤。")])
+    else:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="⚠️ 找不到這個書籤（可能已刪除）。")])
 
 
 async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: str):

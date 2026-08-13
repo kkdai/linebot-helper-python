@@ -137,6 +137,19 @@ Bot: 💬 [對話中]
 - `/status` or `/狀態` - Check conversation status
 - `/help` or `/幫助` - Show help message
 
+### 🔖 Bookmarks (Read Later)
+
+Save summarized articles to Firestore and browse them later:
+
+- `/save <url>` - Crawl the page, generate a title + summary, and save it
+- `/list` - Show your 10 most recent bookmarks as a Flex carousel
+- `/search <keyword>` - Search bookmark titles and summaries
+
+When you send a URL, the social-post carousel now starts with a
+"📌 摘要與分析" bubble (summary + analysis) that has a "🔖 儲存書籤"
+button - tap it to save that article without any command. Each bookmark
+card has open-link and delete buttons.
+
 **Note:** Conversations automatically expire after 30 minutes of inactivity.
 
 ---

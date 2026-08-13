@@ -250,9 +250,16 @@ def docs_to_str(docs: list) -> str:
 
 
 class SocialMediaPosts(BaseModel):
+    title: str = Field(description="文章標題（15 字內，取自原文重點，繁體中文台灣用語）")
+    summary_analysis: str = Field(description="文章摘要與重點分析（150-250 字繁體中文：先 2-3 句摘要文章核心內容，再 2-3 句分析重點、為什麼值得讀、對讀者的意義。純文字不用 markdown）")
     facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案，包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
     linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案，著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
     threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
+
+
+class BookmarkSummary(BaseModel):
+    title: str = Field(description="文章標題（15 字內，取自原文重點，繁體中文台灣用語）")
+    summary: str = Field(description="文章摘要與重點分析（150-250 字繁體中文：先摘要核心內容，再點出重點與值得注意之處。純文字不用 markdown）")
 
 
 # 人性化守則：萃取自 speak-human-tw (github.com/Raymondhou0917/speak-human-tw)
@@ -298,7 +305,9 @@ def _build_social_media_prompt(text: str) -> str:
     Extracted so the prompt (humanize guidelines + per-platform tuning) can be
     unit-tested without calling the Gemini API.
     """
-    return f"""請針對以下網頁內容，為三個不同的社群平台（Facebook、LinkedIn、Meta Threads）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
+    return f"""請針對以下網頁內容，完成兩件事：
+1. 產出文章標題（title，15 字內）與「摘要與重點分析」（summary_analysis，150-250 字：先 2-3 句摘要核心內容，再 2-3 句分析重點與為什麼值得讀。此欄位是給讀者快速理解文章用的，語氣中性直述即可，不是社群貼文）。
+2. 為三個不同的社群平台（Facebook、LinkedIn、Meta Threads）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
 
 網頁內容：
 {text}
@@ -344,6 +353,8 @@ def generate_social_media_posts(text: str) -> dict:
     """
     if not text or not text.strip():
         return {
+            "title": "無法取得網頁內容",
+            "summary_analysis": "無法取得網頁內容，無法產生摘要。",
             "facebook": "無法取得網頁內容，無法產生文案。",
             "linkedin": "無法取得網頁內容，無法產生文案。",
             "threads": "無法取得網頁內容，無法產生文案。"
@@ -378,8 +389,56 @@ def generate_social_media_posts(text: str) -> dict:
         logging.error(f"Error generating social media posts: {e}")
         # Fallback dictionary
         return {
+            "title": "摘要生成失敗",
+            "summary_analysis": f"生成摘要失敗：{str(e)[:100]}",
             "facebook": f"生成 Facebook 文案失敗：{str(e)[:100]}",
             "linkedin": f"生成 LinkedIn 文案失敗：{str(e)[:100]}",
             "threads": f"生成 Threads 文案失敗：{str(e)[:100]}"
+        }
+
+
+def summarize_for_bookmark(text: str) -> dict:
+    """為 /save 書籤指令產生標題與摘要分析（不產社群貼文）。
+
+    Returns:
+        dict: {"title": str, "summary": str}
+    """
+    if not text or not text.strip():
+        return {
+            "title": "無法取得網頁內容",
+            "summary": "無法取得網頁內容，無法產生摘要。"
+        }
+
+    prompt = f"""請針對以下網頁內容，產出文章標題（title，15 字內）與「摘要與重點分析」
+（summary，150-250 字繁體中文台灣用語：先 2-3 句摘要核心內容，再 2-3 句分析重點
+與值得注意之處。純文字，不用 markdown 符號）。
+
+網頁內容：
+{text}"""
+
+    try:
+        client = _get_vertex_client()
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                response_mime_type="application/json",
+                response_schema=BookmarkSummary,
+                max_output_tokens=4096,
+                labels={"client_id": "info_helper"},
+            )
+        )
+
+        import json
+        if response.text:
+            return json.loads(response.text)
+        raise Exception("Empty response text from Gemini")
+
+    except Exception as e:
+        logging.error(f"Error generating bookmark summary: {e}")
+        return {
+            "title": "摘要生成失敗",
+            "summary": f"生成摘要失敗：{str(e)[:100]}"
         }
 
