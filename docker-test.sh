@@ -33,7 +33,7 @@ if [ ${PIPESTATUS[0]} -eq 0 ]; then
     echo "1. 準備 .env 檔案"
     echo "2. 執行: docker run --env-file .env -p 8080:8080 linebot-helper-test"
     echo ""
-    echo "📚 詳細部署指南請參考: DOCKER_DEPLOYMENT.md"
+    echo "📚 詳細部署指南請參考: docs/DOCKER_DEPLOYMENT.md"
 else
     echo ""
     echo "❌ Docker Build 失敗"
