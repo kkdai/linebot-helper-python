@@ -180,3 +180,26 @@ def test_delete_rejects_other_users_doc():
 def test_unavailable_store_reports_not_available():
     svc = BookmarkService(store=UnavailableStore())
     assert svc.available is False
+
+
+# --- get_bookmark（研究報告 postback 用）---
+
+def test_get_bookmark_returns_own_doc_with_doc_id():
+    svc, _ = make_service()
+    doc_id = svc.save_candidate(UID, "https://example.com/r", "研究標的", "s")
+
+    doc = svc.get_bookmark(UID, doc_id)
+    assert doc is not None
+    assert doc["url"] == "https://example.com/r"
+    assert doc["doc_id"] == doc_id
+
+
+def test_get_bookmark_rejects_other_users_doc():
+    svc, _ = make_service()
+    doc_id = svc.save_candidate(UID, "https://example.com/r", "t", "s")
+    assert svc.get_bookmark(OTHER_UID, doc_id) is None
+
+
+def test_get_bookmark_unknown_id_returns_none():
+    svc, _ = make_service()
+    assert svc.get_bookmark(UID, "nope") is None

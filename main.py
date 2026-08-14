@@ -33,7 +33,10 @@ from httpx import HTTPStatusError
 # local files
 from loader.url import is_youtube_url, load_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
-from loader.langtools import summarize_text, generate_social_media_posts, summarize_for_bookmark
+from loader.langtools import (
+    summarize_text, generate_social_media_posts, summarize_for_bookmark,
+    generate_research_report,
+)
 from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
@@ -53,6 +56,11 @@ from services.bookmark_service import get_bookmark_service
 from services.bookmark_flex import (
     build_summary_bubble, build_bookmark_carousel, parse_bookmark_command,
 )
+from services.report_store import ReportStore
+from services.report_page import render_report_page, render_expired_page
+
+# 研究報告臨時儲存：只在記憶體，instance 回收即消失（規格要求）
+report_store = ReportStore()
 
 # Configure logging
 logging.basicConfig(
@@ -262,6 +270,15 @@ if not LIFF_ID:
     logger.warning("LIFF_ID env var not set — /liff/ will serve with unsubstituted placeholder")
 GOOGLE_AI_API_KEY = os.getenv("GOOGLE_AI_API_KEY", "")
 VERTEX_PROJECT_LIVE = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+
+
+@app.get("/reports/{report_id}")
+def serve_research_report(report_id: str):
+    """臨時研究報告頁：過期或 instance 重啟後回過期頁（404）。"""
+    html = report_store.get(report_id)
+    if html:
+        return HTMLResponse(html)
+    return HTMLResponse(render_expired_page(), status_code=404)
 
 
 @app.get("/liff/")
@@ -1552,6 +1569,11 @@ async def handle_postback_event(event: PostbackEvent):
             await handle_bookmark_delete_postback(event, data, user_id)
             return
 
+        # Handle research report generation
+        if action_value == "research_report":
+            await handle_research_report_postback(event, data, user_id)
+            return
+
     except json.JSONDecodeError:
         # Fall back to query string format (legacy format)
         query_params = parse_qs(postback_data)
@@ -1679,6 +1701,53 @@ async def handle_bookmark_delete_postback(event: PostbackEvent, data: dict, user
         await line_bot_api.reply_message(
             event.reply_token,
             [TextSendMessage(text="⚠️ 找不到這個書籤（可能已刪除）。")])
+
+
+async def handle_research_report_postback(event: PostbackEvent, data: dict, user_id: str):
+    """「📄 詳細研究報告」按鈕：深入研究文章並產生臨時網頁報告。"""
+    doc_id = data.get("id")
+    svc = get_bookmark_service()
+
+    doc = svc.get_bookmark(user_id, doc_id) if (doc_id and svc.available) else None
+    if not doc:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="⚠️ 資料已過期，請重新傳送網址再試一次。")])
+        return
+
+    url = doc.get("url", "")
+    await line_bot_api.reply_message(
+        event.reply_token,
+        [TextSendMessage(text="🔬 開始深入研究這篇文章（約 1-2 分鐘），完成後把報告連結傳給你。")])
+
+    try:
+        crawled_text = await load_url(url)
+        # Gemini 呼叫是同步阻塞的，丟 thread 避免卡住 event loop 上的其他任務
+        result = await asyncio.to_thread(generate_research_report, crawled_text, url)
+
+        html = render_report_page(
+            title=doc.get("title") or "研究報告",
+            markdown_text=result["markdown"],
+            url=url,
+            sources=result["sources"],
+        )
+        report_id = report_store.put(html)
+
+        if not app_base_url:
+            logger.error("app_base_url not set, cannot serve report page")
+            await line_bot_api.push_message(user_id, [TextSendMessage(
+                text="⚠️ 報告已產生但暫時無法提供連結，請稍後再試一次。")])
+            return
+
+        report_url = f"{app_base_url}/reports/{report_id}"
+        await line_bot_api.push_message(user_id, [TextSendMessage(
+            text=(f"📄 研究報告完成：{doc.get('title', '')}\n\n{report_url}\n\n"
+                  "⏳ 這是臨時頁面，約保留 24 小時（服務休眠後即失效），需要保存請自行複製內容。"))])
+    except Exception as e:
+        logger.error(f"Research report failed for {url}: {e}", exc_info=True)
+        error_msg = LineService.format_error_message(e, "產生研究報告")
+        await line_bot_api.push_message(
+            user_id, [TextSendMessage(text=f"{url}\n\n{error_msg}")])
 
 
 async def handle_read_aloud_postback(event: PostbackEvent, data: dict, user_id: str):
