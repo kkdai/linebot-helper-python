@@ -4,4 +4,5 @@ __pycache__/
 .DS_Store
 .superpowers/
 config/batch_jobs.json
+static/temp_batch_*.jsonl
 2025-12-09-search-grounding.md
