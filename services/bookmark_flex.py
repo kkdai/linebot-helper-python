@@ -50,6 +50,19 @@ def build_summary_bubble(title: str, summary_analysis: str, url: str,
     if doc_id:
         footer_contents.insert(0, {
             "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+                "type": "postback",
+                "label": "📄 詳細研究報告",
+                "data": json.dumps(
+                    {"action": "research_report", "id": doc_id},
+                    ensure_ascii=False),
+                "displayText": "📄 產生詳細研究報告",
+            },
+        })
+        footer_contents.insert(0, {
+            "type": "button",
             "style": "primary",
             "color": "#E67E22",
             "height": "sm",

@@ -397,6 +397,93 @@ def generate_social_media_posts(text: str) -> dict:
         }
 
 
+def _extract_grounding_sources(response) -> list:
+    """從 grounding metadata 抽引用來源（同 chat_session 的作法）。"""
+    sources = []
+    try:
+        if getattr(response, 'candidates', None):
+            candidate = response.candidates[0]
+            metadata = getattr(candidate, 'grounding_metadata', None)
+            chunks = getattr(metadata, 'grounding_chunks', None) if metadata else None
+            for chunk in chunks or []:
+                web = getattr(chunk, 'web', None)
+                if web:
+                    sources.append({
+                        'title': getattr(web, 'title', '') or '',
+                        'uri': getattr(web, 'uri', '') or '',
+                    })
+    except Exception as e:
+        logging.warning(f"Failed to extract grounding sources: {e}")
+    return sources
+
+
+def generate_research_report(text: str, url: str) -> dict:
+    """深入研究文章內容並產生 Markdown 研究報告。
+
+    先嘗試帶 Google Search grounding（補充背景、相關報導、對照觀點），
+    工具呼叫失敗時降級成純文章分析重試一次。
+
+    Returns:
+        dict: {"markdown": str, "sources": list[{"title","uri"}]}
+    """
+    if not text or not text.strip():
+        return {"markdown": "", "sources": []}
+
+    prompt = f"""你是一位嚴謹的研究分析師。請針對以下文章內容撰寫一份詳細的研究報告，
+繁體中文（台灣用語），Markdown 格式（從 ## 層級開始，不要放文章大標題）。
+
+必要結構：
+## 執行摘要（3-5 句話講清楚這篇在說什麼、為什麼重要）
+## 背景脈絡（這個主題的來龍去脈，搭配你搜尋到的相關資訊）
+## 核心論點與證據（逐點整理文章的主張與支撐證據，標注證據強弱）
+## 數據與事實整理（文中的關鍵數字、日期、人物、機構，用表格或清單）
+## 對照觀點與批判（搜尋相關報導，比對其他觀點；指出文章的盲點、假設或爭議）
+## 延伸問題（3-5 個值得進一步追究的問題）
+
+要求：
+- 請主動搜尋補充文章外的背景與對照資訊，並在內文標注資訊來自搜尋還是原文
+- 具體優於抽象；沒有根據的推論明確標注「推測」
+- 全形標點，不要 AI 腔套語
+
+原文網址：{url}
+
+文章內容：
+{text}"""
+
+    def _call(with_grounding: bool):
+        client = _get_vertex_client()
+        tools = [types.Tool(google_search=types.GoogleSearch())] if with_grounding else None
+        return client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                tools=tools,
+                max_output_tokens=16384,
+                labels={"client_id": "info_helper"},
+            )
+        )
+
+    try:
+        try:
+            response = _call(with_grounding=True)
+        except Exception as e:
+            logging.warning(
+                f"Grounded research call failed, retrying without tools: {e}")
+            response = _call(with_grounding=False)
+
+        if not response.text:
+            raise Exception("Empty response text from Gemini")
+
+        return {
+            "markdown": response.text,
+            "sources": _extract_grounding_sources(response),
+        }
+    except Exception as e:
+        logging.error(f"Error generating research report: {e}")
+        raise
+
+
 def summarize_for_bookmark(text: str) -> dict:
     """為 /save 書籤指令產生標題與摘要分析（不產社群貼文）。
 

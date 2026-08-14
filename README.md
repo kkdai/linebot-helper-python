@@ -150,6 +150,14 @@ When you send a URL, the social-post carousel now starts with a
 button - tap it to save that article without any command. Each bookmark
 card has open-link and delete buttons.
 
+### 📄 Research Reports (Temporary Pages)
+
+The summary bubble also has a "📄 詳細研究報告" button: it deep-dives
+the article with Google Search Grounding (background, counterpoints,
+evidence review) and serves the report as a styled web page at
+`/reports/{id}`. Reports live in memory only - they expire after ~24
+hours or whenever the instance recycles, by design.
+
 **Note:** Conversations automatically expire after 30 minutes of inactivity.
 
 ---

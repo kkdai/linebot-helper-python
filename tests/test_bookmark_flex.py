@@ -25,12 +25,16 @@ def test_summary_bubble_save_button_postback_format():
         c["action"] for c in bubble["footer"]["contents"]
         if c.get("type") == "button"
     ]
-    postbacks = [a for a in footer_actions if a["type"] == "postback"]
-    assert len(postbacks) == 1
+    saves = [
+        a for a in footer_actions
+        if a["type"] == "postback"
+        and json.loads(a["data"]).get("action") == "save_bookmark"
+    ]
+    assert len(saves) == 1
 
-    data = json.loads(postbacks[0]["data"])
+    data = json.loads(saves[0]["data"])
     assert data == {"action": "save_bookmark", "id": "abc123"}
-    assert len(postbacks[0]["data"]) <= 300, "postback data 上限 300 字元"
+    assert len(saves[0]["data"]) <= 300, "postback data 上限 300 字元"
 
 
 def test_summary_bubble_without_doc_id_has_no_save_button():
@@ -111,3 +115,31 @@ def test_parse_non_bookmark_commands_return_none():
     assert parse_bookmark_command("https://example.com") is None
     assert parse_bookmark_command("一般訊息") is None
     assert parse_bookmark_command("/saved-something") is None
+
+
+# --- 詳細研究報告按鈕 ---
+
+def test_summary_bubble_has_research_button():
+    bubble = build_summary_bubble("t", "s", "https://example.com", "abc123")
+    postbacks = [
+        c["action"] for c in bubble["footer"]["contents"]
+        if c.get("type") == "button" and c["action"]["type"] == "postback"
+    ]
+    research = [
+        a for a in postbacks
+        if json.loads(a["data"]).get("action") == "research_report"
+    ]
+    assert len(research) == 1
+    assert json.loads(research[0]["data"]) == {
+        "action": "research_report", "id": "abc123"}
+    assert len(research[0]["data"]) <= 300
+
+
+def test_summary_bubble_without_doc_id_has_no_research_button():
+    bubble = build_summary_bubble("t", "s", "https://example.com", None)
+    footer = bubble.get("footer")
+    postbacks = [
+        c for c in footer["contents"]
+        if c.get("type") == "button" and c["action"]["type"] == "postback"
+    ] if footer else []
+    assert postbacks == []

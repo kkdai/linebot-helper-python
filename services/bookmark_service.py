@@ -103,6 +103,14 @@ class BookmarkService:
             or needle in doc.get("summary", "").lower()
         ][:limit]
 
+    def get_bookmark(self, user_id: str, doc_id: str) -> Optional[dict]:
+        """取單一書籤（含候選），驗證屬於該使用者。"""
+        doc = self.store.load(doc_id)
+        if not doc or doc.get("user_id") != user_id:
+            return None
+        doc["doc_id"] = doc_id
+        return doc
+
     def delete(self, user_id: str, doc_id: str) -> bool:
         doc = self.store.load(doc_id)
         if not doc or doc.get("user_id") != user_id:
