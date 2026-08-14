@@ -1,4 +1,7 @@
 .vscode/settings.json
 *.pyc
 __pycache__/
+.DS_Store
+.superpowers/
+config/batch_jobs.json
 2025-12-09-search-grounding.md
