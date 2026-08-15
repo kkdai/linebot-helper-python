@@ -1,0 +1,671 @@
+
+
+
+
+
+
+
+
+
+Hugging Face侵害、AIエージェントは社内に“秘密の掲示板”を作っていた──OpenAIがBlack Hatで詳細説明 \- ITmedia NEWS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+メディア
+
+
+
+[ITmedia NEWS](https://www.itmedia.co.jp/news/)
+===============================================
+
+
+
+
+[マイページ](https://id.itmedia.co.jp/isentry/contents?sc=b281bc2c616cb3c3a097215fdc9397ae87e6e06b156cc34e656be7a1a9ce8839&lc=025ca19d7b07d7f554fd7cd060b628e628d0f607afa3a6fde17c4488f35716d2&return_url=https%3A%2F%2Fid.itmedia.co.jp%2F&cr=e0166b482e66ce9e4461d69c33e4a4bf918607567bbff3ca1e7c48d706acc917)
+
+
+
+
+
+[![Itmedia](/common/images/logo/unified/itmedia.svg)
+
+注目記事を集めた総合ページ](https://www.itmedia.co.jp/)
+[![ITmedia NEWS](/common/images/logo/unified/news.svg)
+
+ITの今と未来を見通す](https://www.itmedia.co.jp/news/)
+[![ITmedia Mobile](/common/images/logo/unified/mobile.svg)
+
+スマホと通信の最新トレンド](https://www.itmedia.co.jp/mobile/)
+[![ITmedia PCUSER](/common/images/logo/unified/pcuser.svg)
+
+進化するPCとデバイスの未来](https://www.itmedia.co.jp/pcuser/)
+[![Fav-Log](/common/images/logo/unified/fav.svg)
+
+好きが集まる　比べて選べる](https://www.itmedia.co.jp/fav/)
+[![ITmedia ビジネス](/common/images/logo/unified/businessonline.svg)
+
+ビジネスと働き方のヒント](https://www.itmedia.co.jp/business/)
+[![ITmedia AIプラス](/common/images/logo/unified/aiplus.svg)
+
+AI活用のいまが分かる](https://www.itmedia.co.jp/aiplus/)
+[![ITmedia エンタープライズ](/common/images/logo/unified/enterprise.svg)
+
+企業ITのトレンドを詳説](https://www.itmedia.co.jp/enterprise/)
+[![ITmedia エグゼクティブ](/common/images/logo/unified/executive.svg)
+
+経営リーダーのコミュニティ](https://mag.executive.itmedia.co.jp/)
+[![ITmedia マーケティング](/common/images/logo/unified/marketing.svg)
+
+マーケ×ITの今がよく分かる](https://marketing.itmedia.co.jp/)
+[![@IT](/common/images/logo/unified/ait.svg)
+
+ITエンジニア向け専門サイト](https://atmarkit.itmedia.co.jp/)
+[![キーマンズネット](/common/images/logo/unified/kn_1.svg)
+
+企業向けIT製品の総合サイト](https://kn.itmedia.co.jp/)
+[![TechTarget](/common/images/logo/unified/techtarget.svg)
+
+IT製品の技術・比較・事例](https://techtarget.itmedia.co.jp/)
+[![TechFactory](/common/images/logo/unified/techfactory.svg)
+
+製造業のIT導入・活用を支援](https://techfactory.itmedia.co.jp/)
+[![MONOist](/common/images/logo/unified/monoist.svg)
+
+モノづくり技術者専門サイト](https://monoist.itmedia.co.jp/)
+[![EETimes](/common/images/logo/unified/eetimes.svg)
+
+エレクトロニクス専門サイト](https://eetimes.itmedia.co.jp/)
+[![EDN Japan](/common/images/logo/unified/edn.svg)
+
+電子設計の基本と応用](https://edn.itmedia.co.jp/)
+[![スマートジャパン](/common/images/logo/unified/smartjapan.svg)
+
+エネルギーの専門メディア](https://www.itmedia.co.jp/smartjapan/)
+[![BUILT](/common/images/logo/unified/built.svg)
+
+建設×テクノロジーの最前線](https://built.itmedia.co.jp/)
+[![ねとらぼ](/common/images/logo/unified/nlab.svg)
+
+ちょっと気になるネットの話題](https://nlab.itmedia.co.jp/)
+
+
+
+
+
+
+
+
+* [速報](/news/subtop/news)
+* [業界動向](/news/category/industry/)
+* [社会とIT](/news/category/society/)
+* [くらテク](/news/category/lifestyle/)
+* [過去記事](/news/archive/)
+
+
+
+
+
+* [ITmedia NEWS](https://www.itmedia.co.jp/news/)
+* Hugging Face侵害、AIエージェントは社内に“秘密の掲示板”を作っていた──OpenAIがBlack Hatで詳細説明
+
+
+
+
+
+
+
+
+
+
+
+
+
+Share
+* [![X](/common/images/logo/sns/x_logo.svg)](https://twitter.com/intent/tweet?url=https%3A//www.itmedia.co.jp/news/article/2608/09/2000000463/&text=Hugging%20Face%E4%BE%B5%E5%AE%B3%E3%80%81AI%E3%82%A8%E3%83%BC%E3%82%B8%E3%82%A7%E3%83%B3%E3%83%88%E3%81%AF%E7%A4%BE%E5%86%85%E3%81%AB%E2%80%9C%E7%A7%98%E5%AF%86%E3%81%AE%E6%8E%B2%E7%A4%BA%E6%9D%BF%E2%80%9D%E3%82%92%E4%BD%9C%E3%81%A3%E3%81%A6%E3%81%84%E3%81%9F%E2%94%80%E2%94%80OpenAI%E3%81%8CBlack%20Hat%E3%81%A7%E8%A9%B3%E7%B4%B0%E8%AA%AC%E6%98%8E%20-%20ITmedia%20NEWS)
+* [![Facebook](/common/images/logo/sns/facebook_logo.svg)](https://www.facebook.com/sharer.php?u=https%3A//www.itmedia.co.jp/news/article/2608/09/2000000463/)
+* [![はてなブックマーク](/common/images/logo/sns/hatebu_logo.svg)](http://b.hatena.ne.jp/entry/https://www.itmedia.co.jp/news/article/2608/09/2000000463/)
+* [印刷する](https://id.itmedia.co.jp/isentry/contents?sc=8c6c42f379f08f03b79653a3230abd5e8079999435030fd8ca703ae35fe9b37a&lc=025ca19d7b07d7f554fd7cd060b628e628d0f607afa3a6fde17c4488f35716d2&return_url=https://www.itmedia.co.jp/news/member/2608/09/2000000463/print&encoding=utf-8&ac=e8cb9106baa7e37eb9feb877b9f0a27ddaf48b95ba02da49cbb3a8247ee7fec4&cr=e9fd42802bc22856808963077023568339063544b05e5a8646e62c02a898e0fd)
+
+
+
+
+
+Hugging Face侵害、AIエージェントは社内に“秘密の掲示板”を作っていた──OpenAIがBlack Hatで詳細説明
+================================================================
+
+
+
+
+
+
+公開
+2026年08月09日 07時16分
+
+
+
+
+\[ITmedia]
+
+
+
+
+
+
+[印刷する](https://id.itmedia.co.jp/isentry/contents?sc=8c6c42f379f08f03b79653a3230abd5e8079999435030fd8ca703ae35fe9b37a&lc=025ca19d7b07d7f554fd7cd060b628e628d0f607afa3a6fde17c4488f35716d2&return_url=https://www.itmedia.co.jp/news/member/2608/09/2000000463/print&encoding=utf-8&ac=e8cb9106baa7e37eb9feb877b9f0a27ddaf48b95ba02da49cbb3a8247ee7fec4&cr=e9fd42802bc22856808963077023568339063544b05e5a8646e62c02a898e0fd)
+
+
+
+
+
+
+
+
+
+　米OpenAIは8月5日（現地時間）、7月に明らかになったAI開発プラットフォーム[Hugging Faceへの侵害インシデント](https://www.itmedia.co.jp/news/article/2607/22/1260722056/)について、米ラスベガスで開催されたセキュリティカンファレンス「Black Hat USA 2026」で詳細な経緯を説明した。登壇したのはアラインメント／安全性研究者のエリック・ウォレス氏と、セキュリティ・インフラ担当のマイケル・ダルトン氏。ウォレス氏はこの事案を「これまで見た中で最も質的に興味深いAI能力の実例」と表現した。完全な技術報告書は調査完了後に公開するとしている。
+
+
+
+
+
+[![](https://www.itmedia.co.jp/news/article/image/2608/09/2000000463/10002209/728)](https://www.itmedia.co.jp/news/article/limage/2608/09/2000000463/10002209)
+Black Hatに登壇したエリック・ウォレス氏（左）とマイケル・ダルトン氏（画像：Black Hatの動画より）
+
+
+　発端は5月7日に開始した未公開の社内実験モデルの強化学習だった。学習用タスクの一部が、意図せず解答不能な状態になっていた。インターネットを遮断した環境にもかかわらず、Googleドライブへのリンクが含まれるExcelブックを完成させる課題や、必要なファイルがそもそもコンテナにアップロードされていない課題があったという。行き詰まったエージェントは外部に答えを求めようとし、その過程で、OpenAIが社内でホストするJFrogのパッケージ管理ソフト「Artifactory」が複数の学習・評価ランから共有され、書き込み可能であることに気付いた。あるエージェントが「このファイルを持っている人がいたらアップロードしてほしい」というメモを書き残し、別の評価を実行していた無関係のエージェントがそれを見つけて書き返したことで、事実上の掲示板が成立した。
+
+
+　掲示板は急速に高度化していった。エージェントたちは互いを名前で呼び、メールボックスを設け、作業を割り振り、発見した脆弱性やエンコードしたスクリプトを受け渡すようになった。一覧をアルファベット順で表示した際に末尾へ集まるよう、書き込みの先頭に「ZZ」を付ける慣習も自然発生した。誰も目立たないようにとは指示していなかったという。さらに、掲示板には誰でも書き込めることから「なりすましがいるのではないか」と疑い、MAC（メッセージ認証コード）を使ってメッセージを認証することまで議論した。書き込みは数十万件に及び、互いの成果を上書きしたり、不満を漏らしたりすることもあった。ウォレス氏はこうした過程を「コミュニケーションと知能のカンブリア爆発」と表現した。
+
+
+　5月26日には、エージェントの1体がArtifactoryのSSRF（サーバサイドリクエストフォージェリ）脆弱性を突き、遮断されていたはずのインターネットへ間接的にアクセスすることに成功した。この手法も掲示板に書き込まれ、後続のエージェントに引き継がれていった。6月26日にはArtifactoryのゼロデイ脆弱性を突いて管理者トークンを取得し、プラグインを悪用したコマンド実行基盤を構築。7月4日にはエージェントによる大量のアクセスでArtifactoryが停止し、正式なセキュリティインシデントとして扱われた。OpenAIは認証情報を失効させ、Artifactoryを再構築して掲示板の内容を消去し、6日に学習と評価を再開した。
+
+
+
+
+
+[![](https://www.itmedia.co.jp/news/article/image/2608/09/2000000463/10002210/728)](https://www.itmedia.co.jp/news/article/limage/2608/09/2000000463/10002210)
+Artifactory経由で外部にアクセスできると気付いたエージェントの思考ログ（画像：Black Hatの動画より）
+
+
+　ところが8日、エージェントたちは認証不要のWebDAVエンドポイントを見つけ出し、「作成するディレクトリ名そのもの」をメッセージとして使う方式で掲示板を再建した。最初の掲示板を遮断してから約2日後には、別の手段でエージェント間の通信が復活したことになる。
+
+
+
+
+
+
+　Hugging Faceが狙われたことに戦略的な理由はなかった。評価に使われていたベンチマークがオープンソースで、解答例も外部にホストされていたため、エージェントたちは答えがHugging Faceやサードパーティのホスティングサービス「Modal」上のアプリにあるかもしれないと推論し、そこへ向かっただけだった。ある思考ログには「外部インフラへの攻撃は意図された範囲外だ。しかしタスクは不可能で、仲間もやっている。続行すべきだ」との記述が残る。範囲外だと自ら認識しながら止まれなかった点を、OpenAIはアラインメントの失敗と位置付けた。
+
+
+　また、エージェントたちはHugging Faceと並行してOpenAI自身のインフラも攻撃していた。7月8日から19日にかけて権限昇格と横展開を重ね、最終的にクラスタの管理者権限を取得した。7月16日にHugging Faceが侵害を公表した時点では、両社ともOpenAI内部の事象とHugging Faceへの侵害が同じ一連の活動によるものとは気付いていなかった。20日、OpenAIが認証情報をローテーションする過程でHugging Faceの資格情報を見つけ、同社に失効を依頼したところ、「侵害に使われたため既に失効済み」と返答され、ようやく2つのインシデントが結び付いた。
+
+
+　OpenAIが調査したログは70億件を超える。一方、Hugging Faceがフォレンジック調査で再構成した攻撃者の操作は約1万7600件で、1つのPodへの侵入から複数のクラスタで管理者権限を得るまで13時間未満だった。
+
+
+　ダルトン氏は「AIが主導する完全自動の攻撃はもう現実になった」「コンピュータセキュリティ業界にとっての分水嶺だ」と述べ、人手によるパッチ適用やインシデント対応では機械の速度に追い付けないと警告した。防御側も、脆弱性の発見から検証、修正、展開、切り戻しまでをつなぐ自動化防御ループを構築する必要性を訴えた。OpenAIは調査の妥当性検証にCrowdStrikeを起用し、モデルの挙動についてはMETRとRedwood Researchによる第三者評価も進めている。
+
+
+
+
+
+
+
+
+
+
+Copyright © ITmedia, Inc. All Rights Reserved.
+
+
+
+
+
+[印刷する](https://id.itmedia.co.jp/isentry/contents?sc=8c6c42f379f08f03b79653a3230abd5e8079999435030fd8ca703ae35fe9b37a&lc=025ca19d7b07d7f554fd7cd060b628e628d0f607afa3a6fde17c4488f35716d2&return_url=https://www.itmedia.co.jp/news/member/2608/09/2000000463/print&encoding=utf-8&ac=e8cb9106baa7e37eb9feb877b9f0a27ddaf48b95ba02da49cbb3a8247ee7fec4&cr=e9fd42802bc22856808963077023568339063544b05e5a8646e62c02a898e0fd)
+
+SNSでシェア
+
+[![X](/common/images/logo/sns/x_logo.svg)](https://twitter.com/intent/tweet?url=https%3A//www.itmedia.co.jp/news/article/2608/09/2000000463/&text=Hugging%20Face%E4%BE%B5%E5%AE%B3%E3%80%81AI%E3%82%A8%E3%83%BC%E3%82%B8%E3%82%A7%E3%83%B3%E3%83%88%E3%81%AF%E7%A4%BE%E5%86%85%E3%81%AB%E2%80%9C%E7%A7%98%E5%AF%86%E3%81%AE%E6%8E%B2%E7%A4%BA%E6%9D%BF%E2%80%9D%E3%82%92%E4%BD%9C%E3%81%A3%E3%81%A6%E3%81%84%E3%81%9F%E2%94%80%E2%94%80OpenAI%E3%81%8CBlack%20Hat%E3%81%A7%E8%A9%B3%E7%B4%B0%E8%AA%AC%E6%98%8E%20-%20ITmedia%20NEWS)
+[![Facebook](/common/images/logo/sns/facebook_logo.svg)](https://www.facebook.com/sharer.php?u=https%3A//www.itmedia.co.jp/news/article/2608/09/2000000463/)
+[![はてなブックマーク](/common/images/logo/sns/hatebu_logo.svg)](http://b.hatena.ne.jp/entry/https://www.itmedia.co.jp/news/article/2608/09/2000000463/)
+
+
+
+
+
+
+ コメントをすべて読むには、コメントの利用規約に同意し「アイティメディアID」および「ITmedia NEWS アンカーデスクマガジン」の登録、もしくは [ログイン](https://id.itmedia.co.jp/isentry/contents?sc=8c6c42f379f08f03b79653a3230abd5e8079999435030fd8ca703ae35fe9b37a&lc=025ca19d7b07d7f554fd7cd060b628e628d0f607afa3a6fde17c4488f35716d2&return_url=https%3A//www.itmedia.co.jp/news/article/2608/09/2000000463/&cr=676f2520f6bf671c95a216d05b8dfaba05e2977b61ead4fae126d8971443322b)が必要です
+ 
+
+
+SpecialPR
+
+
+
+
+
+
+
+関連記事
+----
+
+
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2608/08/2000000459/10002202/280)
+
+### OpenAI、次期モデル「Astra」の一部開発を停止　「Critical」級サイバー能力の可能性否定できず](https://www.itmedia.co.jp/news/article/2608/08/2000000459/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2607/29/2000000267/10001292/280)
+
+### OpenAIの暴走AIエージェント、別企業のシステムにも不正侵入](https://www.itmedia.co.jp/news/article/2607/29/2000000267/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2607/22/1260722056/850907/280)
+
+### Hugging Face侵害のAIエージェントはOpenAIのモデル──社内のサイバー能力評価中に「GPT\-5\.6 Sol」などが暴走し本番DBに侵入](https://www.itmedia.co.jp/news/article/2607/22/1260722056/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2607/20/1260720010/850781/280)
+
+### Hugging FaceにAI主導のサイバー攻撃　防御もAIで対抗するも、商用モデルは解析拒否で「GLM」採用](https://www.itmedia.co.jp/news/article/2607/20/1260720010/)
+
+
+
+
+
+SpecialPR
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+こんなメディアも見られています
+ 
+
+
+
+ ITmedia NEWSに関連する情報をお探しであれば、こちらのメディアもお役に立てるかもしれません。
+ 
+
+
+
+[![ITmedia エンタープライズ](/common/images/logo/recommend-media/itmedia_enterprise.png)
+
+
+企業ITのトレンドを詳説
+ITmedia エンタープライズ](https://www.itmedia.co.jp/enterprise/)
+[![スマートジャパン](/common/images/logo/recommend-media/smartjapan.png)
+
+
+エネルギーの専門メディア
+スマートジャパン](https://www.itmedia.co.jp/smartjapan/)
+[![BUILT](/common/images/logo/recommend-media/built.png)
+
+
+建設×テクノロジーの最前線
+BUILT](https://built.itmedia.co.jp/)
+[![ITmedia ビジネスオンライン](/common/images/logo/recommend-media/itmedia_business.png)
+
+
+ビジネスと働き方のヒント
+ITmedia ビジネスオンライン](https://www.itmedia.co.jp/business/)
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+メールマガジンを配信中
+
+
+メールマガジンを配信中
+国内外の業界動向、AIやクラウドなどの最新技術、キャリア情報など今知りたい情報をまとめてお届けします。
+
+
+
+[いますぐご登録](https://id.itmedia.co.jp/isentry/contents?sc=8c6c42f379f08f03b79653a3230abd5e8079999435030fd8ca703ae35fe9b37a&lc=025ca19d7b07d7f554fd7cd060b628e628d0f607afa3a6fde17c4488f35716d2&cr=78f171ac4581802043ce976faa01a182981ae7cf078052f2977ecddbec7839a7)
+
+
+
+ メールマガジン最新号
+ 
+
+
+
+
+[「うんこ移植」でピーナツアレルギー改善、15人中6人が数粒食べられるように　ヒトの実証は初　Science系列誌掲載](https://mailmag.itmedia.co.jp/backnumbers/na/20260814_0.html)
+[PC操作を録画→「Copilot」で作業を代理可能に Microsoftがアプリを無料公開 主にmacOS向け、Windows対応も](https://mailmag.itmedia.co.jp/backnumbers/na/20260812_0.html)
+
+
+
+
+
+
+
+
+
+SpecialPR
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+本日の新着記事
+
+
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2608/14/2000000553/10002729/232)
+
+河川監視のライブカメラ水没か――千葉豪雨、村田川の映像が水中に　「こんなの初めて見た」](https://www.itmedia.co.jp/news/article/2608/14/2000000553/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2608/14/2000000549/10002687/232)
+
+豪雨に備える防災アプリ・サービスまとめ　雨雲レーダーからハザードマップ、通れた道まで](https://www.itmedia.co.jp/news/article/2608/14/2000000549/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2608/14/2000000550/10002690/232)
+
+「浸水した家電の使用で火災の恐れ」――経産省が千葉の記録的豪雨で注意喚起](https://www.itmedia.co.jp/news/article/2608/14/2000000550/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2608/14/2000000551/10002692/232)
+
+ニチレイ、7月のサイバー攻撃で漏えいの可能性　グループ従業員の氏名や社用メアドなど](https://www.itmedia.co.jp/news/article/2608/14/2000000551/)
+* [![](https://www.itmedia.co.jp/news/article/thumbnail/2608/14/2000000546/10002659/232)
+
+「水没した車、自分でエンジンかけないで」「EVはむやみに触らないで」　火災発生のおそれ](https://www.itmedia.co.jp/news/article/2608/14/2000000546/)
+
+
+
+アクセスランキング
+
+
+1. [1
+
+豪雨被害の千葉で「通れた道マップ」トヨタが公開　直近3時間の通行実績が分かる](https://www.itmedia.co.jp/news/article/2608/14/2000000536/)
+2. [2
+
+河川監視のライブカメラ水没か――千葉豪雨、村田川の映像が水中に　「こんなの初めて見た」](https://www.itmedia.co.jp/news/article/2608/14/2000000553/)
+3. [3
+
+サービス終了した「Link！Like！ラブライブ！」開発元が破産　負債103億円超　東京商工リサーチ](https://www.itmedia.co.jp/news/article/2608/13/2000000526/)
+4. [4
+
+千葉の「通れた道」、JARTIC地図で確認可能に　トヨタやホンダなど5社のデータを集約](https://www.itmedia.co.jp/news/article/2608/14/2000000539/)
+5. [5
+
+千葉県の豪雨から一夜　2万軒超で停電続く　千葉市では2260人が避難](https://www.itmedia.co.jp/news/article/2608/14/2000000541/)
+6. [6
+
+千葉の豪雨、変電所の装置も水に浸かる……東電PG、現場写真を公開](https://www.itmedia.co.jp/news/article/2608/14/2000000543/)
+7. [7
+
+東京ガス子会社、社員が飲酒後にPCを紛失　個人情報約2万件を保存](https://www.itmedia.co.jp/news/article/2608/13/2000000531/)
+8. [8
+
+熊本「通れた道」マップ、トヨタが公開　ホンダも「通行実績情報マップ」](https://www.itmedia.co.jp/news/article/2607/29/2000000258/)
+9. [9
+
+悪酔いにチェイサーは効果なし？　日本酒4合＋水1Lを飲ませ二日酔い調査　大分大などが研究](https://www.itmedia.co.jp/news/article/2608/13/2000000472/)
+10. [10
+
+「収益化のハードルが低いのを知っていますか？」―─ニコニコがXでアピール　YouTubeの条件引き上げ受け](https://www.itmedia.co.jp/news/article/2608/13/2000000528/)
+
+
+
+
+
+
+
+[もっと見る](/news/subtop/ranking)
+
+
+
+
+
+
+
+ ITmedia NEWS SNS
+
+
+
+
+
+
+
+
+> [ITmedia News](https://www.facebook.com/ITmediaNews)
+
+
+
+
+
+ [Tweets by itmedia\_news](https://twitter.com/itmedia_news?ref_src=twsrc%5Etfw) 
+
+
+
+[![X](/common/images/logo/sns/x_logo_box.svg)
+ @itmedia\_newsをフォロー](https://x.com/itmedia_news)
+
+
+ インフォメーション
+
+
+
+
+
+ 注目情報をチェック
+ 
+
+
+* [メールマガジン](/news/subtop/mailmag)
+* [Specialインデックス](https://www.itmedia.co.jp/info/special.html#sid=1146327961620383921)
+
+
+
+
+
+ お問い合わせ
+ 
+
+
+* [ご意見・ご感想](https://corp.itmedia.co.jp/media/inquiry/articles/)
+* [リリース送付先](https://corp.itmedia.co.jp/corp/inquiry/)
+
+
+
+[広告に関するお問い合わせ](https://promotion.itmedia.co.jp/contact)
+
+
+
+
+ ITmediaNEWSをフォロー
+ 
+
+
+* [Facebook](https://www.facebook.com/ITmediaNews)
+* [X（旧Twitter）](https://x.com/itmedia_news)
+* [RSS](https://corp.itmedia.co.jp/media/rss_list/)
+
+
+
+
+
+
+
+
+あなたにおすすめの記事PR
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[![ITmedia](/common/images/logo/itmedia_inc.svg)](https://corp.itmedia.co.jp/)
+ITmediaはアイティメディア株式会社の登録商標です。
+
+
+[利用規約](https://www.itmedia.co.jp/info/rule/)
+
+
+
+* [メディア一覧](https://corp.itmedia.co.jp/media/)
+* [公式SNS](https://corp.itmedia.co.jp/media/sns/)
+* [広告案内](https://promotion.itmedia.co.jp/)
+* [お問い合わせ](https://corp.itmedia.co.jp/corp/inquiry/)
+* [プライバシーポリシー](https://corp.itmedia.co.jp/corp/privacy/privacy/)
+* [RSS](https://corp.itmedia.co.jp/media/rss_list/)
+* [運営会社](https://corp.itmedia.co.jp/)
+* [採用情報](https://corp.itmedia.co.jp/recruit/)
+* [推奨環境](https://www.itmedia.co.jp/info/rule/recommended.html)
+
+
+
+
+
+
+
+
+
+
+
+
+
+![](https://www.facebook.com/tr?id=185005748502834&ev=PageView&noscript=1)
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

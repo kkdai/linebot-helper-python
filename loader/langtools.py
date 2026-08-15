@@ -27,6 +27,25 @@ VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
 
+# 輸出語言的硬約束。
+#
+# 為什麼需要它：prompt 內文寫「用繁體中文」不夠力——當原文是日文/英文長文時，
+# 那句指示會被夾在數千 token 的外語內容之前，模型會跟著原文語言作答。
+# system_instruction 位置無關、優先權高，才鎖得住輸出語言。
+# 另外這裡明講「跨語言」規則：原本所有 prompt 都只說「用繁體中文」，
+# 從沒說過「原文是別的語言時要翻過來」，模型自然把原文語言當成預設輸出語言。
+OUTPUT_LANGUAGE_INSTRUCTION = """你只用台灣用語的繁體中文寫作。
+
+不論輸入的文章是什麼語言（日文、英文、韓文、簡體中文等），所有輸出欄位一律改寫成
+台灣用語的繁體中文，絕對不要沿用原文的語言作答，也不要中日文或中英文混雜。
+
+人名、公司名、產品名、專有技術名詞可保留原文寫法，其餘內容一律翻成繁體中文。
+
+不要把日文漢字詞直接當中文用（例：「掲示板」寫成「公布欄／論壇」、「対応」寫成「因應」、
+「取組」寫成「作法」、「情報」寫成「資訊」）。也不要用簡體字或中國用語。
+標點使用全形，用字遵循台灣習慣（例：影片、品質、資訊、網路、軟體、預設）。"""
+
+
 def _get_vertex_client():
     """Get Vertex AI client instance"""
     if not GENAI_AVAILABLE:
@@ -40,6 +59,149 @@ def _get_vertex_client():
         location=VERTEX_LOCATION,
         http_options=types.HttpOptions(api_version="v1")
     )
+
+
+# 正規化階段的 prompt。
+#
+# 為什麼是「重點筆記」而不是「忠實翻譯」：實測過忠實翻譯版，模型會照抄原文語言
+# （15k 日文輸入 -> 輸出假名佔比 0.53），等於沒翻。壓縮式重寫強迫模型重新生成，
+# 語言指示才吃得住（同樣輸入下假名佔比 0.000，temperature 0 完全確定性）。
+# 順帶把導覽列／頁尾／推薦連結濾掉——那些雜訊本來就佔了該頁約六成篇幅。
+_NORMALIZE_PROMPT = """請把以下網頁內容整理成台灣用語的繁體中文重點筆記（{budget}）。
+
+要求：
+- 用你自己的話重新組織，不要逐句照抄原文，也不要保留原文語言
+- 完整保留正文的事實、數字、日期、人名、機構名與關鍵引述
+- 略過導覽列、選單、頁尾、推薦文章、廣告、社群連結等與正文無關的雜訊
+- 人名、公司名、產品名可保留原文寫法，其餘一律繁體中文
+- 只輸出重點筆記本身，不要前言
+
+網頁內容：
+{text}"""
+
+_NORMALIZE_BUDGET = {
+    "normal": "800-1500 字；原文較短時依原文長度即可",
+    "detailed": "2000-3000 字，盡量詳盡",
+}
+
+
+def _script_profile(text: str) -> tuple[float, float, int]:
+    """回傳 (假名＋諺文佔比, 漢字佔比, 有語言訊息的字元總數)。
+
+    中日文共用漢字，所以不能只看漢字比例，必須用假名／諺文當作外語訊號。
+    必須把總數一起回傳：純英文內容的兩個佔比都是 0，跟空字串無法區分，
+    少了總數就會把英文網頁誤判成中文而跳過正規化。
+    """
+    han = kana = hangul = latin = 0
+    for ch in text:
+        if '一' <= ch <= '鿿':
+            han += 1
+        elif '぀' <= ch <= 'ヿ':  # 平假名 + 片假名
+            kana += 1
+        elif '가' <= ch <= '힯':  # 諺文
+            hangul += 1
+        elif ch.isascii() and ch.isalpha():
+            latin += 1
+
+    total = han + kana + hangul + latin
+    if total == 0:
+        return 0.0, 0.0, 0
+    return (kana + hangul) / total, han / total, total
+
+
+def _is_predominantly_chinese(text: str) -> bool:
+    """判斷「來源內容」是否已經是中文，用來決定要不要多跑一次正規化。
+
+    判不出來（例如空字串、純符號）時回傳 True，寧可少呼叫一次 API。
+
+    門檻 0.20 取自實測：真實日文頁面的假名佔比 0.648，
+    中文文章夾雜日文專有名詞則是 0.091，中間餘裕很大。
+    判錯成「非中文」只是多跑一次正規化（無害），判錯成「中文」才會讓 bug 復發，
+    所以門檻刻意偏向多跑一次。
+    """
+    foreign, han, total = _script_profile(text)
+    if total == 0:
+        return True
+    if foreign > 0.20:
+        return False
+    return han >= 0.5
+
+
+def _is_clean_zh_output(text: str) -> bool:
+    """驗收「我們自己產出的」繁中文字，門檻比來源判斷嚴格得多。
+
+    來源判斷是在分類別人寫的東西，容忍度可以大；這裡是在檢查自己的產出有沒有
+    照抄原文語言，只該留下極少量專有名詞。實測重試後曾產出假名佔比 0.149 的
+    半吊子結果——那通得過來源門檻（0.20）卻明顯不是可用的繁中，所以獨立成一支。
+
+    也要求漢字過半，否則英文來源被原封照抄時（假名佔比為 0）會矇混過關。
+    """
+    foreign, han, total = _script_profile(text)
+    if total == 0:
+        return False
+    return foreign < 0.05 and han >= 0.5
+
+
+# 重試時追加的強化指令。實測正規化階段本身偶爾也會照抄原文語言
+# （即使 temperature=0，同一輸入仍量到假名佔比 0.40），所以要驗收自己的輸出。
+_NORMALIZE_RETRY_PREFIX = """【重要】你上一次的輸出仍然使用了原文的語言，這是錯的。
+這次請務必用繁體中文（台灣用語）從頭重寫，一個日文假名或韓文字都不要出現。
+
+"""
+
+
+def normalize_source_to_zh_tw(text: str, budget: str = "normal") -> str:
+    """把非中文來源改寫成繁體中文重點筆記，並驗收輸出語言。
+
+    產出若仍不是中文就重試一次；再失敗就回傳原文——正規化只是第一道防線，
+    不該讓整個流程失敗，後面還有 system_instruction 與 prompt 內的跨語言規則接手。
+    """
+    prompt = _NORMALIZE_PROMPT.format(
+        budget=_NORMALIZE_BUDGET.get(budget, _NORMALIZE_BUDGET["normal"]),
+        text=text,
+    )
+
+    for attempt in range(2):
+        attempt_prompt = prompt if attempt == 0 else _NORMALIZE_RETRY_PREFIX + prompt
+        try:
+            client = _get_vertex_client()
+            response = client.models.generate_content(
+                model="gemini-3.1-flash-lite",
+                contents=attempt_prompt,
+                config=types.GenerateContentConfig(
+                    # 重試時給一點溫度，避免完全複製上一次的錯誤輸出
+                    temperature=0 if attempt == 0 else 0.3,
+                    max_output_tokens=8192,
+                    system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
+                    labels={"client_id": "info_helper"},
+                )
+            )
+            result = (response.text or "").strip()
+            if not result:
+                logging.warning("zh-TW normalization returned empty text")
+                continue
+            if _is_clean_zh_output(result):
+                return result
+            logging.warning(
+                f"zh-TW normalization attempt {attempt + 1} still non-Chinese, retrying")
+        except Exception as e:
+            logging.warning(f"zh-TW normalization attempt {attempt + 1} failed: {e}")
+
+    logging.warning("zh-TW normalization gave up, using original text")
+    return text
+
+
+def prepare_source_text(text: str, budget: str = "normal") -> str:
+    """所有產文流程的共同入口：確保交給模型的素材已經是繁體中文。
+
+    中文來源原封不動通過，不增加延遲與成本。
+    """
+    if not text or not text.strip():
+        return text
+    if _is_predominantly_chinese(text):
+        return text
+    logging.info("Non-Chinese source detected, normalizing to zh-TW first")
+    return normalize_source_to_zh_tw(text, budget=budget)
 
 
 def summarize_text(text: str, max_tokens: int = 100, mode: str = "normal") -> str:
@@ -152,7 +314,7 @@ reply in zh-TW"""
 
     # Select prompt based on mode
     prompt_template = prompts.get(mode, prompts["normal"])
-    prompt = prompt_template.replace("{text}", text)
+    prompt = prompt_template.replace("{text}", prepare_source_text(text))
 
     try:
         client = _get_vertex_client()
@@ -163,6 +325,7 @@ reply in zh-TW"""
             config=types.GenerateContentConfig(
                 temperature=0,
                 max_output_tokens=2048,
+                system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
                 labels={"client_id": "info_helper"},
             )
         )
@@ -252,9 +415,9 @@ def docs_to_str(docs: list) -> str:
 class SocialMediaPosts(BaseModel):
     title: str = Field(description="文章標題（15 字內，取自原文重點，繁體中文台灣用語）")
     summary_analysis: str = Field(description="文章摘要與重點分析（150-250 字繁體中文：先 2-3 句摘要文章核心內容，再 2-3 句分析重點、為什麼值得讀、對讀者的意義。純文字不用 markdown）")
-    facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案，包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
-    linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案，著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
-    threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
+    facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案（繁體中文台灣用語），包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
+    linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案（繁體中文台灣用語），著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
+    threads: str = Field(description="適合 Threads 的口語化貼文文案（繁體中文台灣用語），以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
 
 
 class BookmarkSummary(BaseModel):
@@ -335,6 +498,11 @@ def _build_social_media_prompt(text: str) -> str:
 - 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
 - Hashtags：不使用或僅使用 1 個 Hashtag。
 - 長度：約 150-300 字。
+
+# 輸出語言（最終確認，優先於以上任何指南）：
+上面的網頁內容可能是日文、英文或其他語言。**所有輸出欄位（title、summary_analysis、
+facebook、linkedin、threads）一律使用台灣用語的繁體中文**，不要沿用原文語言，
+也不要中日文或中英文混雜。人名、公司名、產品名等專有名詞可保留原文寫法。
 """
 
 
@@ -360,7 +528,7 @@ def generate_social_media_posts(text: str) -> dict:
             "threads": "無法取得網頁內容，無法產生文案。"
         }
 
-    prompt = _build_social_media_prompt(text)
+    prompt = _build_social_media_prompt(prepare_source_text(text))
 
     try:
         client = _get_vertex_client()
@@ -375,6 +543,7 @@ def generate_social_media_posts(text: str) -> dict:
                 # 人性化守則變豐富後思考 token 增加，4096 會偶爾把 JSON 輸出擠爆
                 # 導致截斷、json.loads 失敗。拉高留餘裕（實際只產出約 800-1200 tokens）。
                 max_output_tokens=8192,
+                system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
                 labels={"client_id": "info_helper"},
             )
         )
@@ -429,6 +598,9 @@ def generate_research_report(text: str, url: str) -> dict:
     if not text or not text.strip():
         return {"markdown": "", "sources": []}
 
+    # 研究報告吃細節，正規化階段給比較大的篇幅預算
+    text = prepare_source_text(text, budget="detailed")
+
     prompt = f"""你是一位嚴謹的研究分析師。請針對以下文章內容撰寫一份詳細的研究報告，
 繁體中文（台灣用語），Markdown 格式（從 ## 層級開始，不要放文章大標題）。
 
@@ -460,6 +632,7 @@ def generate_research_report(text: str, url: str) -> dict:
                 temperature=0.4,
                 tools=tools,
                 max_output_tokens=16384,
+                system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
                 labels={"client_id": "info_helper"},
             )
         )
@@ -496,12 +669,14 @@ def summarize_for_bookmark(text: str) -> dict:
             "summary": "無法取得網頁內容，無法產生摘要。"
         }
 
+    source = prepare_source_text(text)
+
     prompt = f"""請針對以下網頁內容，產出文章標題（title，15 字內）與「摘要與重點分析」
 （summary，150-250 字繁體中文台灣用語：先 2-3 句摘要核心內容，再 2-3 句分析重點
 與值得注意之處。純文字，不用 markdown 符號）。
 
 網頁內容：
-{text}"""
+{source}"""
 
     try:
         client = _get_vertex_client()
@@ -513,6 +688,7 @@ def summarize_for_bookmark(text: str) -> dict:
                 response_mime_type="application/json",
                 response_schema=BookmarkSummary,
                 max_output_tokens=4096,
+                system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
                 labels={"client_id": "info_helper"},
             )
         )
