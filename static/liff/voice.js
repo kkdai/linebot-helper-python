@@ -12,6 +12,8 @@ let currentAiBubble = null;
 let currentUserBubble = null;
 let aiTextAccum = [];
 let connectAttempt = 0;
+// 切換 PTT/免持需要重連（VAD 設定在連線時決定）
+let modeSwitching = false;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const micBtn = document.getElementById('mic-btn');
@@ -60,9 +62,14 @@ async function connectWebSocket() {
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'init', user_id: userId, lat: userLat, lng: userLng }));
+    ws.send(JSON.stringify({
+      type: 'init', user_id: userId, lat: userLat, lng: userLng,
+      handsfree: handsfreeEnabled,
+    }));
     setStatus('已連線，準備說話');
     connectAttempt = 0;
+    // 免持模式重連完成後自動恢復錄音
+    if (handsfreeEnabled && currentState === STATE.IDLE) startHandsfreeRecording();
   };
 
   ws.onmessage = (evt) => handleServerMessage(evt);
@@ -70,6 +77,11 @@ async function connectWebSocket() {
   ws.onerror = () => {};
 
   ws.onclose = () => {
+    if (modeSwitching) {
+      modeSwitching = false;
+      connectWebSocket();
+      return;
+    }
     if (connectAttempt < 3) {
       connectAttempt++;
       setStatus(`連線中斷，重連中… (${connectAttempt}/3)`);
@@ -232,11 +244,20 @@ function setupMicButton() {
     setState(STATE.RECORDING);
     currentUserBubble = addBubble('user', '🎤 說話中...');
 
+    // PTT：自動 VAD 已停用，按下時顯式標記說話開始
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'start_of_speech' }));
+    }
+
     try {
       audioStreamer = new AudioStreamer();
       await audioStreamer.start();
     } catch {
       showError('請允許麥克風權限才能使用語音功能');
+      // 已送出 start_of_speech，必須補上結束信號關閉 activity
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'end_of_speech' }));
+      }
       setState(STATE.IDLE);
       return;
     }
@@ -276,10 +297,14 @@ function toggleHandsfree() {
   handsfreeEnabled = !handsfreeEnabled;
   handsfreeSwitch.classList.toggle('on', handsfreeEnabled);
   handsfreeWarning.classList.toggle('visible', handsfreeEnabled);
-  if (handsfreeEnabled) {
-    startHandsfreeRecording();
-  } else {
-    stopHandsfreeRecording();
+
+  // VAD 模式在連線時決定（PTT 停用自動 VAD / 免持啟用），切換必須重連。
+  // 重連完成後 onopen 會在免持模式自動恢復錄音。
+  if (audioStreamer) { audioStreamer.stop(); audioStreamer = null; }
+  setState(STATE.IDLE);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    modeSwitching = true;
+    ws.close();
   }
 }
 
