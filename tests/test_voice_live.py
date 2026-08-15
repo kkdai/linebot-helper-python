@@ -148,14 +148,18 @@ async def test_handsfree_ignores_activity_events():
 class FakeResponse:
     """模擬 Gemini Live 的單一 server event。"""
 
-    def __init__(self, data=None, text=None, input_transcription=None):
+    def __init__(self, data=None, text=None, input_transcription=None, interrupted=None):
         self.data = data
         self.text = text
-        if input_transcription is not None:
+        if input_transcription is not None or interrupted is not None:
             sc = type("SC", (), {})()
-            it = type("IT", (), {})()
-            it.text = input_transcription
-            sc.input_transcription = it
+            sc.interrupted = interrupted
+            if input_transcription is not None:
+                it = type("IT", (), {})()
+                it.text = input_transcription
+                sc.input_transcription = it
+            else:
+                sc.input_transcription = None
             self.server_content = sc
         else:
             self.server_content = None
@@ -229,6 +233,26 @@ async def test_turn_complete_and_push_fn_called():
 
     assert ws.messages_of_type("turn_complete")
     assert pushed == [("你好", "嗨，你好")]
+
+
+@pytest.mark.asyncio
+async def test_gemini_interrupted_signal_forwarded_and_turn_discarded():
+    """免持 barge-in：Gemini 送 interrupted 時要通知前端清 playback queue，
+    且該輪不算完成（不送 turn_complete、不 push LINE）。"""
+    ws = FakeClientWS()
+    pushed = []
+
+    async def push_fn(user_speech, ai_response):
+        pushed.append((user_speech, ai_response))
+
+    session = FakeTurnSession([
+        [FakeResponse(text="我來回答"), FakeResponse(interrupted=True)],
+    ])
+    await gemini_to_browser(ws, session, {"interrupted": False}, push_fn=push_fn)
+
+    assert ws.messages_of_type("interrupted"), "應送出 interrupted 事件給前端"
+    assert not ws.messages_of_type("turn_complete")
+    assert pushed == []
 
 
 # ── system instruction ────────────────────────────────────────────────────
