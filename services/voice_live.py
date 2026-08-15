@@ -32,6 +32,24 @@ def build_voice_tools() -> list:
         live_types.Tool(google_search=live_types.GoogleSearch()),
         live_types.Tool(function_declarations=[
             live_types.FunctionDeclaration(
+                name="delegate_to_assistant",
+                description=(
+                    "把需要較長時間的任務（摘要網頁、YouTube 影片、PDF、深入研究問題等）"
+                    "轉交給文字助手背景處理，結果會自動推送到使用者的 LINE 聊天室。"
+                    "呼叫後請口頭告訴使用者：任務已受理，結果稍後會出現在聊天室。"
+                ),
+                parameters=live_types.Schema(
+                    type=live_types.Type.OBJECT,
+                    properties={
+                        "request": live_types.Schema(
+                            type=live_types.Type.STRING,
+                            description="要轉交的完整任務描述（含網址等必要資訊）",
+                        ),
+                    },
+                    required=["request"],
+                ),
+            ),
+            live_types.FunctionDeclaration(
                 name="search_nearby_places",
                 description=(
                     "查詢使用者目前位置附近的地點（餐廳、停車場、加油站）。"
@@ -56,12 +74,30 @@ def build_voice_tools() -> list:
     ]
 
 
+# fire-and-forget 背景任務的引用，避免被 GC 中途取消
+_background_tasks: set = set()
+
+
 def make_tool_handler(
-    lat: Optional[float], lng: Optional[float]
+    lat: Optional[float],
+    lng: Optional[float],
+    delegate_fn: Optional[Callable[[str], Awaitable[None]]] = None,
 ) -> Callable[[str, dict], Awaitable[dict]]:
-    """建立 tool_call 執行器，注入使用者座標。"""
+    """建立 tool_call 執行器，注入使用者座標與慢任務轉交 callback。"""
 
     async def handler(name: str, args: dict) -> dict:
+        if name == "delegate_to_assistant":
+            request = (args.get("request") or "").strip()
+            if not delegate_fn or not request:
+                return {"status": "error", "error_message": "目前無法轉交任務"}
+            # 不等結果：Live function calling 是同步阻塞，慢任務必須背景跑
+            task = asyncio.create_task(delegate_fn(request))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+            return {
+                "status": "accepted",
+                "message": "任務已受理，結果將推送到 LINE 聊天室",
+            }
         if name == "search_nearby_places":
             if lat is None or lng is None:
                 return {
@@ -92,10 +128,10 @@ def build_system_instruction(lat: Optional[float], lng: Optional[float]) -> str:
 {location_info}
 
 你可以：
-- 查詢附近地點（使用 maps 工具查詢餐廳、停車場、加油站等）
-- 摘要網頁、YouTube 影片或 PDF 內容
-- 回答一般問題（搭配 Google Search）
-- 提供天氣、交通等即時資訊
+- 查詢附近地點（使用 search_nearby_places 工具查詢餐廳、停車場、加油站等）
+- 回答一般問題與天氣、交通等即時資訊（搭配 Google Search）
+- 摘要網頁、YouTube 影片或 PDF 等需要較長時間的任務：使用 delegate_to_assistant
+  工具轉交給文字助手，並告訴使用者結果稍後會出現在 LINE 聊天室
 
 請用繁體中文回應，語氣自然口語，適合直接用語音播放。不要使用條列符號或 markdown 格式，改用自然的說話方式。每次回應控制在 50 字以內。"""
 
