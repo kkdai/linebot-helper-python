@@ -108,7 +108,13 @@ function handleServerMessage(evt) {
   let msg;
   try { msg = JSON.parse(evt.data); } catch { return; }
 
-  if (msg.type === 'text_chunk') {
+  if (msg.type === 'user_transcript') {
+    // 使用者語音的即時轉錄（後端送累積全文，直接取代氣泡內容）
+    if (!currentUserBubble) currentUserBubble = addBubble('user', '');
+    currentUserBubble.textContent = msg.text;
+    chat.scrollTop = chat.scrollHeight;
+
+  } else if (msg.type === 'text_chunk') {
     aiTextAccum.push(msg.text);
     if (!currentAiBubble) {
       if (currentState !== STATE.SPEAKING) setState(STATE.SPEAKING);
@@ -279,7 +285,10 @@ function setupMicButton() {
       ws.send(JSON.stringify({ type: 'end_of_speech' }));
     }
 
-    if (currentUserBubble) currentUserBubble.textContent = '（語音輸入）';
+    // 轉錄結果稍後由 user_transcript 事件補上；先顯示等待狀態
+    if (currentUserBubble && currentUserBubble.textContent === '🎤 說話中...') {
+      currentUserBubble.textContent = '…';
+    }
     setState(STATE.SPEAKING);
   };
 
