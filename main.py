@@ -796,7 +796,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
 
 
-async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str, text: str = None, push_user_id: str = None):
+async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str, text: str = None, push_user_id: str = None,
+                                               reply_prefix: str = None, offer_tts: bool = False):
     """
     Handle text messages using the Orchestrator for A2A routing.
 
@@ -830,7 +831,8 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
         result = await orchestrator.process_text(user_id=user_id, message=msg)
 
         # Format response using orchestrator formatter
-        response_text = format_orchestrator_response(result)
+        answer_text = format_orchestrator_response(result)
+        response_text = (reply_prefix or "") + answer_text
 
         # Handle long responses
         if len(response_text) > 4500:
@@ -857,6 +859,22 @@ async def handle_text_message_via_orchestrator(event: MessageEvent, user_id: str
                     ]
                 )
                 break
+
+        # 語音訊息來源：掛「用語音聽」按鈕，複用 read_aloud postback + TTS
+        if offer_tts and answer_text.strip():
+            summary_id = str(uuid.uuid4())
+            summary_store[summary_id] = {"text": answer_text, "created_at": time.time()}
+            tts_button = QuickReplyButton(
+                action=PostbackAction(
+                    label="🔊 用語音聽",
+                    data=json.dumps({"action": "read_aloud", "summary_id": summary_id}),
+                    display_text="🔊 用語音聽回覆",
+                )
+            )
+            if quick_reply:
+                quick_reply.items.append(tts_button)
+            else:
+                quick_reply = QuickReply(items=[tts_button])
 
         reply_msg = TextSendMessage(text=response_text, quick_reply=quick_reply)
         if push_user_id:
@@ -952,10 +970,16 @@ def _create_image_send_message(image_bytes: bytes):
 
 
 async def handle_audio_message(event: MessageEvent):
-    """Handle audio (voice) messages — transcribe and route through Orchestrator."""
+    """Handle audio (voice) messages — transcribe and route through Orchestrator.
+
+    流程：loading 動畫（不消耗 reply token）→ 轉錄 → 單一回覆
+    （🎤 轉錄前綴 + Orchestrator 結果 + 「用語音聽」quick reply）。
+    """
     user_id = event.source.user_id
-    replied = False
     try:
+        # 讓使用者立刻看到「處理中」動畫，取代先回一則轉錄文字
+        await LineService.show_loading_animation(user_id)
+
         # Download audio from LINE
         message_content = await line_bot_api.get_message_content(event.message.id)
         audio_bytes = b""
@@ -974,26 +998,23 @@ async def handle_audio_message(event: MessageEvent):
             )
             return
 
-        # Reply #1: show transcription to user (consumes reply token)
-        await line_bot_api.reply_message(
-            event.reply_token,
-            [TextSendMessage(text=f"你說的是：{transcription.strip()}")]
+        # 單一回覆：轉錄 + 結果 + 語音播放按鈕（reply token 只用一次）
+        t = transcription.strip()
+        await handle_text_message_via_orchestrator(
+            event, user_id, text=t,
+            reply_prefix=f"🎤 你說的是：{t}\n\n",
+            offer_tts=True,
         )
-        replied = True
-
-        # Reply #2: run transcription through Orchestrator.
-        # Must use push_user_id=user_id because the reply token was already consumed in Reply #1.
-        await handle_text_message_via_orchestrator(event, user_id, text=transcription.strip(), push_user_id=user_id)
 
     except Exception as e:
         logger.error(f"Error handling audio message for user {user_id}: {e}", exc_info=True)
         error_text = LineService.format_error_message(e, "處理語音訊息")
         error_msg = TextSendMessage(text=error_text)
-        if replied:
-            # Reply token already consumed — use push_message to notify user
-            await line_bot_api.push_message(user_id, [error_msg])
-        else:
+        try:
             await line_bot_api.reply_message(event.reply_token, [error_msg])
+        except Exception:
+            # Reply token 已被消耗或過期 — 改用 push 通知
+            await line_bot_api.push_message(user_id, [error_msg])
 
 
 async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, prompt_text: str):
