@@ -377,6 +377,42 @@ async def test_make_tool_handler_maps_calls_search(monkeypatch):
     assert captured == {"latitude": 25.03, "longitude": 121.56, "place_type": "parking"}
 
 
+def test_voice_tools_include_delegate_to_assistant():
+    fn_names = [
+        fd.name
+        for t in build_voice_tools()
+        for fd in (getattr(t, "function_declarations", None) or [])
+    ]
+    assert "delegate_to_assistant" in fn_names
+
+
+@pytest.mark.asyncio
+async def test_delegate_tool_fires_background_and_returns_accepted():
+    """慢任務轉交：立即回 accepted（不阻塞語音），實際工作背景執行。"""
+    import asyncio
+
+    done = asyncio.Event()
+    received = []
+
+    async def delegate_fn(request):
+        received.append(request)
+        done.set()
+
+    handler = make_tool_handler(lat=None, lng=None, delegate_fn=delegate_fn)
+    result = await handler("delegate_to_assistant", {"request": "幫我摘要這部影片"})
+
+    assert result["status"] == "accepted"
+    await asyncio.wait_for(done.wait(), timeout=1.0)
+    assert received == ["幫我摘要這部影片"]
+
+
+@pytest.mark.asyncio
+async def test_delegate_tool_without_fn_errors():
+    handler = make_tool_handler(lat=None, lng=None)
+    result = await handler("delegate_to_assistant", {"request": "x"})
+    assert result["status"] == "error"
+
+
 @pytest.mark.asyncio
 async def test_make_tool_handler_unknown_function():
     handler = make_tool_handler(lat=25.03, lng=121.56)

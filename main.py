@@ -331,7 +331,26 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         entry = voice_resume_handles.get(user_id)
         if entry and time.time() - entry["ts"] < VOICE_RESUME_TTL:
             state["resume_handle"] = entry["handle"]
-        tool_handler = voice_live.make_tool_handler(lat, lng)
+        async def voice_delegate(request: str):
+            """語音助手轉交的慢任務：走 Orchestrator，結果 push 回 LINE。"""
+            try:
+                result = await orchestrator.process_text(user_id=user_id, message=request)
+                response_text = format_orchestrator_response(result)
+                if len(response_text) > 4500:
+                    response_text = response_text[:4400] + "\n\n... (訊息過長，已截斷)"
+                await line_bot_api.push_message(
+                    user_id, [TextSendMessage(text=f"🎤 語音助手轉交的任務完成：\n\n{response_text}")]
+                )
+            except Exception as e:
+                logger.error(f"voice delegate failed for {user_id}: {e}", exc_info=True)
+                try:
+                    await line_bot_api.push_message(
+                        user_id, [TextSendMessage(text="⚠️ 語音助手轉交的任務處理失敗，請稍後再試。")]
+                    )
+                except Exception:
+                    pass
+
+        tool_handler = voice_live.make_tool_handler(lat, lng, delegate_fn=voice_delegate)
 
         async def push_fn(user_speech: str, ai_response: str):
             await _push_voice_turn_to_line(user_id, user_speech, ai_response)
