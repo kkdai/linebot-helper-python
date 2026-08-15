@@ -16,6 +16,7 @@ from services.voice_live import (
     build_live_config,
     build_system_instruction,
     build_voice_tools,
+    format_session_summary,
     gemini_to_browser,
     make_tool_handler,
 )
@@ -460,6 +461,56 @@ async def test_go_away_sets_flag_and_stops_relay():
     assert state.get("go_away") is True
     assert len(session._turns) == 1, "GoAway 後應立即返回，不再讀下一輪"
     assert not ws.messages_of_type("error")
+
+
+# ── 文字輸入 fallback ──────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_text_input_forwarded_as_realtime_text():
+    """LIFF 文字輸入：用 send_realtime_input(text=...)（不可用 send_client_content）。"""
+    session = FakeLiveSession()
+    ws = FakeBrowserWS([_text_event({"type": "text", "text": "現在幾點"})])
+    await browser_to_gemini(ws, session, {"handsfree": False, "interrupted": False})
+
+    text_calls = [k for k in session.calls_named("send_realtime_input") if "text" in k]
+    assert text_calls == [{"text": "現在幾點"}]
+    assert session.calls_named("send_client_content") == []
+
+
+# ── VAD 靈敏度 ─────────────────────────────────────────────────────────────
+
+def test_handsfree_low_vad_sensitivity_for_noisy_env():
+    cfg = build_live_config(build_system_instruction(None, None),
+                            handsfree=True, vad_sensitivity="low")
+    aad = cfg.realtime_input_config.automatic_activity_detection
+    assert not aad.disabled
+    assert aad.start_of_speech_sensitivity == live_types.StartSensitivity.START_SENSITIVITY_LOW
+    assert aad.end_of_speech_sensitivity == live_types.EndSensitivity.END_SENSITIVITY_LOW
+
+
+def test_handsfree_default_vad_untouched():
+    cfg = build_live_config(build_system_instruction(None, None), handsfree=True)
+    ric = cfg.realtime_input_config
+    assert ric is None or ric.automatic_activity_detection is None
+
+
+# ── Session 結束摘要（額度優化）───────────────────────────────────────────
+
+def test_format_session_summary_contains_turns():
+    turns = [("你好", "嗨，需要幫忙嗎"), ("天氣如何", "晴天 30 度")]
+    s = format_session_summary(turns)
+    assert s.startswith("🎤")
+    for part in ("你好", "嗨，需要幫忙嗎", "天氣如何", "晴天 30 度"):
+        assert part in s
+
+
+def test_format_session_summary_truncates_to_line_limit():
+    turns = [("問" * 300, "答" * 300)] * 20
+    assert len(format_session_summary(turns)) <= 4500
+
+
+def test_format_session_summary_empty_returns_empty():
+    assert format_session_summary([]) == ""
 
 
 # ── system instruction ────────────────────────────────────────────────────

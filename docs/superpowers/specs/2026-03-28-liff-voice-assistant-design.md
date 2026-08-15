@@ -38,9 +38,9 @@
     · 每輪 turn_complete → push_message 到 LINE
     ↕ google-genai Live WebSocket（us-central1）
 
-[Vertex AI]
-  model: gemini-live-2.5-flash-native-audio
-  response_modalities: ["AUDIO", "TEXT"]
+[Gemini Live API]
+  model: gemini-3.1-flash-live-preview
+  response_modalities: ["AUDIO"]（文字由 output_audio_transcription 提供）
   system_instruction: 含 GPS、現有 Agents 能力說明
 ```
 
@@ -207,3 +207,27 @@ async def voice_ws(ws: WebSocket, session_id: str):
 - 對話歷史持久化（跨 session）
 - 語音指令控制 LINE Bot 其他功能（如傳送圖片）
 - Rich Menu 透過 API 自動部署（手動設定）
+
+---
+
+## 2026-08-15 更新（協定 v2）
+
+實作已抽出至 `services/voice_live.py`（可測試），與本文件原始設計的差異：
+
+- **模型**：`gemini-3.1-flash-live-preview`（2.5 系列已淘汰）
+- **PTT 協定**：停用自動 VAD，按下/放開送 `start_of_speech` / `end_of_speech`
+  → 後端轉為 `activity_start` / `activity_end`（原本的
+  `send_client_content(turn_complete=True)` 在 3.1 為非法用法）
+- **免持模式**：保留自動 VAD；切換 PTT/免持會重連 WS（VAD 設定在連線時決定）；
+  新增「吵雜環境模式」降低 VAD 靈敏度（`vad_sensitivity: "low"`）
+- **下行新事件**：`user_transcript`（使用者語音即時轉錄）、`interrupted`
+  （barge-in 時清 playback queue）
+- **工具**：Live session 掛 Google Search grounding、`search_nearby_places`
+  （GPS 由後端注入）、`delegate_to_assistant`（慢任務轉交 Orchestrator
+  背景處理，結果 push 回 LINE）
+- **Session 管理**：session resumption（per-user handle，15 分 TTL）、
+  GoAway 無縫重連、sliding-window context compression
+- **文字輸入 fallback**：上行 `{type:"text", text}` →
+  `send_realtime_input(text=...)`
+- **LINE push**：改為 session 結束推送一則完整對話彙整（原本每輪一則，
+  消耗訊息額度）

@@ -142,6 +142,45 @@
       flex-shrink: 0;
     }
     #handsfree-warning.visible { display: block; }
+    #vad-btn {
+      margin-left: 8px;
+      background: transparent;
+      border: 1px solid #fbbf24;
+      color: #fbbf24;
+      border-radius: 10px;
+      font-size: 11px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    #vad-btn.on { background: #fbbf24; color: #451a03; }
+
+    /* Text input fallback */
+    #text-row {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      max-width: 420px;
+    }
+    #text-input {
+      flex: 1;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 18px;
+      color: #f9fafb;
+      font-size: 14px;
+      padding: 8px 14px;
+      outline: none;
+    }
+    #text-input:focus { border-color: #2563eb; }
+    #send-btn {
+      background: #1d4ed8;
+      border: none;
+      border-radius: 18px;
+      color: #fff;
+      font-size: 13px;
+      padding: 8px 14px;
+      cursor: pointer;
+    }
 
     /* Bottom controls */
     #controls {
@@ -221,7 +260,10 @@
   </div>
 </div>
 
-<div id="handsfree-warning">⚠ 免持模式開啟中，吵雜環境可能誤觸發</div>
+<div id="handsfree-warning">
+  ⚠ 免持模式開啟中，吵雜環境可能誤觸發
+  <button id="vad-btn" onclick="toggleVadSensitivity()">🔇 吵雜環境模式</button>
+</div>
 
 <div id="chat">
   <div id="empty-hint">
@@ -233,6 +275,11 @@
 <div id="controls">
   <div id="status-text">待機中</div>
   <button id="mic-btn">🎤</button>
+  <div id="text-row">
+    <input id="text-input" type="text" placeholder="不方便說話？輸入文字…"
+           autocomplete="off" enterkeyhint="send">
+    <button id="send-btn">送出</button>
+  </div>
 </div>
 
 <div id="error-toast"></div>
@@ -241,6 +288,6 @@
 <script>
   window.LIFF_ID = "{{LIFF_ID}}";
 </script>
-<script src="/static/liff/voice.js?v=3"></script>
+<script src="/static/liff/voice.js?v=4"></script>
 </body>
 </html>

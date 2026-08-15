@@ -298,15 +298,6 @@ def serve_liff():
         raise HTTPException(status_code=404, detail="LIFF app not found")
 
 
-async def _push_voice_turn_to_line(user_id: str, user_speech: str, ai_response: str):
-    """每輪語音對話完成後，把摘要推回 LINE 聊天室。"""
-    push_text = f"🎤 你說：{user_speech}\n\n🤖 AI：{ai_response}"
-    try:
-        await line_bot_api.push_message(user_id, [TextSendMessage(text=push_text)])
-    except Exception as e:
-        logger.error(f"push_message failed for {user_id}: {e}")
-
-
 @app.websocket("/ws/voice/{session_id}")
 async def voice_ws(websocket: WebSocket, session_id: str):
     """Real-time voice assistant WebSocket — relay between LIFF and Gemini Live."""
@@ -319,6 +310,7 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         lat = init_data.get("lat")
         lng = init_data.get("lng")
         handsfree = bool(init_data.get("handsfree", False))
+        vad_sensitivity = init_data.get("vad_sensitivity")
         system_instruction = voice_live.build_system_instruction(lat, lng)
 
         # api_version="v1beta" required for gemini-3.1-flash-live-preview per cookbook sample
@@ -327,7 +319,7 @@ async def voice_ws(websocket: WebSocket, session_id: str):
             vertexai=False,
             http_options={"api_version": "v1beta"},
         )
-        state = {"interrupted": False, "handsfree": handsfree}
+        state = {"interrupted": False, "handsfree": handsfree, "turns": []}
         entry = voice_resume_handles.get(user_id)
         if entry and time.time() - entry["ts"] < VOICE_RESUME_TTL:
             state["resume_handle"] = entry["handle"]
@@ -353,7 +345,8 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         tool_handler = voice_live.make_tool_handler(lat, lng, delegate_fn=voice_delegate)
 
         async def push_fn(user_speech: str, ai_response: str):
-            await _push_voice_turn_to_line(user_id, user_speech, ai_response)
+            # 額度優化：每輪只累積，session 結束時推一則彙整訊息
+            state["turns"].append((user_speech, ai_response))
 
         # GoAway（Live 連線約 10 分鐘被回收）時帶 resumption handle 無縫重連
         while True:
@@ -362,6 +355,7 @@ async def voice_ws(websocket: WebSocket, session_id: str):
                 handsfree=handsfree,
                 tools=voice_live.build_voice_tools(),
                 resume_handle=state.get("resume_handle"),
+                vad_sensitivity=vad_sensitivity,
             )
             async with client.aio.live.connect(model=voice_live.VOICE_MODEL, config=config) as session:
                 t1 = asyncio.create_task(voice_live.browser_to_gemini(websocket, session, state))
@@ -384,6 +378,14 @@ async def voice_ws(websocket: WebSocket, session_id: str):
                 logger.info(f"Voice Live GoAway — reconnecting Gemini for {user_id}")
                 continue
             break
+
+        # Session 結束：整段對話推一則彙整（取代每輪一則，節省訊息額度）
+        summary = voice_live.format_session_summary(state["turns"])
+        if summary:
+            try:
+                await line_bot_api.push_message(user_id, [TextSendMessage(text=summary)])
+            except Exception as e:
+                logger.error(f"voice session summary push failed for {user_id}: {e}")
 
     except asyncio.TimeoutError:
         logger.warning(f"Voice WS init timeout: {session_id}")
