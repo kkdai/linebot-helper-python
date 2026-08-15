@@ -109,6 +109,7 @@ async def gemini_to_browser(
         while True:
             # Turn-based iteration: the for-loop ending signals turn_complete
             turn = session.receive()
+            turn_interrupted = False
             async for response in turn:
                 # Audio output
                 if response.data:
@@ -134,8 +135,13 @@ async def gemini_to_browser(
                             })
                         )
 
+                # 免持 barge-in：Gemini 偵測到使用者插話，通知前端清 playback queue
+                if sc and getattr(sc, "interrupted", None):
+                    turn_interrupted = True
+                    await websocket.send_text(json.dumps({"type": "interrupted"}))
+
             # For-loop ended = turn_complete (or interrupt cleared the queue)
-            if state.get("interrupted"):
+            if turn_interrupted or state.get("interrupted"):
                 state["interrupted"] = False
                 ai_text_accum.clear()
                 user_text_accum.clear()

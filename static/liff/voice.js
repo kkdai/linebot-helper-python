@@ -122,6 +122,13 @@ function handleServerMessage(evt) {
     }
     appendToBubble(currentAiBubble, msg.text);
 
+  } else if (msg.type === 'interrupted') {
+    // Gemini 偵測到使用者插話（免持 barge-in）：立即停止播放、丟棄殘留音訊
+    audioPlayer.interrupt();
+    currentAiBubble = null;
+    aiTextAccum = [];
+    setState(handsfreeEnabled ? STATE.RECORDING : STATE.IDLE);
+
   } else if (msg.type === 'turn_complete') {
     aiTextAccum = [];
     currentAiBubble = null;
