@@ -18,6 +18,8 @@ except ImportError:
     GENAI_AVAILABLE = False
     logging.error("google-genai package not available")
 
+from loader.langtools import OUTPUT_LANGUAGE_INSTRUCTION
+
 logger = logging.getLogger(__name__)
 
 # Vertex AI configuration
@@ -204,6 +206,7 @@ def summarize_youtube_video(
                 model="gemini-3.1-flash-lite",
                 contents=contents,
                 config=GenerateContentConfig(
+                    system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
                     labels={"client_id": "info_helper"},
                 ),
             )

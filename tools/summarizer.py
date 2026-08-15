@@ -18,6 +18,8 @@ except ImportError:
     GENAI_AVAILABLE = False
     logging.error("google-genai package not available")
 
+from loader.langtools import OUTPUT_LANGUAGE_INSTRUCTION, prepare_source_text
+
 logger = logging.getLogger(__name__)
 
 # Vertex AI configuration
@@ -150,7 +152,7 @@ def summarize_text(
         }
 
     prompt_template = SUMMARIZE_PROMPTS.get(mode, SUMMARIZE_PROMPTS["normal"])
-    prompt = prompt_template.replace("{text}", text)
+    prompt = prompt_template.replace("{text}", prepare_source_text(text))
 
     try:
         client = _get_vertex_client()
@@ -161,6 +163,7 @@ def summarize_text(
             config=types.GenerateContentConfig(
                 temperature=0,
                 max_output_tokens=2048,
+                system_instruction=OUTPUT_LANGUAGE_INSTRUCTION,
                 labels={"client_id": "info_helper"},
             )
         )
