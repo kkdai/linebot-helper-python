@@ -322,15 +322,21 @@ async def voice_ws(websocket: WebSocket, session_id: str):
             vertexai=False,
             http_options={"api_version": "v1beta"},
         )
-        config = voice_live.build_live_config(system_instruction, handsfree=handsfree)
+        config = voice_live.build_live_config(
+            system_instruction,
+            handsfree=handsfree,
+            tools=voice_live.build_voice_tools(),
+        )
         state = {"interrupted": False, "handsfree": handsfree}
+        tool_handler = voice_live.make_tool_handler(lat, lng)
 
         async def push_fn(user_speech: str, ai_response: str):
             await _push_voice_turn_to_line(user_id, user_speech, ai_response)
 
         async with client.aio.live.connect(model=voice_live.VOICE_MODEL, config=config) as session:
             t1 = asyncio.create_task(voice_live.browser_to_gemini(websocket, session, state))
-            t2 = asyncio.create_task(voice_live.gemini_to_browser(websocket, session, state, push_fn))
+            t2 = asyncio.create_task(voice_live.gemini_to_browser(
+                websocket, session, state, push_fn, tool_handler=tool_handler))
             done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
             for task in pending:
                 task.cancel()
