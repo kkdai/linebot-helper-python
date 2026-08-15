@@ -141,6 +141,7 @@ def build_live_config(
     handsfree: bool,
     tools: Optional[list] = None,
     resume_handle: Optional[str] = None,
+    vad_sensitivity: Optional[str] = None,
 ) -> live_types.LiveConnectConfig:
     """組出 LiveConnectConfig。PTT 模式停用自動 VAD，改用顯式 activity 信號。
 
@@ -171,7 +172,28 @@ def build_live_config(
         kwargs["realtime_input_config"] = live_types.RealtimeInputConfig(
             automatic_activity_detection=live_types.AutomaticActivityDetection(disabled=True)
         )
+    elif vad_sensitivity == "low":
+        # 吵雜環境：降低自動 VAD 靈敏度，減少誤觸發／過早切斷
+        kwargs["realtime_input_config"] = live_types.RealtimeInputConfig(
+            automatic_activity_detection=live_types.AutomaticActivityDetection(
+                start_of_speech_sensitivity=live_types.StartSensitivity.START_SENSITIVITY_LOW,
+                end_of_speech_sensitivity=live_types.EndSensitivity.END_SENSITIVITY_LOW,
+            )
+        )
     return live_types.LiveConnectConfig(**kwargs)
+
+
+def format_session_summary(turns: list) -> str:
+    """把一段語音對話的所有輪次組成單一 LINE 訊息（額度優化：整段只推一則）。"""
+    if not turns:
+        return ""
+    lines = [f"🎤 語音對話摘要（共 {len(turns)} 輪）"]
+    for i, (user_speech, ai_response) in enumerate(turns, 1):
+        lines.append(f"\n{i}. 你：{user_speech}\n   🤖：{ai_response}")
+    text = "\n".join(lines)
+    if len(text) > 4500:
+        text = text[:4400] + "\n\n... (訊息過長，已截斷)"
+    return text
 
 
 async def browser_to_gemini(websocket, session, state: dict) -> None:
@@ -200,6 +222,11 @@ async def browser_to_gemini(websocket, session, state: dict) -> None:
                         await session.send_realtime_input(
                             activity_end=live_types.ActivityEnd()
                         )
+                elif etype == "text":
+                    # 文字輸入 fallback：對話中一律用 send_realtime_input
+                    text = (event.get("text") or "").strip()
+                    if text:
+                        await session.send_realtime_input(text=text)
                 elif etype == "interrupt":
                     state["interrupted"] = True
     except Exception as e:

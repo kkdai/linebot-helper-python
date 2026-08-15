@@ -3,6 +3,8 @@ const STATE = { IDLE: 'idle', RECORDING: 'recording', SPEAKING: 'speaking' };
 let currentState = STATE.IDLE;
 let ws = null;
 let handsfreeEnabled = false;
+// 免持 VAD 靈敏度：null = 預設，'low' = 吵雜環境（降低誤觸發）
+let vadSensitivity = null;
 let audioStreamer = null;
 let audioPlayer = null;
 let userId = null;
@@ -23,6 +25,9 @@ const emptyHint = document.getElementById('empty-hint');
 const handsfreeSwitch = document.getElementById('handsfree-switch');
 const handsfreeWarning = document.getElementById('handsfree-warning');
 const errorToast = document.getElementById('error-toast');
+const textInput = document.getElementById('text-input');
+const sendBtn = document.getElementById('send-btn');
+const vadBtn = document.getElementById('vad-btn');
 
 // ── Entry point ────────────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
@@ -65,6 +70,7 @@ async function connectWebSocket() {
     ws.send(JSON.stringify({
       type: 'init', user_id: userId, lat: userLat, lng: userLng,
       handsfree: handsfreeEnabled,
+      vad_sensitivity: vadSensitivity,
     }));
     setStatus('已連線，準備說話');
     connectAttempt = 0;
@@ -306,6 +312,40 @@ function setupMicButton() {
 
   // Hands-free toggle
   handsfreeSwitch.addEventListener('click', toggleHandsfree);
+
+  // 文字輸入 fallback（不方便說話的場合）
+  sendBtn.addEventListener('click', sendTextMessage);
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendTextMessage(); }
+  });
+}
+
+// ── Text input fallback ────────────────────────────────────────────────────
+function sendTextMessage() {
+  const text = textInput.value.trim();
+  if (!text) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    showError('尚未連線，請稍候再試');
+    return;
+  }
+  if (currentState === STATE.RECORDING) return;
+  ws.send(JSON.stringify({ type: 'text', text }));
+  addBubble('user', text);
+  textInput.value = '';
+  setState(STATE.SPEAKING);
+}
+
+// ── VAD sensitivity (hands-free noisy environment) ─────────────────────────
+function toggleVadSensitivity() {
+  vadSensitivity = vadSensitivity === 'low' ? null : 'low';
+  vadBtn.classList.toggle('on', vadSensitivity === 'low');
+  // 靈敏度在連線時決定，免持模式下需要重連套用
+  if (handsfreeEnabled && ws && ws.readyState === WebSocket.OPEN) {
+    if (audioStreamer) { audioStreamer.stop(); audioStreamer = null; }
+    setState(STATE.IDLE);
+    modeSwitching = true;
+    ws.close();
+  }
 }
 
 // ── Hands-free mode ────────────────────────────────────────────────────────
