@@ -6,8 +6,10 @@ for sending messages and handling LINE-specific formatting.
 """
 
 import logging
+import os
 from typing import List, Optional, Union
 
+import aiohttp
 from linebot import AsyncLineBotApi
 from linebot.models import (
     TextSendMessage,
@@ -20,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 # LINE message length limit
 MAX_MESSAGE_LENGTH = 5000
+
+# Chat loading animation API（不消耗訊息額度；僅 1:1 聊天有效）
+LOADING_API_URL = "https://api.line.me/v2/bot/chat/loading/start"
 
 
 class LineService:
@@ -38,6 +43,31 @@ class LineService:
             line_bot_api: Async LINE Bot API instance
         """
         self.api = line_bot_api
+
+    @staticmethod
+    async def show_loading_animation(
+        chat_id: str,
+        access_token: Optional[str] = None,
+        seconds: int = 60,
+    ) -> None:
+        """顯示聊天室 loading 動畫。失敗只記 log，不影響主流程。
+
+        line-bot-sdk v2 沒有這個 API，直接打 HTTP endpoint。
+        """
+        token = access_token or os.getenv("ChannelAccessToken")
+        if not token:
+            return
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    LOADING_API_URL,
+                    json={"chatId": chat_id, "loadingSeconds": seconds},
+                    headers={"Authorization": f"Bearer {token}"},
+                ) as resp:
+                    if resp.status not in (200, 202):
+                        logger.warning(f"Loading animation API returned {resp.status}")
+        except Exception as e:
+            logger.warning(f"show_loading_animation failed: {e}")
 
     async def reply_text(
         self,
