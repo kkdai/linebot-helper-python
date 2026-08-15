@@ -159,6 +159,11 @@ SUMMARY_TTL = 600  # 10 minutes
 # Audio store for serving generated voice messages (keyed by UUID)
 # Format: {audio_id: {"data": bytes, "created_at": float}}
 audio_store: Dict[str, dict] = {}
+
+# Voice Live session resumption handles (user_id -> {"handle": str, "ts": float})
+# 讓瀏覽器重連 / GoAway 重連後能接回同一段對話
+voice_resume_handles: Dict[str, dict] = {}
+VOICE_RESUME_TTL = 900  # seconds
 AUDIO_TTL = 300  # 5 minutes
 MAX_TTS_CHARS = 250  # Truncate summaries to keep audio under ~1 minute (~250 Chinese chars)
 # Base URL for serving images (auto-detected from webhook request)
@@ -322,28 +327,44 @@ async def voice_ws(websocket: WebSocket, session_id: str):
             vertexai=False,
             http_options={"api_version": "v1beta"},
         )
-        config = voice_live.build_live_config(
-            system_instruction,
-            handsfree=handsfree,
-            tools=voice_live.build_voice_tools(),
-        )
         state = {"interrupted": False, "handsfree": handsfree}
+        entry = voice_resume_handles.get(user_id)
+        if entry and time.time() - entry["ts"] < VOICE_RESUME_TTL:
+            state["resume_handle"] = entry["handle"]
         tool_handler = voice_live.make_tool_handler(lat, lng)
 
         async def push_fn(user_speech: str, ai_response: str):
             await _push_voice_turn_to_line(user_id, user_speech, ai_response)
 
-        async with client.aio.live.connect(model=voice_live.VOICE_MODEL, config=config) as session:
-            t1 = asyncio.create_task(voice_live.browser_to_gemini(websocket, session, state))
-            t2 = asyncio.create_task(voice_live.gemini_to_browser(
-                websocket, session, state, push_fn, tool_handler=tool_handler))
-            done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        # GoAway（Live 連線約 10 分鐘被回收）時帶 resumption handle 無縫重連
+        while True:
+            config = voice_live.build_live_config(
+                system_instruction,
+                handsfree=handsfree,
+                tools=voice_live.build_voice_tools(),
+                resume_handle=state.get("resume_handle"),
+            )
+            async with client.aio.live.connect(model=voice_live.VOICE_MODEL, config=config) as session:
+                t1 = asyncio.create_task(voice_live.browser_to_gemini(websocket, session, state))
+                t2 = asyncio.create_task(voice_live.gemini_to_browser(
+                    websocket, session, state, push_fn, tool_handler=tool_handler))
+                done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+            # 保存 handle，瀏覽器斷線重連（15 分鐘內）也能接回對話
+            if state.get("resume_handle"):
+                voice_resume_handles[user_id] = {
+                    "handle": state["resume_handle"], "ts": time.time(),
+                }
+            if state.pop("go_away", False):
+                logger.info(f"Voice Live GoAway — reconnecting Gemini for {user_id}")
+                continue
+            break
 
     except asyncio.TimeoutError:
         logger.warning(f"Voice WS init timeout: {session_id}")

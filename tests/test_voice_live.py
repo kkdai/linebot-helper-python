@@ -158,9 +158,23 @@ class FakeResponse:
     """模擬 Gemini Live 的單一 server event。"""
 
     def __init__(self, data=None, text=None, input_transcription=None,
-                 interrupted=None, function_calls=None):
+                 interrupted=None, function_calls=None,
+                 new_handle=None, go_away=False):
         self.data = data
         self.text = text
+        if new_handle is not None:
+            sru = type("SRU", (), {})()
+            sru.resumable = True
+            sru.new_handle = new_handle
+            self.session_resumption_update = sru
+        else:
+            self.session_resumption_update = None
+        if go_away:
+            ga = type("GA", (), {})()
+            ga.time_left = "10s"
+            self.go_away = ga
+        else:
+            self.go_away = None
         if function_calls is not None:
             tc = type("TC", (), {})()
             tc.function_calls = function_calls
@@ -368,6 +382,48 @@ async def test_make_tool_handler_unknown_function():
     handler = make_tool_handler(lat=25.03, lng=121.56)
     result = await handler("not_a_tool", {})
     assert result["status"] == "error"
+
+
+# ── Session 管理測試 ───────────────────────────────────────────────────────
+
+def test_config_enables_resumption_and_compression():
+    cfg = build_live_config(build_system_instruction(None, None), handsfree=False)
+    assert cfg.session_resumption is not None
+    assert cfg.context_window_compression is not None
+    assert cfg.context_window_compression.sliding_window is not None
+
+
+def test_config_carries_resume_handle():
+    cfg = build_live_config(build_system_instruction(None, None),
+                            handsfree=False, resume_handle="handle-123")
+    assert cfg.session_resumption.handle == "handle-123"
+
+
+@pytest.mark.asyncio
+async def test_resumption_handle_captured_into_state():
+    ws = FakeClientWS()
+    state = {"interrupted": False}
+    session = FakeTurnSession([
+        [FakeResponse(new_handle="h-42"), FakeResponse(text="嗨")],
+    ])
+    await gemini_to_browser(ws, session, state, push_fn=None)
+    assert state["resume_handle"] == "h-42"
+
+
+@pytest.mark.asyncio
+async def test_go_away_sets_flag_and_stops_relay():
+    """收到 GoAway 要結束 relay 讓外層用 handle 重連，不能等連線被硬斷。"""
+    ws = FakeClientWS()
+    state = {"interrupted": False}
+    session = FakeTurnSession([
+        [FakeResponse(go_away=True)],
+        [FakeResponse(text="這輪不該被讀到")],
+    ])
+    await gemini_to_browser(ws, session, state, push_fn=None)
+
+    assert state.get("go_away") is True
+    assert len(session._turns) == 1, "GoAway 後應立即返回，不再讀下一輪"
+    assert not ws.messages_of_type("error")
 
 
 # ── system instruction ────────────────────────────────────────────────────

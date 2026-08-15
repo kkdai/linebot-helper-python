@@ -104,9 +104,18 @@ def build_live_config(
     system_instruction: str,
     handsfree: bool,
     tools: Optional[list] = None,
+    resume_handle: Optional[str] = None,
 ) -> live_types.LiveConnectConfig:
-    """組出 LiveConnectConfig。PTT 模式停用自動 VAD，改用顯式 activity 信號。"""
+    """組出 LiveConnectConfig。PTT 模式停用自動 VAD，改用顯式 activity 信號。
+
+    - session_resumption：Live 連線約 10 分鐘會被回收，帶 handle 重連可保留對話
+    - context_window_compression：sliding window，超過 15 分鐘的長對話不爆 context
+    """
     kwargs = dict(
+        session_resumption=live_types.SessionResumptionConfig(handle=resume_handle),
+        context_window_compression=live_types.ContextWindowCompressionConfig(
+            sliding_window=live_types.SlidingWindow()
+        ),
         response_modalities=["AUDIO"],
         speech_config=live_types.SpeechConfig(
             voice_config=live_types.VoiceConfig(
@@ -181,7 +190,18 @@ async def gemini_to_browser(
             turn = session.receive()
             turn_interrupted = False
             saw_tool_call = False
+            go_away = False
             async for response in turn:
+                # Session resumption：持續更新 handle，斷線後可無縫恢復
+                sru = getattr(response, "session_resumption_update", None)
+                if sru and getattr(sru, "resumable", False) and getattr(sru, "new_handle", None):
+                    state["resume_handle"] = sru.new_handle
+
+                # GoAway：伺服器即將收回連線，結束 relay 讓外層帶 handle 重連
+                if getattr(response, "go_away", None):
+                    state["go_away"] = True
+                    go_away = True
+                    break
                 # Audio output
                 if response.data:
                     await websocket.send_bytes(response.data)
@@ -228,6 +248,9 @@ async def gemini_to_browser(
                             )
                         )
                     await session.send_tool_response(function_responses=function_responses)
+
+            if go_away:
+                return
 
             # tool_call 造成的 turn 結束不算一輪完成（模型拿到結果後會接著說）
             if saw_tool_call and not ai_text_accum:
