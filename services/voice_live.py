@@ -121,12 +121,18 @@ async def gemini_to_browser(
                         json.dumps({"type": "text_chunk", "text": response.text})
                     )
 
-                # Input transcription (user's speech-to-text)
+                # Input transcription (user's speech-to-text) — 即時回傳前端顯示
                 sc = response.server_content
                 if sc and getattr(sc, "input_transcription", None):
                     t = sc.input_transcription.text or ""
                     if t:
                         user_text_accum.append(t)
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "user_transcript",
+                                "text": "".join(user_text_accum),
+                            })
+                        )
 
             # For-loop ended = turn_complete (or interrupt cleared the queue)
             if state.get("interrupted"):

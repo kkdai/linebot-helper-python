@@ -15,6 +15,7 @@ from services.voice_live import (
     browser_to_gemini,
     build_live_config,
     build_system_instruction,
+    gemini_to_browser,
 )
 
 
@@ -140,6 +141,94 @@ async def test_handsfree_ignores_activity_events():
 
     rt_calls = session.calls_named("send_realtime_input")
     assert all("activity_start" not in k and "activity_end" not in k for k in rt_calls)
+
+
+# ── gemini_to_browser 下行測試 ─────────────────────────────────────────────
+
+class FakeResponse:
+    """模擬 Gemini Live 的單一 server event。"""
+
+    def __init__(self, data=None, text=None, input_transcription=None):
+        self.data = data
+        self.text = text
+        if input_transcription is not None:
+            sc = type("SC", (), {})()
+            it = type("IT", (), {})()
+            it.text = input_transcription
+            sc.input_transcription = it
+            self.server_content = sc
+        else:
+            self.server_content = None
+
+
+class FakeTurnSession:
+    """receive() 依序回傳排定的 turn（每個 turn 是 response list）；用完即結束。"""
+
+    def __init__(self, turns):
+        self._turns = list(turns)
+
+    def receive(self):
+        if not self._turns:
+            raise RuntimeError("no more turns")  # 讓 relay loop 結束
+        responses = self._turns.pop(0)
+
+        async def gen():
+            for r in responses:
+                yield r
+        return gen()
+
+
+class FakeClientWS:
+    """記錄送往瀏覽器的訊息。"""
+
+    def __init__(self):
+        self.sent_text = []
+        self.sent_bytes = []
+
+    async def send_text(self, text):
+        self.sent_text.append(json.loads(text))
+
+    async def send_bytes(self, data):
+        self.sent_bytes.append(data)
+
+    def messages_of_type(self, mtype):
+        return [m for m in self.sent_text if m.get("type") == mtype]
+
+
+@pytest.mark.asyncio
+async def test_user_transcript_forwarded_to_browser():
+    """使用者語音轉錄（input_transcription）要即時回傳前端顯示。"""
+    ws = FakeClientWS()
+    session = FakeTurnSession([
+        [
+            FakeResponse(input_transcription="今天天氣"),
+            FakeResponse(input_transcription="如何"),
+            FakeResponse(text="今天晴朗"),
+        ],
+    ])
+    await gemini_to_browser(ws, session, {"interrupted": False}, push_fn=None)
+
+    transcripts = ws.messages_of_type("user_transcript")
+    assert transcripts, "應送出 user_transcript 事件"
+    # 送累積全文，前端直接取代氣泡內容
+    assert transcripts[-1]["text"] == "今天天氣如何"
+
+
+@pytest.mark.asyncio
+async def test_turn_complete_and_push_fn_called():
+    ws = FakeClientWS()
+    pushed = []
+
+    async def push_fn(user_speech, ai_response):
+        pushed.append((user_speech, ai_response))
+
+    session = FakeTurnSession([
+        [FakeResponse(input_transcription="你好"), FakeResponse(text="嗨，你好")],
+    ])
+    await gemini_to_browser(ws, session, {"interrupted": False}, push_fn=push_fn)
+
+    assert ws.messages_of_type("turn_complete")
+    assert pushed == [("你好", "嗨，你好")]
 
 
 # ── system instruction ────────────────────────────────────────────────────
