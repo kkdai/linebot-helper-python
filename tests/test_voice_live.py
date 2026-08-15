@@ -15,7 +15,9 @@ from services.voice_live import (
     browser_to_gemini,
     build_live_config,
     build_system_instruction,
+    build_voice_tools,
     gemini_to_browser,
+    make_tool_handler,
 )
 
 
@@ -145,12 +147,26 @@ async def test_handsfree_ignores_activity_events():
 
 # ── gemini_to_browser 下行測試 ─────────────────────────────────────────────
 
+class FakeFunctionCall:
+    def __init__(self, id, name, args):
+        self.id = id
+        self.name = name
+        self.args = args
+
+
 class FakeResponse:
     """模擬 Gemini Live 的單一 server event。"""
 
-    def __init__(self, data=None, text=None, input_transcription=None, interrupted=None):
+    def __init__(self, data=None, text=None, input_transcription=None,
+                 interrupted=None, function_calls=None):
         self.data = data
         self.text = text
+        if function_calls is not None:
+            tc = type("TC", (), {})()
+            tc.function_calls = function_calls
+            self.tool_call = tc
+        else:
+            self.tool_call = None
         if input_transcription is not None or interrupted is not None:
             sc = type("SC", (), {})()
             sc.interrupted = interrupted
@@ -170,6 +186,10 @@ class FakeTurnSession:
 
     def __init__(self, turns):
         self._turns = list(turns)
+        self.tool_responses = []
+
+    async def send_tool_response(self, function_responses):
+        self.tool_responses.append(function_responses)
 
     def receive(self):
         if not self._turns:
@@ -253,6 +273,101 @@ async def test_gemini_interrupted_signal_forwarded_and_turn_discarded():
     assert ws.messages_of_type("interrupted"), "應送出 interrupted 事件給前端"
     assert not ws.messages_of_type("turn_complete")
     assert pushed == []
+
+
+# ── Live 工具測試 ──────────────────────────────────────────────────────────
+
+def test_voice_tools_include_google_search_and_maps():
+    tools = build_voice_tools()
+    assert any(getattr(t, "google_search", None) is not None for t in tools), \
+        "應包含 Google Search grounding"
+    fn_names = [
+        fd.name
+        for t in tools
+        for fd in (getattr(t, "function_declarations", None) or [])
+    ]
+    assert "search_nearby_places" in fn_names
+
+
+def test_live_config_carries_tools():
+    tools = build_voice_tools()
+    cfg = build_live_config(build_system_instruction(None, None),
+                            handsfree=False, tools=tools)
+    assert cfg.tools == tools
+
+
+@pytest.mark.asyncio
+async def test_tool_call_executes_handler_and_sends_response():
+    ws = FakeClientWS()
+    handled = []
+
+    async def tool_handler(name, args):
+        handled.append((name, args))
+        return {"status": "success", "places": "好吃餐廳"}
+
+    session = FakeTurnSession([
+        [FakeResponse(function_calls=[
+            FakeFunctionCall(id="fc-1", name="search_nearby_places",
+                             args={"place_type": "restaurant"}),
+        ])],
+    ])
+    await gemini_to_browser(ws, session, {"interrupted": False},
+                            push_fn=None, tool_handler=tool_handler)
+
+    assert handled == [("search_nearby_places", {"place_type": "restaurant"})]
+    assert len(session.tool_responses) == 1
+    fr = session.tool_responses[0][0]
+    assert fr.id == "fc-1"
+    assert fr.name == "search_nearby_places"
+    assert fr.response["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_tool_call_only_turn_does_not_emit_turn_complete():
+    """tool_call 造成的 turn 中斷不算一輪完成，不應讓前端回到待機。"""
+    ws = FakeClientWS()
+
+    async def tool_handler(name, args):
+        return {"status": "success"}
+
+    session = FakeTurnSession([
+        [FakeResponse(function_calls=[
+            FakeFunctionCall(id="fc-1", name="search_nearby_places", args={}),
+        ])],
+    ])
+    await gemini_to_browser(ws, session, {"interrupted": False},
+                            push_fn=None, tool_handler=tool_handler)
+    assert not ws.messages_of_type("turn_complete")
+
+
+@pytest.mark.asyncio
+async def test_make_tool_handler_maps_requires_coordinates(monkeypatch):
+    handler = make_tool_handler(lat=None, lng=None)
+    result = await handler("search_nearby_places", {"place_type": "restaurant"})
+    assert result["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_make_tool_handler_maps_calls_search(monkeypatch):
+    captured = {}
+
+    def fake_search(latitude, longitude, place_type="restaurant", custom_query=None, **kw):
+        captured.update(latitude=latitude, longitude=longitude, place_type=place_type)
+        return {"status": "success", "places": "測試結果"}
+
+    monkeypatch.setattr("services.voice_live.search_nearby_places", fake_search)
+    handler = make_tool_handler(lat=25.03, lng=121.56)
+    result = await handler("search_nearby_places", {"place_type": "parking"})
+
+    assert result["status"] == "success"
+    assert captured == {"latitude": 25.03, "longitude": 121.56, "place_type": "parking"}
+
+
+@pytest.mark.asyncio
+async def test_make_tool_handler_unknown_function():
+    handler = make_tool_handler(lat=25.03, lng=121.56)
+    result = await handler("not_a_tool", {})
+    assert result["status"] == "error"
 
 
 # ── system instruction ────────────────────────────────────────────────────
