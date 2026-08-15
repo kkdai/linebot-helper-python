@@ -26,6 +26,7 @@ urllib3==2.2.3
 cloudscraper==1.2.71
 pypdf==5.1.0
 firecrawl==4.9.0
+firecrawl-anydoc==0.1.9
 requests==2.32.3
 
 # Utilities

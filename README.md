@@ -16,7 +16,8 @@ A Python application that provides LINE bot functionality with tools for searchi
 ### Special Website Support
 - Special handling for PTT, Medium, and OpenAI websites using Firecrawl
 - YouTube transcript extraction with Gemini API
-- PDF document processing
+- Document links converted to clean Markdown via anydoc - Word, PowerPoint,
+  Excel, OpenDocument, RTF, EPUB, CSV, and PDF (PDF falls back to pypdf)
 - Multiple fallback strategies for reliable content extraction
 
 ## Environment Variables
@@ -273,7 +274,8 @@ Key dependencies:
 - `line-bot-sdk` - LINE Bot SDK
 - `google-genai` - Vertex AI SDK (no LangChain)
 - `tenacity` - Retry logic
-- `pypdf` - PDF processing
+- `pypdf` - PDF processing (fallback)
+- `firecrawl-anydoc` - Document to Markdown conversion (Office, OpenDocument, EPUB, PDF)
 - `beautifulsoup4` - HTML parsing
 
 ## License

@@ -17,6 +17,7 @@ urllib3
 cloudscraper
 pypdf
 firecrawl
+firecrawl-anydoc
 requests
 tenacity
 pydantic>=1.10.0,<3.0.0

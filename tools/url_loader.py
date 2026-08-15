@@ -29,6 +29,7 @@ except ImportError:
 # Import internal tools
 from .youtube_tool import summarize_youtube_video
 from .pdf_tool import load_pdf_content
+from loader.document import detect_document_format, load_document
 
 
 def load_url_content(
@@ -53,7 +54,8 @@ def load_url_content(
         url: The URL to load content from. Supports:
             - Regular web pages
             - YouTube videos (youtube.com, youtu.be)
-            - PDF files
+            - Documents converted to Markdown: Word, PowerPoint, Excel,
+              OpenDocument, RTF, EPUB, CSV, PDF
             - Social media (Twitter/X via fxtwitter proxy)
         youtube_mode: For YouTube URLs, the summarization mode:
             - "normal": Standard summary
@@ -65,7 +67,8 @@ def load_url_content(
             - status: "success" or "error"
             - content: The extracted text content (if successful)
             - url: The processed URL (may differ from input if proxied)
-            - content_type: The type of content extracted (html, youtube, pdf)
+            - content_type: The type of content extracted
+              (html, youtube, document, pdf)
             - error_message: Error description (if failed)
     """
     if not url:
@@ -94,23 +97,38 @@ def load_url_content(
                 "url": url
             }
 
-    # Check for PDF
-    if _is_pdf_url(url):
-        result = load_pdf_content(url, is_url=True)
-        if result["status"] == "success":
+    # Check for documents (Word/PowerPoint/Excel/OpenDocument/RTF/EPUB/CSV/PDF)
+    doc_format = detect_document_format(url)
+    if doc_format:
+        try:
             return {
                 "status": "success",
-                "content": result["content"],
+                "content": load_document(url, doc_format),
                 "url": url,
-                "content_type": "pdf",
-                "page_count": result.get("page_count", 0)
+                "content_type": "document",
+                "document_format": doc_format,
+                "method": "anydoc"
             }
-        else:
-            return {
-                "status": "error",
-                "error_message": result.get("error_message", "PDF loading failed"),
-                "url": url
-            }
+        except Exception as e:
+            logger.warning(f"anydoc failed for {url} ({doc_format}): {e}")
+
+        # PDF 才有 pypdf 可退；其他格式落回 HTML chain 沒有意義
+        if doc_format == "pdf":
+            result = load_pdf_content(url, is_url=True)
+            if result["status"] == "success":
+                return {
+                    "status": "success",
+                    "content": result["content"],
+                    "url": url,
+                    "content_type": "pdf",
+                    "page_count": result.get("page_count", 0)
+                }
+
+        return {
+            "status": "error",
+            "error_message": "無法讀取文件內容，請確認網址是否正確或稍後再試",
+            "url": url
+        }
 
     # Handle Firecrawl-priority URLs (PTT, Medium, OpenAI)
     if _is_firecrawl_url(url):
@@ -154,26 +172,6 @@ def _is_youtube_url(url: str) -> bool:
         or url.startswith("https://m.youtube.com")
         or url.startswith("https://youtube.com")
     )
-
-
-def _is_pdf_url(url: str) -> bool:
-    """Check if URL points to a PDF file"""
-    # Skip check for PTT URLs to avoid 403 errors
-    if url.startswith("https://www.ptt.cc/bbs"):
-        return False
-
-    headers = {
-        "Accept-Language": "zh-TW,zh;q=0.9,ja;q=0.8,en-US;q=0.7,en;q=0.6",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    }
-
-    try:
-        resp = httpx.head(url=url, headers=headers, follow_redirects=True, timeout=10.0)
-        resp.raise_for_status()
-        return resp.headers.get("content-type") == "application/pdf"
-    except Exception as e:
-        logger.warning(f"Error checking for PDF: {e}")
-        return False
 
 
 def _is_firecrawl_url(url: str) -> bool:

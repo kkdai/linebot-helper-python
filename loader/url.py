@@ -1,6 +1,5 @@
 import asyncio
 from urllib.parse import urlparse, urlunparse
-import httpx
 import logging
 import os
 
@@ -12,6 +11,7 @@ from .html import (
 )
 from .singlefile import load_html_with_singlefile
 from .pdf import load_pdf
+from .document import detect_document_format, load_document
 from .youtube_gcp import load_transcript_from_youtube
 
 logger = logging.getLogger(__name__)
@@ -23,9 +23,8 @@ LOADER_TIMEOUTS = {
     "singlefile": 60.0,   # 要啟動 headless Chromium，給最長
     "httpx": 20.0,
     "cloudscraper": 30.0,
+    "document": 60.0,     # 下載文件 + anydoc 轉換
 }
-
-HEAD_REQUEST_TIMEOUT = 10.0
 
 
 async def _call_loader(method_name: str, method_func) -> str:
@@ -61,34 +60,6 @@ async def _try_fallback_chain(url: str, methods, error_message: str) -> str:
 def is_ptt_url(url: str) -> bool:
     """Check if the URL is from PTT"""
     return url.startswith("https://www.ptt.cc/bbs")
-
-
-def is_pdf_url(url: str) -> bool:
-    """
-    Check if URL points to a PDF.
-    Skip check for PTT URLs to avoid 403 errors.
-    """
-    # Skip PDF check for PTT URLs
-    if is_ptt_url(url):
-        return False
-
-    headers = {
-        "Accept-Language": "zh-TW,zh;q=0.9,ja;q=0.8,en-US;q=0.7,en;q=0.6",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",  # noqa
-    }
-
-    try:
-        resp = httpx.head(url=url, headers=headers, follow_redirects=True,
-                          timeout=HEAD_REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        return resp.headers.get("content-type") == "application/pdf"
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"HTTP error checking for PDF: {e}")
-        return False
-    except httpx.HTTPError as e:
-        # timeout、連線失敗等：當作非 PDF 繼續走一般 HTML 流程
-        logger.warning(f"HEAD request failed checking for PDF: {e}")
-        return False
 
 
 def is_youtube_url(url: str) -> bool:
@@ -131,10 +102,11 @@ async def load_url(url: str, youtube_mode: str = "normal") -> str:
 
     Fallback priority:
     1. Domain-specific optimized loader
-    2. Firecrawl (if available)
-    3. CloudScraper
-    4. SingleFile
-    5. Basic httpx
+    2. Documents (Word/PowerPoint/Excel/OpenDocument/RTF/EPUB/CSV/PDF) via anydoc
+    3. Firecrawl (if available)
+    4. CloudScraper
+    5. SingleFile
+    6. Basic httpx
 
     Args:
         url: URL to load
@@ -186,12 +158,24 @@ async def load_url(url: str, youtube_mode: str = "normal") -> str:
                 ("singlefile", lambda: load_html_with_singlefile(url)),
             ], "無法從 Medium 讀取內容，請稍後再試")
 
-    # Handle non-Firecrawl URLs
-    try:
-        if is_pdf_url(url):
-            return load_pdf(url)
-    except Exception as e:
-        logger.error(f"Error checking/loading PDF: {e}")
+    # 文件連結（Word/PowerPoint/Excel/OpenDocument/RTF/EPUB/CSV/PDF）
+    # 用 anydoc 轉成 Markdown；PDF 轉換失敗時 fallback 到 pypdf
+    doc_format = await asyncio.to_thread(detect_document_format, url)
+    if doc_format:
+        doc_timeout = LOADER_TIMEOUTS.get("document", DEFAULT_LOADER_TIMEOUT)
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(load_document, url, doc_format),
+                timeout=doc_timeout)
+        except Exception as e:
+            logger.warning(f"anydoc failed for {url} ({doc_format}): {e}")
+            if doc_format == "pdf":
+                try:
+                    return await asyncio.wait_for(
+                        asyncio.to_thread(load_pdf, url), timeout=doc_timeout)
+                except Exception as e2:
+                    logger.error(f"pypdf fallback failed for {url}: {e2}")
+            raise Exception("無法讀取文件內容，請確認網址是否正確或稍後再試")
 
     # Domain-specific handling for other URLs with retry
     httpx_domains = [
