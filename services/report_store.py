@@ -1,45 +1,34 @@
-"""研究報告的臨時記憶體儲存
+"""研究報告的 Firestore 持久化儲存
 
-刻意只存記憶體：報告是「短暫開啟」的內容，Cloud Run instance
-休眠/回收後自然消失（規格要求），不做持久化。
-TTL 到期的報告在存取與寫入時順手清除。
+沿用書籤的 FirestoreKVStore 模式：報告產生後永久保存，不會因
+Cloud Run instance 休眠/回收而失效。Firestore 不可用（本機無憑證）時
+優雅降級為 no-op，與其他 store 一致。
+
+規格：docs/superpowers/specs/2026-08-15-research-report-design.md
+（原規格「刻意只存記憶體」，2026-08-19 決定改為 Firestore 永久保存，見文件更新記錄）
 """
 import time
 import uuid
-from threading import Lock
-from typing import Dict, Optional
+from typing import Optional
 
-DEFAULT_REPORT_TTL_SECONDS = 24 * 3600
+from .firestore_store import FirestoreKVStore
+
+REPORTS_COLLECTION = "reports"
 
 
 class ReportStore:
-    def __init__(self, ttl_seconds: float = DEFAULT_REPORT_TTL_SECONDS):
-        self.ttl = ttl_seconds
-        self._reports: Dict[str, dict] = {}
-        self._lock = Lock()
-
-    def _purge_expired(self) -> None:
-        """呼叫端必須已持有 self._lock。"""
-        now = time.time()
-        expired = [
-            rid for rid, entry in self._reports.items()
-            if now - entry["created_at"] > self.ttl
-        ]
-        for rid in expired:
-            del self._reports[rid]
+    def __init__(self, store=None):
+        self.store = store if store is not None else FirestoreKVStore(
+            REPORTS_COLLECTION)
 
     def put(self, html: str) -> str:
         report_id = uuid.uuid4().hex
-        with self._lock:
-            self._purge_expired()
-            self._reports[report_id] = {
-                "html": html,
-                "created_at": time.time(),
-            }
+        self.store.save(report_id, {
+            "html": html,
+            "created_at": time.time(),
+        })
         return report_id
 
     def get(self, report_id: str) -> Optional[str]:
-        with self._lock:
-            self._purge_expired()
-            entry = self._reports.get(report_id)
-            return entry["html"] if entry else None
+        doc = self.store.load(report_id)
+        return doc["html"] if doc else None

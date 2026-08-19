@@ -1,49 +1,55 @@
-"""測試：研究報告的臨時儲存與網頁渲染
+"""測試：研究報告的 Firestore 持久化儲存與網頁渲染
 
 規格：docs/superpowers/specs/2026-08-15-research-report-design.md
-- ReportStore：記憶體 + TTL，instance 回收即消失（刻意設計）
-- report_page：Markdown 轉 HTML 閱讀版型；過期頁
+- ReportStore：透過 FirestoreKVStore 永久保存（2026-08-19 更新，見文件更新記錄）
+- report_page：Markdown 轉 HTML 閱讀版型；找不到報告頁
 """
-import time
+from unittest.mock import patch
 
 from services.report_store import ReportStore
 from services.report_page import render_report_page, render_expired_page
+from tests.fakes import FakeStore
 
 
 # --- ReportStore ---
 
 def test_put_get_roundtrip():
-    store = ReportStore()
+    store = ReportStore(store=FakeStore())
     report_id = store.put("<html>report</html>")
     assert store.get(report_id) == "<html>report</html>"
 
 
 def test_report_id_is_unguessable_and_url_safe():
-    store = ReportStore()
+    store = ReportStore(store=FakeStore())
     report_id = store.put("x")
     assert len(report_id) >= 16
     assert report_id.isalnum()
 
 
 def test_unknown_id_returns_none():
-    store = ReportStore()
+    store = ReportStore(store=FakeStore())
     assert store.get("nonexistent") is None
 
 
-def test_expired_report_returns_none_and_is_purged():
-    store = ReportStore(ttl_seconds=0.05)
-    report_id = store.put("x")
-    time.sleep(0.1)
-    assert store.get(report_id) is None
-    assert report_id not in store._reports
+def test_report_persists_across_new_store_instances():
+    """模擬 instance 回收後重啟：新的 ReportStore、同一個底層 store，報告仍在。"""
+    fake = FakeStore()
+    s1 = ReportStore(store=fake)
+    report_id = s1.put("<html>survives restart</html>")
+
+    s2 = ReportStore(store=fake)
+    assert s2.get(report_id) == "<html>survives restart</html>"
 
 
-def test_put_purges_other_expired_reports():
-    store = ReportStore(ttl_seconds=0.05)
-    old_id = store.put("old")
-    time.sleep(0.1)
-    store.put("new")
-    assert old_id not in store._reports
+def test_degrades_gracefully_when_firestore_unavailable():
+    """無憑證時（本機開發/CI）：save/load 變 no-op，不能 crash。"""
+    from services import firestore_store
+
+    with patch.object(firestore_store, "_create_client",
+                      side_effect=RuntimeError("no credentials")):
+        store = ReportStore()
+        report_id = store.put("x")
+        assert store.get(report_id) is None
 
 
 # --- 報告頁渲染 ---
@@ -62,11 +68,6 @@ def test_report_page_renders_markdown_structure():
     assert "測試報告" in html
 
 
-def test_report_page_mentions_temporary_nature():
-    html = render_report_page("t", "內文", "https://example.com", [])
-    assert "臨時" in html
-
-
 def test_report_page_without_sources_omits_source_section():
     html = render_report_page("t", "內文", "https://example.com", [])
     assert "參考來源" not in html
@@ -74,4 +75,4 @@ def test_report_page_without_sources_omits_source_section():
 
 def test_expired_page_is_friendly():
     html = render_expired_page()
-    assert "過期" in html
+    assert "找不到" in html

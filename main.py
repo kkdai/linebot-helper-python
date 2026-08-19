@@ -60,7 +60,7 @@ from services.report_store import ReportStore
 from services.report_page import render_report_page, render_expired_page
 from services import voice_live
 
-# 研究報告臨時儲存：只在記憶體，instance 回收即消失（規格要求）
+# 研究報告持久化儲存（Firestore），不受 instance 回收/休眠影響
 report_store = ReportStore()
 
 # Configure logging
@@ -280,7 +280,7 @@ VERTEX_PROJECT_LIVE = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 
 @app.get("/reports/{report_id}")
 def serve_research_report(report_id: str):
-    """臨時研究報告頁：過期或 instance 重啟後回過期頁（404）。"""
+    """研究報告頁（永久保存於 Firestore）：找不到對應 id 時回 404。"""
     html = report_store.get(report_id)
     if html:
         return HTMLResponse(html)
@@ -1680,7 +1680,7 @@ async def handle_bookmark_delete_postback(event: PostbackEvent, data: dict, user
 
 
 async def handle_research_report_postback(event: PostbackEvent, data: dict, user_id: str):
-    """「📄 詳細研究報告」按鈕：深入研究文章並產生臨時網頁報告。"""
+    """「📄 詳細研究報告」按鈕：深入研究文章並產生永久保存的網頁報告。"""
     doc_id = data.get("id")
     svc = get_bookmark_service()
 
@@ -1717,8 +1717,7 @@ async def handle_research_report_postback(event: PostbackEvent, data: dict, user
 
         report_url = f"{app_base_url}/reports/{report_id}"
         await line_bot_api.push_message(user_id, [TextSendMessage(
-            text=(f"📄 研究報告完成：{doc.get('title', '')}\n\n{report_url}\n\n"
-                  "⏳ 這是臨時頁面，約保留 24 小時（服務休眠後即失效），需要保存請自行複製內容。"))])
+            text=f"📄 研究報告完成：{doc.get('title', '')}\n\n{report_url}")])
     except Exception as e:
         logger.error(f"Research report failed for {url}: {e}", exc_info=True)
         error_msg = LineService.format_error_message(e, "產生研究報告")

@@ -33,8 +33,6 @@ _PAGE_CSS = """
           overflow-x: auto; }
   th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; }
   .meta { color: #888; font-size: .85rem; margin-bottom: 24px; }
-  .notice { margin-top: 32px; padding: 12px 16px; border-radius: 8px;
-            background: #fdf1e3; color: #8a5a20; font-size: .85rem; }
   .sources { margin-top: 32px; font-size: .9rem; }
   .sources li { margin-bottom: .5em; }
   @media (prefers-color-scheme: dark) {
@@ -43,7 +41,6 @@ _PAGE_CSS = """
     blockquote { background: #2e2a24; color: #bbb; }
     code { background: #333; }
     th, td { border-color: #444; }
-    .notice { background: #33291a; color: #d8b070; }
     a { color: #e89a55; }
   }
 """
@@ -86,10 +83,6 @@ def render_report_page(title: str, markdown_text: str, url: str,
     </div>
     {body_html}
     {sources_html}
-    <div class="notice">
-      ⏳ 這是臨時頁面：報告只保留約 24 小時，服務休眠後即失效。
-      需要保存請自行複製內容。
-    </div>
   </div>
 </div>
 </body>
@@ -103,14 +96,14 @@ def render_expired_page() -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>報告已過期</title>
+<title>找不到報告</title>
 <style>{_PAGE_CSS}</style>
 </head>
 <body>
 <div class="container">
   <div class="card">
-    <h1>⏳ 報告已過期</h1>
-    <p>這份研究報告是臨時頁面，已經失效（超過保存期限或服務重新啟動）。</p>
+    <h1>🔍 找不到這份報告</h1>
+    <p>這個連結對應的研究報告不存在，可能是網址有誤。</p>
     <p>回到 LINE 重新點「📄 詳細研究報告」即可再產生一份。</p>
   </div>
 </div>

@@ -156,8 +156,8 @@ card has open-link and delete buttons.
 The summary bubble also has a "📄 詳細研究報告" button: it deep-dives
 the article with Google Search Grounding (background, counterpoints,
 evidence review) and serves the report as a styled web page at
-`/reports/{id}`. Reports live in memory only - they expire after ~24
-hours or whenever the instance recycles, by design.
+`/reports/{id}`. Reports are persisted to Firestore and kept
+indefinitely.
 
 **Note:** Conversations automatically expire after 30 minutes of inactivity.
 

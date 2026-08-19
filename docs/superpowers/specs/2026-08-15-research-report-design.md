@@ -56,8 +56,23 @@
 
 ## 範圍外
 
-報告持久化、報告列表頁、多輪 agentic 研究、PDF 匯出。
+報告列表頁、多輪 agentic 研究、PDF 匯出。
 
 ## 依賴
 
 新增 `Markdown`(Python-Markdown)至 requirements.txt / requirements-lock.txt。
+
+## 更新記錄
+
+**2026-08-19：報告持久化**(對話確認)
+
+原決定「報告只存記憶體，instance 回收即消失」推翻。改為 `ReportStore`
+改用 `FirestoreKVStore`(與書籤共用模式)永久保存，不再設 TTL：
+
+- `services/report_store.py`:`put`/`get` 介面不變，內部改呼叫
+  `FirestoreKVStore(collection="reports")`；Firestore 不可用時優雅降級為
+  no-op(與其他 store 一致，非 CI/本機開發常態)。
+- `services/report_page.py`:移除「臨時頁面、24 小時後失效」提示；
+  `render_expired_page()` 改為「找不到報告」(對應未知 id，而非過期)。
+- 報告持久化不再是範圍外項目；報告列表頁、多輪 agentic 研究、PDF 匯出
+  仍維持範圍外。
