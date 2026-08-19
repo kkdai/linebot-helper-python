@@ -166,6 +166,7 @@ voice_resume_handles: Dict[str, dict] = {}
 VOICE_RESUME_TTL = 900  # seconds
 AUDIO_TTL = 300  # 5 minutes
 MAX_TTS_CHARS = 250  # Truncate summaries to keep audio under ~1 minute (~250 Chinese chars)
+REPORT_CACHE_TTL_SECONDS = 7 * 86400  # 效期內重複點「詳細研究報告」直接回傳舊連結，過了才重新產生覆蓋
 # Base URL for serving images (auto-detected from webhook request)
 app_base_url: str = ""
 
@@ -1691,6 +1692,18 @@ async def handle_research_report_postback(event: PostbackEvent, data: dict, user
             [TextSendMessage(text="⚠️ 資料已過期，請重新傳送網址再試一次。")])
         return
 
+    # 效期內已產生過報告 → 直接回傳舊連結，不重新爬蟲/呼叫 Gemini
+    cached_report_id = doc.get("report_id")
+    cached_at = doc.get("report_generated_at")
+    if (cached_report_id and cached_at and app_base_url
+            and time.time() - cached_at < REPORT_CACHE_TTL_SECONDS):
+        report_url = f"{app_base_url}/reports/{cached_report_id}"
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(
+                text=f"📄 研究報告（先前已產生）：{doc.get('title', '')}\n\n{report_url}")])
+        return
+
     url = doc.get("url", "")
     await line_bot_api.reply_message(
         event.reply_token,
@@ -1708,6 +1721,7 @@ async def handle_research_report_postback(event: PostbackEvent, data: dict, user
             sources=result["sources"],
         )
         report_id = report_store.put(html)
+        svc.record_report(doc_id, report_id)
 
         if not app_base_url:
             logger.error("app_base_url not set, cannot serve report page")

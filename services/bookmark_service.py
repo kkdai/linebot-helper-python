@@ -111,6 +111,19 @@ class BookmarkService:
         doc["doc_id"] = doc_id
         return doc
 
+    def record_report(self, doc_id: str, report_id: str) -> None:
+        """記下這則書籤最新產生的研究報告 id 與產生時間，供 TTL 內重複點擊直接沿用。
+
+        呼叫端（研究報告 postback handler）已經驗證過 doc 屬於該使用者，
+        這裡不重複驗證。
+        """
+        doc = self.store.load(doc_id)
+        if not doc:
+            return
+        doc["report_id"] = report_id
+        doc["report_generated_at"] = time.time()
+        self.store.save(doc_id, doc)
+
     def delete(self, user_id: str, doc_id: str) -> bool:
         doc = self.store.load(doc_id)
         if not doc or doc.get("user_id") != user_id:

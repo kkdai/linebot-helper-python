@@ -76,3 +76,17 @@
   `render_expired_page()` 改為「找不到報告」(對應未知 id，而非過期)。
 - 報告持久化不再是範圍外項目；報告列表頁、多輪 agentic 研究、PDF 匯出
   仍維持範圍外。
+
+**2026-08-19：同一篇文章重複點擊「詳細研究報告」的快取(對話確認)**
+
+報告永久保存後，同一顆按鈕連續點擊會重複爬蟲 + 重複呼叫 Gemini grounding，
+且每次都在 Firestore 多存一筆文件、彼此互不取代。改為在書籤文件上記錄
+最近一次產生的報告：
+
+- `BookmarkService.record_report(doc_id, report_id)`:報告產生成功後，
+  把 `report_id`、`report_generated_at` 寫回該書籤文件(`bookmarks` collection)。
+- `handle_research_report_postback`:先讀書籤文件，若已有 `report_id` 且
+  `report_generated_at` 在 `REPORT_CACHE_TTL_SECONDS`(main.py，7 天)內，
+  直接回傳舊的 `/reports/{report_id}` 連結，不重新爬蟲/生成；超過效期則正常
+  重新產生，`record_report` 覆蓋成最新的 `report_id`(舊報告文件仍留在
+  Firestore，不主動刪除)。

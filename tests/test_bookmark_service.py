@@ -203,3 +203,46 @@ def test_get_bookmark_rejects_other_users_doc():
 def test_get_bookmark_unknown_id_returns_none():
     svc, _ = make_service()
     assert svc.get_bookmark(UID, "nope") is None
+
+
+# --- record_report（研究報告快取，避免重複點擊重複生成）---
+
+def test_record_report_stores_id_and_timestamp():
+    svc, _ = make_service()
+    doc_id = svc.save_candidate(UID, "https://example.com/r", "t", "s")
+
+    before = time.time()
+    svc.record_report(doc_id, "report-abc")
+
+    doc = svc.get_bookmark(UID, doc_id)
+    assert doc["report_id"] == "report-abc"
+    assert doc["report_generated_at"] >= before
+
+
+def test_record_report_overwrites_previous_report():
+    svc, _ = make_service()
+    doc_id = svc.save_candidate(UID, "https://example.com/r", "t", "s")
+
+    svc.record_report(doc_id, "report-old")
+    svc.record_report(doc_id, "report-new")
+
+    doc = svc.get_bookmark(UID, doc_id)
+    assert doc["report_id"] == "report-new"
+
+
+def test_record_report_on_unknown_doc_is_noop():
+    svc, _ = make_service()
+    svc.record_report("nope", "report-x")  # 不能 crash
+    assert svc.get_bookmark(UID, "nope") is None
+
+
+def test_record_report_preserves_other_fields():
+    svc, _ = make_service()
+    doc_id = svc.save_direct(UID, "https://example.com/r", "標題", "摘要")
+
+    svc.record_report(doc_id, "report-abc")
+
+    doc = svc.get_bookmark(UID, doc_id)
+    assert doc["title"] == "標題"
+    assert doc["summary"] == "摘要"
+    assert doc["saved"] is True
