@@ -257,6 +257,12 @@ class SocialMediaPosts(BaseModel):
     threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
 
 
+class SocialMediaPostsEN(BaseModel):
+    facebook: str = Field(description="A viral, shareable Facebook post in English, with a strong hook, emoji, bullet points for key takeaways, and an engagement question")
+    linkedin: str = Field(description="A professional LinkedIn post in English, focused on business insight, concrete takeaways, and a thought-provoking discussion question")
+    threads: str = Field(description="A casual, conversational Threads post in English, written like talking to a friend, very short paragraphs, minimal hashtags, inviting replies")
+
+
 class BookmarkSummary(BaseModel):
     title: str = Field(description="文章標題（15 字內，取自原文重點，繁體中文台灣用語）")
     summary: str = Field(description="文章摘要與重點分析（150-250 字繁體中文：先摘要核心內容，再點出重點與值得注意之處。純文字不用 markdown）")
@@ -299,6 +305,40 @@ HUMANIZE_GUIDELINES = """# 人性化守則（最高優先，凌駕以下排版�
 """
 
 
+# 英文版人性化守則：結構比照 HUMANIZE_GUIDELINES，拿掉台灣在地化條目（不適用英文），
+# 換成英文最容易露出 AI 味的慣用套語清單。
+HUMANIZE_GUIDELINES_EN = """# Humanization guidelines (highest priority, overrides formatting tips below):
+Write like a real person with an actual point of view, not an AI "generating content".
+Order: preserve facts first -> strip AI-speak -> add human voice last.
+
+## A. Cut first (don't replace, just remove)
+1. AI stock openers and era-framing: no "In today's fast-paced world", "In the ever-evolving landscape of...", "Let's dive/delve into...", "Have you ever wondered...". The first sentence should carry information only this piece has.
+2. Sycophantic filler: no "Great question!", "I hope this helps", "Here's a breakdown of...".
+3. Generic upbeat closers: no "The possibilities are endless", "The future is bright", "In conclusion", "At the end of the day". It's fine to end on the last concrete sentence without a wrap-up.
+
+## B. Get specific (if you can't be specific, cut it - don't swap in another vague phrase)
+4. Ground inflated significance words: "marks a turning point / represents / underscores / is a testament to" -> replace with the concrete fact, or delete.
+5. Kill fake logic and sourceless authority: "this means..." only if you can say who concluded what and why; "studies show / experts agree" without a named source gets cut, never invent a citation or number.
+6. Take a stance: "it depends / there are pros and cons / it varies" signals no judgment was made - replace with an explicit choice and the reason for it.
+7. Concrete beats abstract: "saves 3 hours a month" beats "significantly improves efficiency".
+
+## C. Then dial back formatting tricks
+8. "It's not just X, it's Y" and "not only... but also" - at most once each in the whole piece, everything else stated plainly.
+9. Don't force three-part lists ("first / second / finally") for symmetry - use however many points the logic actually needs.
+10. Em dashes: at most once per 300-400 words. Bold text: at most 2-3 words per paragraph.
+
+## D. Common English AI tells to avoid outright
+11. Buzzword soup: "leverage, unlock, unleash, game-changer, seamless, elevate, robust, cutting-edge, revolutionize" used as filler rather than earned by a concrete claim.
+12. The "Whether you're A or B" formula, and "It's important to note that...".
+13. Title-casing every heading, or stacking emoji as decoration instead of seasoning (one emoji doing real work beats five doing none).
+
+## E. Add human voice (clean writing alone is just the baseline)
+14. React to the facts instead of only reporting them; first person ("I think...") is honest, not unprofessional, when it fits the platform.
+15. Vary sentence length; let the most interesting point get twice the space of the others.
+16. But the voice has to be earned - don't invent experiences, stories, or opinions the writer never had.
+"""
+
+
 def _build_social_media_prompt(text: str) -> str:
     """Build the viral social-media generation prompt for a given article text.
 
@@ -335,6 +375,45 @@ def _build_social_media_prompt(text: str) -> str:
 - 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
 - Hashtags：不使用或僅使用 1 個 Hashtag。
 - 長度：約 150-300 字。
+"""
+
+
+def _build_social_media_prompt_en(text: str) -> str:
+    """Build the viral English social-media generation prompt for a given article text.
+
+    English counterpart of _build_social_media_prompt. Only produces the three
+    platform posts (facebook/linkedin/threads) - title/summary_analysis are
+    already available in Chinese from the initial generation, so this is only
+    called on-demand when the user asks for the English version.
+    """
+    return f"""Based on the following article content, write three viral, highly shareable English social media posts for three different platforms: Facebook, LinkedIn, and Meta Threads.
+
+Article content:
+{text}
+
+{HUMANIZE_GUIDELINES_EN}
+# Writing guide:
+
+## 1. Facebook viral post:
+- Hook: the first line must grab attention using genuine curiosity, a real pain point, or a real scene - not a cheesy, overhyped opener (per the humanization guidelines).
+- Formatting: use emoji, clear paragraphs, and bullet points to organize the key ideas.
+- Call to action: end with an easy-to-answer question that invites comments or shares.
+- Hashtags: add 3-5 relevant, popular hashtags.
+- Length: about 150-300 words.
+
+## 2. LinkedIn professional post:
+- Hook: open with a business insight, a career lesson, a trend observation, or a personal reflection.
+- Structure: professional and grounded in substance, share the article's core value and concrete takeaways for professionals. Humanization guidelines carry extra weight here - this should read like a real practitioner sharing an opinion, first person and specific experience are welcome. No buzzword soup ("leverage", "unlock", "game-changer" stacked together) and no stiff AI-formal phrasing ("it is imperative to consider", "cannot be overstated", "in today's rapidly evolving landscape"). Each takeaway should be concrete and actionable.
+- Call to action: ask for professional opinions or open a discussion, e.g. "How are you seeing this play out on your team?"
+- Hashtags: add 3-5 hashtags relevant to the professional field.
+- Length: about 250-400 words.
+
+## 3. Meta Threads casual post:
+- Hook: extremely conversational, like talking to a friend - the first line should carry a strong point of relatability, a gripe, or a sharp take.
+- Style: very short paragraphs (1-2 sentences each), casual phrasing, internet-native tone. Best when it reads like sharing gossip, a blunt truth, or an insider's take. Humanization guidelines carry the highest weight here - it should sound like a real person texting, imperfections and casual fragments are fine, and AI-speak is strictly forbidden. Keep emoji minimal, at most 1 for the whole post.
+- Call to action: prompt replies casually, e.g. "Anyone else dealing with this?"
+- Hashtags: none, or at most 1.
+- Length: about 100-200 words.
 """
 
 
@@ -394,6 +473,57 @@ def generate_social_media_posts(text: str) -> dict:
             "facebook": f"生成 Facebook 文案失敗：{str(e)[:100]}",
             "linkedin": f"生成 LinkedIn 文案失敗：{str(e)[:100]}",
             "threads": f"生成 Threads 文案失敗：{str(e)[:100]}"
+        }
+
+
+def generate_social_media_posts_en(text: str) -> dict:
+    """Generate viral English social media posts for FB, LinkedIn, and Threads from article text.
+
+    On-demand English counterpart of generate_social_media_posts, triggered by
+    the "🇺🇸 英文貼文" button. Only returns the three platform posts (no
+    title/summary_analysis - those already exist in Chinese from the initial call).
+
+    Args:
+        text: The text content of the crawled webpage.
+
+    Returns:
+        dict: {"facebook": str, "linkedin": str, "threads": str}
+    """
+    if not text or not text.strip():
+        return {
+            "facebook": "Could not fetch the article content, so no post could be generated.",
+            "linkedin": "Could not fetch the article content, so no post could be generated.",
+            "threads": "Could not fetch the article content, so no post could be generated.",
+        }
+
+    prompt = _build_social_media_prompt_en(text)
+
+    try:
+        client = _get_vertex_client()
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                response_mime_type="application/json",
+                response_schema=SocialMediaPostsEN,
+                max_output_tokens=8192,
+                labels={"client_id": "info_helper"},
+            )
+        )
+
+        import json
+        if response.text:
+            return json.loads(response.text)
+        else:
+            raise Exception("Empty response text from Gemini")
+
+    except Exception as e:
+        logging.error(f"Error generating English social media posts: {e}")
+        return {
+            "facebook": f"Failed to generate Facebook post: {str(e)[:100]}",
+            "linkedin": f"Failed to generate LinkedIn post: {str(e)[:100]}",
+            "threads": f"Failed to generate Threads post: {str(e)[:100]}",
         }
 
 

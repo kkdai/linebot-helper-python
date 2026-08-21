@@ -6,6 +6,7 @@ from services.bookmark_flex import (
     build_summary_bubble,
     build_bookmark_carousel,
     parse_bookmark_command,
+    build_platform_bubble,
 )
 
 
@@ -143,3 +144,53 @@ def test_summary_bubble_without_doc_id_has_no_research_button():
         if c.get("type") == "button" and c["action"]["type"] == "postback"
     ] if footer else []
     assert postbacks == []
+
+
+# --- 英文貼文按鈕 ---
+
+def test_summary_bubble_has_english_post_button():
+    bubble = build_summary_bubble("t", "s", "https://example.com", "abc123")
+    postbacks = [
+        c["action"] for c in bubble["footer"]["contents"]
+        if c.get("type") == "button" and c["action"]["type"] == "postback"
+    ]
+    english = [
+        a for a in postbacks
+        if json.loads(a["data"]).get("action") == "generate_english_post"
+    ]
+    assert len(english) == 1
+    assert json.loads(english[0]["data"]) == {
+        "action": "generate_english_post", "id": "abc123"}
+    assert len(english[0]["data"]) <= 300
+
+
+def test_summary_bubble_without_doc_id_has_no_english_post_button():
+    bubble = build_summary_bubble("t", "s", "https://example.com", None)
+    footer = bubble.get("footer")
+    postbacks = [
+        c for c in footer["contents"]
+        if c.get("type") == "button" and c["action"]["type"] == "postback"
+    ] if footer else []
+    assert postbacks == []
+
+
+# --- 平台貼文 bubble（中英文共用） ---
+
+def test_platform_bubble_contains_header_and_body_text():
+    bubble = build_platform_bubble(
+        "📘 Facebook 爆款文案", "#1877F2", "貼文內容測試",
+        "📋 複製 FB 文案", "貼文內容測試")
+    text = json.dumps(bubble, ensure_ascii=False)
+    assert bubble["type"] == "bubble"
+    assert "📘 Facebook 爆款文案" in text
+    assert "貼文內容測試" in text
+
+
+def test_platform_bubble_clipboard_action_matches_input():
+    bubble = build_platform_bubble(
+        "📘 Facebook Post", "#1877F2", "post body",
+        "Copy Facebook Post", "post body + link")
+    button = bubble["footer"]["contents"][0]
+    assert button["action"]["type"] == "clipboard"
+    assert button["action"]["label"] == "Copy Facebook Post"
+    assert button["action"]["clipboardText"] == "post body + link"

@@ -63,6 +63,19 @@ def build_summary_bubble(title: str, summary_analysis: str, url: str,
         })
         footer_contents.insert(0, {
             "type": "button",
+            "style": "secondary",
+            "height": "sm",
+            "action": {
+                "type": "postback",
+                "label": "🇺🇸 英文貼文",
+                "data": json.dumps(
+                    {"action": "generate_english_post", "id": doc_id},
+                    ensure_ascii=False),
+                "displayText": "🇺🇸 產生英文版貼文",
+            },
+        })
+        footer_contents.insert(0, {
+            "type": "button",
             "style": "primary",
             "color": "#E67E22",
             "height": "sm",
@@ -213,4 +226,64 @@ def build_bookmark_carousel(bookmarks: List[dict]) -> dict:
     return {
         "type": "carousel",
         "contents": [build_bookmark_bubble(b) for b in bookmarks],
+    }
+
+
+def build_platform_bubble(header_text: str, color: str, body_text: str,
+                          clipboard_label: str, clipboard_text: str) -> dict:
+    """單一社群平台貼文 bubble：header + 內文 + 複製到剪貼簿按鈕。
+
+    中英文貼文共用此函式（差異只在傳入的文字語言），FB／LinkedIn／Threads
+    各自呼叫一次即可組出對應 bubble，避免三份平台重複的 dict 字面值。
+    """
+    return {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": header_text,
+                    "weight": "bold",
+                    "color": "#ffffff",
+                    "size": "lg",
+                },
+            ],
+            "backgroundColor": color,
+            "paddingAll": "md",
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": body_text,
+                    "wrap": True,
+                    "size": "sm",
+                    "color": "#333333",
+                },
+            ],
+            "paddingAll": "lg",
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "color": color,
+                    "height": "sm",
+                    "action": {
+                        "type": "clipboard",
+                        "label": clipboard_label,
+                        "clipboardText": clipboard_text,
+                    },
+                },
+            ],
+            "paddingAll": "md",
+        },
     }

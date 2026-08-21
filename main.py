@@ -35,7 +35,7 @@ from loader.url import is_youtube_url, load_url
 from loader.text_utils import extract_url_and_mode, get_mode_description
 from loader.langtools import (
     summarize_text, generate_social_media_posts, summarize_for_bookmark,
-    generate_research_report,
+    generate_research_report, generate_social_media_posts_en,
 )
 from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
@@ -55,6 +55,7 @@ from services.session_manager import get_session_manager
 from services.bookmark_service import get_bookmark_service
 from services.bookmark_flex import (
     build_summary_bubble, build_bookmark_carousel, parse_bookmark_command,
+    build_platform_bubble,
 )
 from services.report_store import ReportStore
 from services.report_page import render_report_page, render_expired_page
@@ -603,165 +604,13 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             li_text = f"{posts.get('linkedin', '')}\n\n🔗 原文連結： {url}"
             th_text = f"{posts.get('threads', '')}\n\n🔗 原文連結： {url}"
 
-            # Create Flex Message Bubbles
-            # 1. Facebook
-            fb_flex = {
-                "type": "bubble",
-                "size": "mega",
-                "header": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": "📘 Facebook 爆款文案",
-                            "weight": "bold",
-                            "color": "#ffffff",
-                            "size": "lg"
-                        }
-                    ],
-                    "backgroundColor": "#1877F2",
-                    "paddingAll": "md"
-                },
-                "body": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": fb_text,
-                            "wrap": True,
-                            "size": "sm",
-                            "color": "#333333"
-                        }
-                    ],
-                    "paddingAll": "lg"
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "style": "primary",
-                            "color": "#1877F2",
-                            "height": "sm",
-                            "action": {
-                                "type": "clipboard",
-                                "label": "📋 複製 FB 文案",
-                                "clipboardText": fb_text
-                            }
-                        }
-                    ],
-                    "paddingAll": "md"
-                }
-            }
-
-            # 2. LinkedIn
-            li_flex = {
-                "type": "bubble",
-                "size": "mega",
-                "header": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": "💼 LinkedIn 專業貼文",
-                            "weight": "bold",
-                            "color": "#ffffff",
-                            "size": "lg"
-                        }
-                    ],
-                    "backgroundColor": "#0A66C2",
-                    "paddingAll": "md"
-                },
-                "body": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": li_text,
-                            "wrap": True,
-                            "size": "sm",
-                            "color": "#333333"
-                        }
-                    ],
-                    "paddingAll": "lg"
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "style": "primary",
-                            "color": "#0A66C2",
-                            "height": "sm",
-                            "action": {
-                                "type": "clipboard",
-                                "label": "📋 複製 LinkedIn 文案",
-                                "clipboardText": li_text
-                            }
-                        }
-                    ],
-                    "paddingAll": "md"
-                }
-            }
-
-            # 3. Threads
-            th_flex = {
-                "type": "bubble",
-                "size": "mega",
-                "header": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": "💬 Threads 脆友討論",
-                            "weight": "bold",
-                            "color": "#ffffff",
-                            "size": "lg"
-                        }
-                    ],
-                    "backgroundColor": "#000000",
-                    "paddingAll": "md"
-                },
-                "body": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": th_text,
-                            "wrap": True,
-                            "size": "sm",
-                            "color": "#333333"
-                        }
-                    ],
-                    "paddingAll": "lg"
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "style": "primary",
-                            "color": "#000000",
-                            "height": "sm",
-                            "action": {
-                                "type": "clipboard",
-                                "label": "📋 複製 Threads 文案",
-                                "clipboardText": th_text
-                            }
-                        }
-                    ],
-                    "paddingAll": "md"
-                }
-            }
+            # Create Flex Message Bubbles (one per platform, shared builder)
+            fb_flex = build_platform_bubble(
+                "📘 Facebook 爆款文案", "#1877F2", fb_text, "📋 複製 FB 文案", fb_text)
+            li_flex = build_platform_bubble(
+                "💼 LinkedIn 專業貼文", "#0A66C2", li_text, "📋 複製 LinkedIn 文案", li_text)
+            th_flex = build_platform_bubble(
+                "💬 Threads 脆友討論", "#000000", th_text, "📋 複製 Threads 文案", th_text)
 
             # Combine them into a Carousel Flex Message
             # 第一顆是摘要與分析（含儲存書籤按鈕），其後才是三個平台的文案
@@ -1551,6 +1400,11 @@ async def handle_postback_event(event: PostbackEvent):
             await handle_research_report_postback(event, data, user_id)
             return
 
+        # Handle on-demand English post generation
+        if action_value == "generate_english_post":
+            await handle_english_post_postback(event, data, user_id)
+            return
+
     except json.JSONDecodeError:
         # Fall back to query string format (legacy format)
         query_params = parse_qs(postback_data)
@@ -1735,6 +1589,60 @@ async def handle_research_report_postback(event: PostbackEvent, data: dict, user
     except Exception as e:
         logger.error(f"Research report failed for {url}: {e}", exc_info=True)
         error_msg = LineService.format_error_message(e, "產生研究報告")
+        await line_bot_api.push_message(
+            user_id, [TextSendMessage(text=f"{url}\n\n{error_msg}")])
+
+
+async def handle_english_post_postback(event: PostbackEvent, data: dict, user_id: str):
+    """「🇺🇸 英文貼文」按鈕：按需重新爬網址並產生英文版 FB／LinkedIn／Threads 貼文。"""
+    doc_id = data.get("id")
+    svc = get_bookmark_service()
+
+    doc = svc.get_bookmark(user_id, doc_id) if (doc_id and svc.available) else None
+    if not doc:
+        await line_bot_api.reply_message(
+            event.reply_token,
+            [TextSendMessage(text="⚠️ 資料已過期，請重新傳送網址再試一次。")])
+        return
+
+    url = doc.get("url", "")
+    await line_bot_api.reply_message(
+        event.reply_token,
+        [TextSendMessage(text="🇺🇸 開始產生英文版貼文，完成後傳給你。")])
+
+    try:
+        crawled_text = await load_url(url)
+        # Gemini 呼叫是同步阻塞的，丟 thread 避免卡住 event loop 上的其他任務
+        posts_en = await asyncio.to_thread(generate_social_media_posts_en, crawled_text)
+
+        fb_text_en = f"{posts_en.get('facebook', '')}\n\n🔗 Link: {url}"
+        li_text_en = f"{posts_en.get('linkedin', '')}\n\n🔗 Link: {url}"
+        th_text_en = f"{posts_en.get('threads', '')}\n\n🔗 Link: {url}"
+
+        fb_flex_en = build_platform_bubble(
+            "📘 Facebook Post", "#1877F2", fb_text_en, "Copy Facebook Post", fb_text_en)
+        li_flex_en = build_platform_bubble(
+            "💼 LinkedIn Post", "#0A66C2", li_text_en, "Copy LinkedIn Post", li_text_en)
+        th_flex_en = build_platform_bubble(
+            "💬 Threads Post", "#000000", th_text_en, "Copy Threads Post", th_text_en)
+
+        carousel_flex = {
+            "type": "carousel",
+            "contents": [fb_flex_en, li_flex_en, th_flex_en],
+        }
+        carousel_msg = CustomFlexSendMessage(
+            alt_text="🇺🇸 English social media posts", contents=carousel_flex)
+
+        # 附上純文字版本方便電腦複製，比照中文版流程
+        fb_text_msg = TextSendMessage(text=f"📘 Facebook Post:\n--------------------\n{fb_text_en}")
+        li_text_msg = TextSendMessage(text=f"💼 LinkedIn Post:\n--------------------\n{li_text_en}")
+        th_text_msg = TextSendMessage(text=f"💬 Threads Post:\n--------------------\n{th_text_en}")
+
+        await line_bot_api.push_message(
+            user_id, [carousel_msg, fb_text_msg, li_text_msg, th_text_msg])
+    except Exception as e:
+        logger.error(f"English post generation failed for {url}: {e}", exc_info=True)
+        error_msg = LineService.format_error_message(e, "產生英文貼文")
         await line_bot_api.push_message(
             user_id, [TextSendMessage(text=f"{url}\n\n{error_msg}")])
 
