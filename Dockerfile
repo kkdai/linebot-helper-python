@@ -18,14 +18,24 @@ COPY requirements.txt ./requirements-fallback.txt
 # 安裝系統依賴和 Python 依賴
 # 1. 合併 RUN 命令減少層數
 # 2. 清理不必要的檔案減少映像大小
+# Node.js 與 single-file-cli 版本都鎖死，避免未來 rebuild 時默默抓到不相容的新版：
+# - Node.js：改用 NodeSource 24.x（Debian apt 內建的 v18 太舊），鎖精確版號。
+#   single-file-cli 依賴的 ws/simple-cdp 需要全域 CloseEvent，Node 24 才有（Node 22 沒有，
+#   即使開 --experimental-websocket 也一樣，實測過），這是這次 acm.org 爬取全滅的根本原因
+# - single-file-cli：鎖在 2.0.83，已驗證在 Node 24 下可正常抓取
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        nodejs \
-        npm \
+        ca-certificates \
+        curl \
+        gnupg \
         git \
         chromium \
         ffmpeg \
-    && npm install -g single-file-cli \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs=24.19.0-1nodesource1 \
+    && npm install -g single-file-cli@2.0.83 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --upgrade pip \

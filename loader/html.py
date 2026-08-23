@@ -28,6 +28,25 @@ def remove_base64_image(markdown_text: str) -> str:
     return cleaned_text
 
 
+# Cloudflare／WAF 人機驗證頁的常見特徵字串。singlefile 用 headless Chromium
+# 渲染頁面，不像 httpx/cloudscraper 會對 4xx/5xx 呼叫 raise_for_status()，
+# 抓到驗證頁也會當成「抓取成功」回傳——這裡專門攔這種情況，抓到就要當失敗，
+# 讓 loader/url.py 的 fallback chain 換下一種方法，不能把驗證頁內容送去給 Gemini。
+CHALLENGE_PAGE_MARKERS = (
+    "Attention Required! | Cloudflare",
+    "Just a moment...",
+    "Checking your browser before accessing",
+    "cf-browser-verification",
+    "Enable JavaScript and cookies to continue",
+    "DDoS protection by Cloudflare",
+)
+
+
+def is_challenge_page(text: str) -> bool:
+    """抓回來的內容是否為 Cloudflare／WAF 人機驗證頁而非真正網頁內容。"""
+    return any(marker in text for marker in CHALLENGE_PAGE_MARKERS)
+
+
 def parse_html(html: str | bytes, markdown: bool = True, encoding: str = "utf-8") -> str:
     if isinstance(html, bytes):
         html = html.decode(encoding)
@@ -93,6 +112,10 @@ def load_html_with_httpx(url: str, markdown: bool = True) -> str:
     resp = httpx.get(url=url, headers=headers, follow_redirects=True)
     resp.raise_for_status()
 
+    # 部分驗證頁特徵（如 cf-browser-verification）只出現在 HTML 屬性裡，
+    # markdownify/get_text 抓不到，所以要在轉換前先檢查原始 HTML
+    if is_challenge_page(resp.text):
+        raise RuntimeError(f"httpx got a bot-challenge page instead of real content: {url}")
     return parse_html(resp.text, markdown=markdown)
 
 
@@ -109,6 +132,8 @@ def load_html_with_cloudscraper(url: str, markdown: bool = True) -> str:
     resp = scraper.get(url, headers=headers)
     resp.raise_for_status()
 
+    if is_challenge_page(resp.text):
+        raise RuntimeError(f"cloudscraper got a bot-challenge page instead of real content: {url}")
     return parse_html(resp.text, markdown=markdown)
 
 

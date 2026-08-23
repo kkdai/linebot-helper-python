@@ -8,6 +8,8 @@ import logging
 from typing import Optional
 from markdownify import markdownify
 
+from .html import is_challenge_page
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -102,8 +104,19 @@ async def load_singlefile_html(url: str) -> str:
 
     try:
         with open(f, "rb") as fp:
-            soup = BeautifulSoup(fp, "html.parser")
-            text = soup.get_text(strip=True)
+            raw_html = fp.read()
+
+        # SingleFile 不像 httpx/cloudscraper 會對錯誤狀態碼 raise_for_status()，
+        # 抓到 Cloudflare/WAF 的人機驗證頁也會當成「抓取成功」——這裡要主動擋下來，
+        # 讓 url.py 的 fallback chain 換下一種方法，不能把驗證頁內容送去給 Gemini。
+        # 部分驗證頁特徵（如 cf-browser-verification）只出現在 HTML 屬性裡，
+        # get_text() 抓不到，所以要檢查原始 HTML 而不是抽出來的純文字
+        if is_challenge_page(raw_html.decode("utf-8", errors="ignore")):
+            raise RuntimeError(
+                f"SingleFile got a bot-challenge page instead of real content: {url}")
+
+        soup = BeautifulSoup(raw_html, "html.parser")
+        text = soup.get_text(strip=True)
         return text
     finally:
         # Always try to remove the temp file
