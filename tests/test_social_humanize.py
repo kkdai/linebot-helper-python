@@ -15,6 +15,7 @@ import pytest
 
 from loader.langtools import (
     HUMANIZE_GUIDELINES,
+    SocialMediaPosts,
     _build_social_media_prompt,
     generate_social_media_posts,
 )
@@ -62,7 +63,7 @@ def test_taiwan_localization_rules_present():
 
 
 def test_per_platform_tuning_present():
-    """三平台的人性化微調文字都要在 prompt 內。"""
+    """四平台的人性化微調文字都要在 prompt 內。"""
     prompt = _build_social_media_prompt(SAMPLE_TEXT)
     # Facebook：開場改真實痛點、禁假掰誇張
     assert "禁止假掰誇張詞" in prompt
@@ -70,7 +71,7 @@ def test_per_platform_tuning_present():
     assert "buzzword 空堆" in prompt
     assert "人性化守則權重高" in prompt
     assert "禁 AI 正式腔套語" in prompt or "嚴禁 AI 正式腔套語" in prompt
-    # Threads：人性化守則權重最高
+    # Threads / Twitter：人性化守則權重最高
     assert "人性化守則權重最高" in prompt
 
 
@@ -81,10 +82,66 @@ def test_viral_energy_preserved():
     assert "Hashtag" in prompt
 
 
+# --- Twitter／X 資深軟體總監推薦文 ---
+
+def test_twitter_section_present_in_prompt():
+    """prompt 必須包含 Twitter／X 這一段寫作指南。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    assert "## 4. Twitter／X 資深軟體總監推薦文" in prompt
+
+
+def test_twitter_persona_is_senior_engineering_director():
+    """人設必須是資深軟體總監，且用第一人稱推薦。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    assert "資深軟體總監" in prompt
+    assert "Director of Engineering" in prompt
+    assert "第一人稱" in prompt
+
+
+def test_twitter_humanization_weighted_highest():
+    """真人化是這則的第一要求，且不得編造經歷。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    twitter_section = prompt.split("## 4. Twitter／X 資深軟體總監推薦文")[1]
+    assert "人性化守則權重最高" in twitter_section
+    assert "嚴禁編造" in twitter_section
+    # 文中數字不得被寫成自己團隊的戰績
+    assert "不能寫成你自己團隊的戰績" in twitter_section
+    # 反行銷腔／標題黨
+    assert "必讀" in twitter_section and "一文看懂" in twitter_section
+
+
+def test_twitter_single_tweet_constraints():
+    """單則推文限制：字數上限、少 emoji、少 hashtag、不自己貼網址。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    twitter_section = prompt.split("## 4. Twitter／X 資深軟體總監推薦文")[1]
+    assert "80-120 個中文字" in twitter_section
+    assert "最多 1 個" in twitter_section          # emoji
+    assert "0-2 個" in twitter_section             # hashtag
+    assert "不要自己貼網址" in twitter_section
+
+
+def test_twitter_requires_first_person_voice():
+    """全篇至少要有一次「我」，且禁止分析報告句型。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    twitter_section = prompt.split("## 4. Twitter／X 資深軟體總監推薦文")[1]
+    assert "至少出現一次第一人稱「我」" in twitter_section
+    assert "嚴禁分析報告句型" in twitter_section
+    assert "重點不是／不在 A，而是 B" in twitter_section
+
+
+def test_twitter_schema_description_carries_key_constraints():
+    """schema 的 field description 也要帶人設與字數，structured output 會吃這段。"""
+    desc = SocialMediaPosts.model_fields["twitter"].description
+    assert "資深軟體總監" in desc
+    assert "80-120 個中文字" in desc
+    assert "第一人稱" in desc
+
+
 def test_empty_input_returns_fallback():
-    """空輸入應回傳含三鍵的 fallback，且不呼叫 API。"""
+    """空輸入應回傳含四平台的 fallback，且不呼叫 API。"""
     result = generate_social_media_posts("")
-    assert {"title", "summary_analysis", "facebook", "linkedin", "threads"} <= set(result.keys())
+    assert {"title", "summary_analysis", "facebook", "linkedin", "threads",
+            "twitter"} <= set(result.keys())
     for value in result.values():
         assert "無法" in value
 
@@ -92,7 +149,8 @@ def test_empty_input_returns_fallback():
 def test_whitespace_only_input_returns_fallback():
     """只有空白的輸入也走 fallback。"""
     result = generate_social_media_posts("   \n  ")
-    assert {"title", "summary_analysis", "facebook", "linkedin", "threads"} <= set(result.keys())
+    assert {"title", "summary_analysis", "facebook", "linkedin", "threads",
+            "twitter"} <= set(result.keys())
 
 
 # --- 整合測試：需 Vertex AI，預設略過 ---
@@ -101,10 +159,11 @@ def test_whitespace_only_input_returns_fallback():
     os.getenv("RUN_LIVE_TESTS") != "1",
     reason="需要 Vertex AI 憑證，設定 RUN_LIVE_TESTS=1 才執行",
 )
-def test_live_generation_returns_three_posts():
-    """實際呼叫 Gemini，回傳三平台文案且非空。"""
+def test_live_generation_returns_four_posts():
+    """實際呼叫 Gemini，回傳四平台文案且非空。"""
     result = generate_social_media_posts(SAMPLE_TEXT)
-    assert {"title", "summary_analysis", "facebook", "linkedin", "threads"} <= set(result.keys())
+    assert {"title", "summary_analysis", "facebook", "linkedin", "threads",
+            "twitter"} <= set(result.keys())
     for platform, value in result.items():
         assert value and value.strip(), f"{platform} 文案為空"
 

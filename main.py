@@ -557,9 +557,10 @@ async def handle_message_event(event: MessageEvent):
 
 async def handle_url_message(event: MessageEvent, urls: list, mode: str = "normal"):
     """
-    Handle URL messages by crawling the content and generating 3 viral social media posts
-    for FB, LinkedIn, and Threads. Returns a single Carousel Flex Message with copy-to-clipboard buttons,
-    followed by 3 text messages containing the raw text copy of the posts for easy copying on computers.
+    Handle URL messages by crawling the content and generating 4 viral social media posts
+    for FB, LinkedIn, Threads, and Twitter/X. Returns a single Carousel Flex Message with
+    copy-to-clipboard buttons, followed by 4 text messages containing the raw text copy of
+    the posts for easy copying on computers.
 
     Args:
         event: LINE message event
@@ -603,6 +604,7 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             fb_text = f"{posts.get('facebook', '')}\n\n🔗 原文連結： {url}"
             li_text = f"{posts.get('linkedin', '')}\n\n🔗 原文連結： {url}"
             th_text = f"{posts.get('threads', '')}\n\n🔗 原文連結： {url}"
+            tw_text = f"{posts.get('twitter', '')}\n\n🔗 原文連結： {url}"
 
             # Create Flex Message Bubbles (one per platform, shared builder)
             fb_flex = build_platform_bubble(
@@ -611,9 +613,11 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
                 "💼 LinkedIn 專業貼文", "#0A66C2", li_text, "📋 複製 LinkedIn 文案", li_text)
             th_flex = build_platform_bubble(
                 "💬 Threads 脆友討論", "#000000", th_text, "📋 複製 Threads 文案", th_text)
+            tw_flex = build_platform_bubble(
+                "🐦 Twitter／X 總監推薦", "#1D9BF0", tw_text, "📋 複製 Twitter 文案", tw_text)
 
             # Combine them into a Carousel Flex Message
-            # 第一顆是摘要與分析（含儲存書籤按鈕），其後才是三個平台的文案
+            # 第一顆是摘要與分析（含儲存書籤按鈕），其後才是四個平台的文案
             summary_bubble = build_summary_bubble(
                 article_title, summary_analysis, url, bookmark_doc_id)
             carousel_flex = {
@@ -622,7 +626,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
                     summary_bubble,
                     fb_flex,
                     li_flex,
-                    th_flex
+                    th_flex,
+                    tw_flex
                 ]
             }
 
@@ -633,8 +638,10 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             fb_text_msg = TextSendMessage(text=f"📘 Facebook 爆款文案：\n--------------------\n{fb_text}")
             li_text_msg = TextSendMessage(text=f"💼 LinkedIn 專業貼文：\n--------------------\n{li_text}")
             th_text_msg = TextSendMessage(text=f"💬 Threads 脆友討論：\n--------------------\n{th_text}")
+            tw_text_msg = TextSendMessage(text=f"🐦 Twitter／X 總監推薦：\n--------------------\n{tw_text}")
 
-            results.extend([fb_text_msg, li_text_msg, th_text_msg])
+            # carousel + 4 則純文字 = 5，剛好用滿 LINE reply 的單次訊息上限
+            results.extend([fb_text_msg, li_text_msg, th_text_msg, tw_text_msg])
 
         except Exception as e:
             logger.error(f"Unexpected error processing URL: {e}", exc_info=True)

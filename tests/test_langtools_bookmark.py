@@ -27,12 +27,17 @@ def test_prompt_asks_for_summary_and_analysis():
     assert "摘要" in prompt and "分析" in prompt
 
 
+def test_schema_includes_twitter_field():
+    assert "twitter" in SocialMediaPosts.model_fields
+
+
 def test_empty_input_fallback_has_new_keys():
     result = generate_social_media_posts("")
     assert "title" in result
     assert "summary_analysis" in result
     # 既有欄位不能少
     assert "facebook" in result and "linkedin" in result and "threads" in result
+    assert "twitter" in result
 
 
 def test_summarize_for_bookmark_empty_input_returns_fallback():

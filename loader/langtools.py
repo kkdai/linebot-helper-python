@@ -255,6 +255,7 @@ class SocialMediaPosts(BaseModel):
     facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案，包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
     linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案，著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
     threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
+    twitter: str = Field(description="適合 Twitter／X 的單則推薦推文，80-120 個中文字，以資深軟體總監的第一人稱口吻推薦這篇文章（全篇至少出現一次「我」），講出具體值得看的點與自己的判斷，口語專業、不條列、不用分析報告句型、最多 1-2 個 Hashtag")
 
 
 class SocialMediaPostsEN(BaseModel):
@@ -347,7 +348,7 @@ def _build_social_media_prompt(text: str) -> str:
     """
     return f"""請針對以下網頁內容，完成兩件事：
 1. 產出文章標題（title，15 字內）與「摘要與重點分析」（summary_analysis，150-250 字：先 2-3 句摘要核心內容，再 2-3 句分析重點與為什麼值得讀。此欄位是給讀者快速理解文章用的，語氣中性直述即可，不是社群貼文）。
-2. 為三個不同的社群平台（Facebook、LinkedIn、Meta Threads）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
+2. 為四個不同的社群平台（Facebook、LinkedIn、Meta Threads、Twitter／X）各撰寫一篇容易「爆款」（高互動、高分享、吸引眼球）的繁體中文（台灣用語）分享貼文。
 
 網頁內容：
 {text}
@@ -375,6 +376,21 @@ def _build_social_media_prompt(text: str) -> str:
 - 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
 - Hashtags：不使用或僅使用 1 個 Hashtag。
 - 長度：約 150-300 字。
+
+## 4. Twitter／X 資深軟體總監推薦文：
+- 角色設定：你是一位帶過好幾個工程團隊、做過技術選型也踩過坑的資深軟體總監（Director of Engineering）。這篇文章是你自己讀完覺得該轉給團隊看的，用第一人稱寫一則推薦推文。
+- 真人化是這則的第一要求（人性化守則權重最高）：要像一個有實戰包袱的人隨手發的推，不是官方帳號在發稿。可以帶個人反應（認同、意外、或保留意見都行），可以提到「我」帶團隊、做決策、review code 時的相關情境。但嚴禁編造具體公司名、數字、職稱細節或沒發生過的經歷（守則第 16 條）。個人經驗只能講到「這種坑我踩過」這種程度，文中的數字一律要看得出是文章作者的數據，不能寫成你自己團隊的戰績。
+- 結構（三句左右，順序不要顛倒）：
+  1. 第一句必須是「我」的反應或判斷，不能拿文章摘要當開頭。例如「這篇講的取捨我自己踩過」「看到第三點我停下來想了一下」。
+  2. 第二句講出這篇最值得看的那個點，要具體到看得出你讀過原文（引用文中真實的做法、代價或數字），不是「很有啟發」「值得一讀」這種空話。
+  3. 第三句說你為什麼會把它轉給團隊，或你保留意見的地方。允許不完全同意。
+- 全篇至少出現一次第一人稱「我」，這是這則推文的硬性要求。
+- 嚴禁分析報告句型：不要用「顯示出」「凸顯了」「這意味著」「值得深思」「典型的⋯⋯」。那是評論稿，不是推文。
+- 特別嚴禁「重點不是／不在 A，而是 B」這個句型的任何變形（含「真正的關鍵不是⋯⋯而是」「與其說 A，不如說 B」）。就算原文裡有這樣的句子也不准照抄，改成直述句講你的判斷。
+- 語氣：專業但口語，句子短、長短交錯，不要條列、不要小標、不要開場定型句。嚴禁行銷腔與標題黨（「必讀」「震撼」「顛覆認知」「一文看懂」「太神了」）。
+- Emoji：最多 1 個，或完全不用。
+- Hashtags：0-2 個，放在最後，用技術圈慣用的英文標籤（例如 #EngineeringLeadership）。
+- 長度：80-120 個中文字，這是硬上限（單則推文的額度，後面系統還要接原文連結）。寫完後自己數一遍，超過就刪掉最不重要的那句，寧可短也不要超。不要自己貼網址。
 """
 
 
@@ -419,7 +435,7 @@ Article content:
 
 def generate_social_media_posts(text: str) -> dict:
     """
-    Generate viral social media posts for FB, LinkedIn, and Threads from article text.
+    Generate viral social media posts for FB, LinkedIn, Threads, and Twitter/X from article text.
 
     Args:
         text: The text content of the crawled webpage.
@@ -429,6 +445,8 @@ def generate_social_media_posts(text: str) -> dict:
             - facebook: FB copy
             - linkedin: LinkedIn copy
             - threads: Threads copy
+            - twitter: Twitter/X copy, written in the voice of a senior
+              engineering director recommending the article
     """
     if not text or not text.strip():
         return {
@@ -436,7 +454,8 @@ def generate_social_media_posts(text: str) -> dict:
             "summary_analysis": "無法取得網頁內容，無法產生摘要。",
             "facebook": "無法取得網頁內容，無法產生文案。",
             "linkedin": "無法取得網頁內容，無法產生文案。",
-            "threads": "無法取得網頁內容，無法產生文案。"
+            "threads": "無法取得網頁內容，無法產生文案。",
+            "twitter": "無法取得網頁內容，無法產生文案。"
         }
 
     prompt = _build_social_media_prompt(text)
@@ -472,7 +491,8 @@ def generate_social_media_posts(text: str) -> dict:
             "summary_analysis": f"生成摘要失敗：{str(e)[:100]}",
             "facebook": f"生成 Facebook 文案失敗：{str(e)[:100]}",
             "linkedin": f"生成 LinkedIn 文案失敗：{str(e)[:100]}",
-            "threads": f"生成 Threads 文案失敗：{str(e)[:100]}"
+            "threads": f"生成 Threads 文案失敗：{str(e)[:100]}",
+            "twitter": f"生成 Twitter／X 文案失敗：{str(e)[:100]}"
         }
 
 
