@@ -96,7 +96,42 @@ def replace_domain(url: str) -> str:
     return url
 
 
-async def load_url(url: str, youtube_mode: str = "normal") -> str:
+async def load_url(url: str, youtube_mode: str = "normal",
+                   use_cache: bool = True) -> str:
+    """Load content from a URL, serving from the crawl cache when possible.
+
+    快取包在最外層，所以四個呼叫點（社群文案、英文貼文、研究報告、推播摘要）
+    都自動受惠，不需要各自改。快取不可用或未命中時行為與沒有快取時完全相同。
+
+    Args:
+        url: URL to load
+        youtube_mode: Summary mode for YouTube videos - "normal", "detail", or "twitter"
+        use_cache: 設 False 可強制重爬（內容看起來過期時用）
+
+    Returns:
+        Extracted text content
+    """
+    if not use_cache:
+        return await _load_url_uncached(url, youtube_mode)
+
+    # services 是可選相依：匯入或初始化失敗都只是沒有快取，不該讓爬取整個失敗
+    try:
+        from services.url_cache import get_url_cache
+        cache = get_url_cache()
+    except Exception as e:
+        logger.warning(f"URL cache unavailable, crawling directly: {e}")
+        return await _load_url_uncached(url, youtube_mode)
+
+    cached = cache.get(url, youtube_mode)
+    if cached is not None:
+        return cached
+
+    text = await _load_url_uncached(url, youtube_mode)
+    cache.put(url, text, youtube_mode)
+    return text
+
+
+async def _load_url_uncached(url: str, youtube_mode: str = "normal") -> str:
     """
     Load content from URL with intelligent fallback strategy
 

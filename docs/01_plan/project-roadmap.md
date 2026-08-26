@@ -12,10 +12,10 @@
 | 項目 | 狀態 |
 |---|---|
 | 部署 | Cloud Run `us-central1`，no-cpu-throttling |
-| 測試 | 178 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
+| 測試 | 192 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
 | 模型 | `gemini-3.1-flash-lite`（Vertex AI，`global` region） |
 | 持久化 | Firestore（chat sessions、bookmarks、reports、batch jobs） |
-| 目前焦點 | P0 已完成，下一步是 P1 爬取結果快取 |
+| 目前焦點 | P0、P1-3 已完成，下一步是 P1-4 用量與成本觀測 |
 
 ---
 
@@ -57,8 +57,13 @@
 
 | # | 項目 | 理由 | 估時 | 狀態 |
 |---|---|---|---|---|
-| 3 | 爬取結果快取 | 同一個網址目前最多被爬 3 次（初次、英文貼文、研究報告），各自重跑 SingleFile subprocess 或 Firecrawl。爬取是整條鏈最慢也最貴的一段，比照報告做 Firestore 快取即可 | 1d | Not Started |
+| 3 | 爬取結果快取 | 同一個網址原本最多被爬 3 次（初次、英文貼文、研究報告） | — | Completed（2026-08-26） |
 | 4 | 用量與成本觀測 | 目前沒有任何 token／成本統計，也沒有錯誤聚合。每則網址至少 1 次 Gemini，按鈕還會再打。先把 `usage_metadata` 記進 log 或 Firestore，再談優化 | 1-2d | Not Started |
+
+P1-3 作法：`services/url_cache.py` + `load_url` 最外層的快取包裝，四個呼叫點自動受惠、
+不需各自改。TTL 24 小時（不比照報告的 7 天——存的是網頁當下內容，放太久會拿到舊資料）。
+空內容不快取（那代表爬取失敗），超過 700 KB 不快取（Firestore 單一文件上限 1 MiB）。
+Firestore 不可用或讀寫出錯時安靜降級成直接爬。`use_cache=False` 可強制重爬。
 
 ### P2 — 測試安全網
 
@@ -91,6 +96,7 @@
 
 | 日期 | 決策 | 原因 |
 |---|---|---|
+| 2026-08-26 | 爬取快取 TTL 設 24 小時，而非比照報告的 7 天 | 存的是網頁當下內容，新聞類頁面放太久會拿到舊資料 |
 | 2026-08-26 | 訊息一律走「reply 前 5 則 + push 溢位」，不再截斷 | 截斷會讓已付出的爬取與 Gemini 成本白費 |
 | 2026-08-26 | Twitter 文案採資深軟體總監人設，字數依 X Premium Basic 放寬 | 使用者帳號無 280 字元限制 |
 | 2026-08-26 | Threads 從「脆友吐槽」改為「專業觀點」 | 對外文案要維持專業形象 |
