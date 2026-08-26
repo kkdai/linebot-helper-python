@@ -612,7 +612,7 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             li_flex = build_platform_bubble(
                 "💼 LinkedIn 專業貼文", "#0A66C2", li_text, "📋 複製 LinkedIn 文案", li_text)
             th_flex = build_platform_bubble(
-                "💬 Threads 脆友討論", "#000000", th_text, "📋 複製 Threads 文案", th_text)
+                "💬 Threads 專業觀點", "#000000", th_text, "📋 複製 Threads 文案", th_text)
             tw_flex = build_platform_bubble(
                 "🐦 Twitter／X 總監推薦", "#1D9BF0", tw_text, "📋 複製 Twitter 文案", tw_text)
 
@@ -637,7 +637,7 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             # Construct separate text messages for easy copying on computers
             fb_text_msg = TextSendMessage(text=f"📘 Facebook 爆款文案：\n--------------------\n{fb_text}")
             li_text_msg = TextSendMessage(text=f"💼 LinkedIn 專業貼文：\n--------------------\n{li_text}")
-            th_text_msg = TextSendMessage(text=f"💬 Threads 脆友討論：\n--------------------\n{th_text}")
+            th_text_msg = TextSendMessage(text=f"💬 Threads 專業觀點：\n--------------------\n{th_text}")
             tw_text_msg = TextSendMessage(text=f"🐦 Twitter／X 總監推薦：\n--------------------\n{tw_text}")
 
             # carousel + 4 則純文字 = 5，剛好用滿 LINE reply 的單次訊息上限
@@ -1601,7 +1601,7 @@ async def handle_research_report_postback(event: PostbackEvent, data: dict, user
 
 
 async def handle_english_post_postback(event: PostbackEvent, data: dict, user_id: str):
-    """「🇺🇸 英文貼文」按鈕：按需重新爬網址並產生英文版 FB／LinkedIn／Threads 貼文。"""
+    """「🇺🇸 英文貼文」按鈕：按需重新爬網址並產生英文版 FB／LinkedIn／Threads／Twitter 貼文。"""
     doc_id = data.get("id")
     svc = get_bookmark_service()
 
@@ -1625,6 +1625,7 @@ async def handle_english_post_postback(event: PostbackEvent, data: dict, user_id
         fb_text_en = f"{posts_en.get('facebook', '')}\n\n🔗 Link: {url}"
         li_text_en = f"{posts_en.get('linkedin', '')}\n\n🔗 Link: {url}"
         th_text_en = f"{posts_en.get('threads', '')}\n\n🔗 Link: {url}"
+        tw_text_en = f"{posts_en.get('twitter', '')}\n\n🔗 Link: {url}"
 
         fb_flex_en = build_platform_bubble(
             "📘 Facebook Post", "#1877F2", fb_text_en, "Copy Facebook Post", fb_text_en)
@@ -1632,10 +1633,12 @@ async def handle_english_post_postback(event: PostbackEvent, data: dict, user_id
             "💼 LinkedIn Post", "#0A66C2", li_text_en, "Copy LinkedIn Post", li_text_en)
         th_flex_en = build_platform_bubble(
             "💬 Threads Post", "#000000", th_text_en, "Copy Threads Post", th_text_en)
+        tw_flex_en = build_platform_bubble(
+            "🐦 Twitter/X Post", "#1D9BF0", tw_text_en, "Copy Twitter Post", tw_text_en)
 
         carousel_flex = {
             "type": "carousel",
-            "contents": [fb_flex_en, li_flex_en, th_flex_en],
+            "contents": [fb_flex_en, li_flex_en, th_flex_en, tw_flex_en],
         }
         carousel_msg = CustomFlexSendMessage(
             alt_text="🇺🇸 English social media posts", contents=carousel_flex)
@@ -1644,9 +1647,11 @@ async def handle_english_post_postback(event: PostbackEvent, data: dict, user_id
         fb_text_msg = TextSendMessage(text=f"📘 Facebook Post:\n--------------------\n{fb_text_en}")
         li_text_msg = TextSendMessage(text=f"💼 LinkedIn Post:\n--------------------\n{li_text_en}")
         th_text_msg = TextSendMessage(text=f"💬 Threads Post:\n--------------------\n{th_text_en}")
+        tw_text_msg = TextSendMessage(text=f"🐦 Twitter/X Post:\n--------------------\n{tw_text_en}")
 
+        # carousel + 4 則純文字 = 5，剛好用滿 LINE push 的單次訊息上限
         await line_bot_api.push_message(
-            user_id, [carousel_msg, fb_text_msg, li_text_msg, th_text_msg])
+            user_id, [carousel_msg, fb_text_msg, li_text_msg, th_text_msg, tw_text_msg])
     except Exception as e:
         logger.error(f"English post generation failed for {url}: {e}", exc_info=True)
         error_msg = LineService.format_error_message(e, "產生英文貼文")

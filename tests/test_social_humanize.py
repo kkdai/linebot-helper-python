@@ -57,6 +57,10 @@ def test_taiwan_localization_rules_present():
     # 中國用語替換表抽查
     assert "視頻→影片" in prompt
     assert "質量→品質" in prompt
+    # 技術文章專用的替換表（代碼／數據庫／快取等）
+    assert "代碼→程式碼" in prompt
+    assert "數據庫→資料庫" in prompt
+    assert "緩存→快取" in prompt
     # 全形標點與台灣語氣詞
     assert "全形標點" in prompt
     assert "台灣語氣詞" in prompt
@@ -71,7 +75,8 @@ def test_per_platform_tuning_present():
     assert "buzzword 空堆" in prompt
     assert "人性化守則權重高" in prompt
     assert "禁 AI 正式腔套語" in prompt or "嚴禁 AI 正式腔套語" in prompt
-    # Threads / Twitter：人性化守則權重最高
+    # Threads：專業定位（權重高）；Twitter：真人化權重最高
+    assert "人性化守則權重高" in prompt
     assert "人性化守則權重最高" in prompt
 
 
@@ -80,6 +85,42 @@ def test_viral_energy_preserved():
     prompt = _build_social_media_prompt(SAMPLE_TEXT)
     assert "爆款" in prompt
     assert "Hashtag" in prompt
+
+
+# --- Threads 專業觀點（不是脆友吐槽） ---
+
+def test_threads_section_is_professional_positioning():
+    """Threads 定位是專業從業者分享觀點，不是網友吐槽。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    assert "## 3. Meta Threads 專業觀點" in prompt
+    section = prompt.split("## 3. Meta Threads 專業觀點")[1].split("## 4.")[0]
+    assert "專業工作者" in section
+    assert "不是網友在吐槽或討拍" in section
+
+
+def test_threads_bans_meme_and_venting_voice():
+    """迷因梗、八卦、討拍、語尾助詞堆疊都要明文禁止。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    section = prompt.split("## 3. Meta Threads 專業觀點")[1].split("## 4.")[0]
+    assert "網路迷因感" in section
+    assert "討拍語氣" in section
+    assert "喔／耶／啦／欸／齁" in section  # 語尾助詞現在是禁止項，不是鼓勵項
+    # 但仍要保有 Threads 的短段落特性
+    assert "段落短" in section
+
+
+def test_threads_forbids_claiming_others_results():
+    """文中的數字要寫成原文團隊做的，不能冒認成自己的。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    section = prompt.split("## 3. Meta Threads 專業觀點")[1].split("## 4.")[0]
+    assert "不要冒認別人的成果" in section
+    assert "不能寫成「我們把⋯⋯」" in section
+
+
+def test_threads_no_longer_asks_for_casual_forum_voice():
+    """舊的『脆友』設定必須完全移除，避免兩套指令打架。"""
+    prompt = _build_social_media_prompt(SAMPLE_TEXT)
+    assert "脆友" not in prompt
 
 
 # --- Twitter／X 資深軟體總監推薦文 ---

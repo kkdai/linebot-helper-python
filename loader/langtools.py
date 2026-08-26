@@ -254,14 +254,15 @@ class SocialMediaPosts(BaseModel):
     summary_analysis: str = Field(description="文章摘要與重點分析（150-250 字繁體中文：先 2-3 句摘要文章核心內容，再 2-3 句分析重點、為什麼值得讀、對讀者的意義。純文字不用 markdown）")
     facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案，包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
     linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案，著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
-    threads: str = Field(description="適合 Threads 的口語化貼文文案，以脆友語氣撰寫，第一句需有強烈共鳴或槽點，段落極短，少用 Hashtag，著重引導留言討論")
+    threads: str = Field(description="適合 Threads 的貼文文案，以有實務經驗的專業工作者口吻撰寫，語氣自然但有專業判斷，第一句點出真實的觀察或問題，段落短，少用 Hashtag，引導同行討論")
     twitter: str = Field(description="適合 Twitter／X 的單則推薦推文，80-120 個中文字，以資深軟體總監的第一人稱口吻推薦這篇文章（全篇至少出現一次「我」），講出具體值得看的點與自己的判斷，口語專業、不條列、不用分析報告句型、最多 1-2 個 Hashtag")
 
 
 class SocialMediaPostsEN(BaseModel):
     facebook: str = Field(description="A viral, shareable Facebook post in English, with a strong hook, emoji, bullet points for key takeaways, and an engagement question")
     linkedin: str = Field(description="A professional LinkedIn post in English, focused on business insight, concrete takeaways, and a thought-provoking discussion question")
-    threads: str = Field(description="A casual, conversational Threads post in English, written like talking to a friend, very short paragraphs, minimal hashtags, inviting replies")
+    threads: str = Field(description="A Threads post in English written by an experienced practitioner for peers in the field - natural but professional, opens on a concrete observation, short paragraphs, minimal hashtags, invites peer discussion")
+    twitter: str = Field(description="A single English tweet recommending the article in the first-person voice of a senior engineering director, 30-45 words and under 240 characters, must contain \"I\", concrete about what the article actually says, conversational not analytical, at most 1-2 hashtags")
 
 
 class BookmarkSummary(BaseModel):
@@ -294,6 +295,7 @@ HUMANIZE_GUIDELINES = """# 人性化守則（最高優先，凌駕以下排版�
 
 ## D. 台灣在地化（AI 產繁中最容易露餡處）
 11. 中國用語一律替換：視頻→影片、質量→品質、信息→資訊、網絡→網路、軟件→軟體、水平→水準、立馬→馬上、默認→預設、反饋→回饋、支持(功能)→支援、性價比→CP值、給力→很到位、靠譜→可靠、接地氣→貼近日常；「賦能／閉環／抓手」這類整句重寫成「讓誰能做到什麼」。
+11-1. 技術文章最常露餡的中國用語（本 bot 多處理技術內容，特別注意）：代碼→程式碼、程序→程式、內存→記憶體、緩存→快取、數據庫→資料庫、調用→呼叫、屏幕→螢幕、硬盤→硬碟、字符→字元、打印→列印、報錯→出錯／噴錯誤、上線 (指部署)→上線或部署皆可但別用「發佈上線」堆疊、算力→運算資源、鏈路→呼叫鏈／路徑。英文技術名詞（lead time、pager、module boundary 等）保留原文即可，不用硬翻。
 12. 全形標點：中文句一律「，。：；！？「」（）、」；刪節號用「⋯⋯」不用「...」；並列用頓號「、」。
 13. 台灣語氣詞：社群口語可用「喔／耶／啦／欸／齁」收尾；砍中國腔「哈／好噠／是滴」。量詞用台灣慣用（一部影片、一支手機、一則貼文）。
 
@@ -370,10 +372,13 @@ def _build_social_media_prompt(text: str) -> str:
 - Hashtags：加入 3-5 個專業領域的 Hashtag。
 - 長度：約 300-500 字。
 
-## 3. Meta Threads 脆友討論：
-- Threads 脆友 Hook：極度口語化、像跟朋友講話，第一句要帶有強烈共鳴、槽點、吐槽、或一針見血的觀點。
-- 內容風格：段落極短（每段 1-2 句話），善用白話文、網路用語或迷因感。以分享八卦、大實話或內行人才懂的梗為佳。此平台人性化守則權重最高：要像真的脆友在講話，容許不完美、口語破碎感，善用台灣語氣詞（喔／耶／啦／欸／齁）收尾，嚴禁任何 AI 腔。emoji 收斂，整篇最多 1 個。
-- 呼籲行動：隨性引導留言，例如：「有人也是這樣嗎？」
+## 3. Meta Threads 專業觀點：
+- 定位：寫給同領域的專業工作者看，是一個有實務經驗的人在 Threads 上分享觀察，不是網友在吐槽或討拍。專業但不端著。
+- Hook：第一句點出一個真實存在的問題或觀察，要具體到同行看了會點頭，不用誇張句、不用反問句開場。
+- 內容風格：段落短（每段 1-2 句），因為 Threads 沒有排版可用，但每一段都要有資訊量。語氣自然口語即可，該用的專業術語就直接用，不用刻意翻成白話。此平台人性化守則權重高：像真人在講自己的判斷，可以用第一人稱，但要有立場、有依據。
+- 嚴禁：網路迷因感、鄉民梗、八卦口吻、討拍語氣、情緒化的吐槽、以及「喔／耶／啦／欸／齁」這類語尾助詞堆疊。也不要為了顯得親切而裝可愛。同樣嚴禁 AI 腔與空話。
+- 不要冒認別人的成果：文中的做法與數字一律要看得出是原文團隊做的（「他們把⋯⋯」），不能寫成「我們把⋯⋯」。要講自己的經驗只能停在「這種狀況我遇過」的程度，不附帶捏造的數字或細節。
+- 呼籲行動：拋一個同行答得出來的具體問題，例如：「你們團隊現在是怎麼處理這塊的？」
 - Hashtags：不使用或僅使用 1 個 Hashtag。
 - 長度：約 150-300 字。
 
@@ -397,12 +402,12 @@ def _build_social_media_prompt(text: str) -> str:
 def _build_social_media_prompt_en(text: str) -> str:
     """Build the viral English social-media generation prompt for a given article text.
 
-    English counterpart of _build_social_media_prompt. Only produces the three
-    platform posts (facebook/linkedin/threads) - title/summary_analysis are
+    English counterpart of _build_social_media_prompt. Only produces the four
+    platform posts (facebook/linkedin/threads/twitter) - title/summary_analysis are
     already available in Chinese from the initial generation, so this is only
     called on-demand when the user asks for the English version.
     """
-    return f"""Based on the following article content, write three viral, highly shareable English social media posts for three different platforms: Facebook, LinkedIn, and Meta Threads.
+    return f"""Based on the following article content, write four viral, highly shareable English social media posts for four different platforms: Facebook, LinkedIn, Meta Threads, and Twitter/X.
 
 Article content:
 {text}
@@ -424,12 +429,30 @@ Article content:
 - Hashtags: add 3-5 hashtags relevant to the professional field.
 - Length: about 250-400 words.
 
-## 3. Meta Threads casual post:
-- Hook: extremely conversational, like talking to a friend - the first line should carry a strong point of relatability, a gripe, or a sharp take.
-- Style: very short paragraphs (1-2 sentences each), casual phrasing, internet-native tone. Best when it reads like sharing gossip, a blunt truth, or an insider's take. Humanization guidelines carry the highest weight here - it should sound like a real person texting, imperfections and casual fragments are fine, and AI-speak is strictly forbidden. Keep emoji minimal, at most 1 for the whole post.
-- Call to action: prompt replies casually, e.g. "Anyone else dealing with this?"
+## 3. Meta Threads professional take:
+- Positioning: written for peers in the same field - an experienced practitioner sharing an observation on Threads, not a random person venting or fishing for sympathy. Professional without being stiff.
+- Hook: open on a real problem or observation, concrete enough that someone who does this work would nod. No exaggerated openers, no rhetorical questions.
+- Style: short paragraphs (1-2 sentences each), since Threads gives you no formatting - but every paragraph should carry information. Natural spoken register is fine, and use the real technical terms rather than watering them down. Humanization guidelines carry high weight here: it should read like a real person stating their judgment, first person is welcome, but the take needs a position and a reason behind it.
+- Strictly avoid: meme voice, internet-forum snark, gossip framing, venting, emotional pile-ons, and cutesy filler added to seem approachable. AI-speak and empty phrasing are equally forbidden. At most 1 emoji for the whole post.
+- Never claim the article's results as your own: every practice and number from the piece must read as the original team's ("they cut lead time from 9 days to 3"), never as "we cut our lead time". Your own experience stops at "I've seen this play out", with no invented numbers or details attached.
+- Call to action: ask one concrete question a peer can actually answer, e.g. "How is your team handling this part right now?"
 - Hashtags: none, or at most 1.
 - Length: about 100-200 words.
+
+## 4. Twitter/X recommendation from a senior engineering director:
+- Persona: you are a senior engineering director who has run several engineering teams, made the architecture calls, and eaten the consequences. You just read this article and think your team should see it. Write one tweet recommending it, in the first person.
+- Sounding like a real person is the top requirement here (the humanization guidelines carry the highest weight). This should read like something a busy practitioner typed between meetings, not like a brand account posting a summary. A personal reaction - agreement, surprise, or a reservation - is welcome.
+- Do NOT invent company names, numbers, job details, or experiences that never happened (guideline 16). Personal experience stops at "I've been on the wrong side of this call before". Any number from the article must clearly read as the author's data ("they cut X by 70%"), never as your own team's win.
+- Structure (about three sentences, keep this order):
+  1. Open with your reaction or judgment, never with a summary of the article.
+  2. Name the one thing worth reading, specific enough that it's obvious you read it - cite the actual practice, tradeoff, or number from the piece. Not "great insights" or "a must-read".
+  3. Say why you'd send it to your team, or where you'd push back. Disagreeing in part is fine.
+- The tweet must use "I" at least once. This is a hard requirement.
+- No analyst-report phrasing: avoid "this highlights", "this underscores", "what this really shows is", "it's not about X, it's about Y", and every variant of that last one - even if the article itself uses it.
+- Tone: conversational but sharp. Short sentences, varied length. No bullets, no headers, no stock openers. No marketing voice or clickbait ("must-read", "game-changer", "mind-blowing", "everything you need to know").
+- Emoji: at most 1, or none.
+- Hashtags: 0-2, at the end, the ones engineering leaders actually use (e.g. #EngineeringLeadership).
+- Length: 30-45 words AND under 240 characters, hard cap - a tweet is limited to 280 characters and the system appends the article link afterwards, so you must leave room. Count before you finish and cut the weakest sentence if you are over. Do not paste a URL yourself.
 """
 
 
@@ -497,23 +520,24 @@ def generate_social_media_posts(text: str) -> dict:
 
 
 def generate_social_media_posts_en(text: str) -> dict:
-    """Generate viral English social media posts for FB, LinkedIn, and Threads from article text.
+    """Generate viral English social posts for FB, LinkedIn, Threads, and Twitter/X.
 
     On-demand English counterpart of generate_social_media_posts, triggered by
-    the "🇺🇸 英文貼文" button. Only returns the three platform posts (no
+    the "🇺🇸 英文貼文" button. Only returns the four platform posts (no
     title/summary_analysis - those already exist in Chinese from the initial call).
 
     Args:
         text: The text content of the crawled webpage.
 
     Returns:
-        dict: {"facebook": str, "linkedin": str, "threads": str}
+        dict: {"facebook": str, "linkedin": str, "threads": str, "twitter": str}
     """
     if not text or not text.strip():
         return {
             "facebook": "Could not fetch the article content, so no post could be generated.",
             "linkedin": "Could not fetch the article content, so no post could be generated.",
             "threads": "Could not fetch the article content, so no post could be generated.",
+            "twitter": "Could not fetch the article content, so no post could be generated.",
         }
 
     prompt = _build_social_media_prompt_en(text)
@@ -544,6 +568,7 @@ def generate_social_media_posts_en(text: str) -> dict:
             "facebook": f"Failed to generate Facebook post: {str(e)[:100]}",
             "linkedin": f"Failed to generate LinkedIn post: {str(e)[:100]}",
             "threads": f"Failed to generate Threads post: {str(e)[:100]}",
+            "twitter": f"Failed to generate Twitter/X post: {str(e)[:100]}",
         }
 
 
