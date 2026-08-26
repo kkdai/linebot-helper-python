@@ -255,14 +255,14 @@ class SocialMediaPosts(BaseModel):
     facebook: str = Field(description="適合 Facebook 的爆款分享貼文文案，包含吸引人的標題、Emoji、條列重點、互動問題及相關 Hashtag")
     linkedin: str = Field(description="適合 LinkedIn 的專業商務貼文文案，著重專業洞察、核心收穫、引人深思的問題及專業 Hashtag")
     threads: str = Field(description="適合 Threads 的貼文文案，以有實務經驗的專業工作者口吻撰寫，語氣自然但有專業判斷，第一句點出真實的觀察或問題，段落短，少用 Hashtag，引導同行討論")
-    twitter: str = Field(description="適合 Twitter／X 的單則推薦推文，80-120 個中文字，以資深軟體總監的第一人稱口吻推薦這篇文章（全篇至少出現一次「我」），講出具體值得看的點與自己的判斷，口語專業、不條列、不用分析報告句型、最多 1-2 個 Hashtag")
+    twitter: str = Field(description="適合 Twitter／X 的單則推薦推文，180-260 個中文字，可分 2 段，以資深軟體總監的第一人稱口吻推薦這篇文章（全篇至少出現一次「我」），講出具體值得看的點與自己的判斷，口語專業、不條列、不用分析報告句型、最多 1-2 個 Hashtag")
 
 
 class SocialMediaPostsEN(BaseModel):
     facebook: str = Field(description="A viral, shareable Facebook post in English, with a strong hook, emoji, bullet points for key takeaways, and an engagement question")
     linkedin: str = Field(description="A professional LinkedIn post in English, focused on business insight, concrete takeaways, and a thought-provoking discussion question")
     threads: str = Field(description="A Threads post in English written by an experienced practitioner for peers in the field - natural but professional, opens on a concrete observation, short paragraphs, minimal hashtags, invites peer discussion")
-    twitter: str = Field(description="A single English tweet recommending the article in the first-person voice of a senior engineering director, 30-45 words and under 240 characters, must contain \"I\", concrete about what the article actually says, conversational not analytical, at most 1-2 hashtags")
+    twitter: str = Field(description="A single English tweet recommending the article in the first-person voice of a senior engineering director, 90-140 words, may be split into 2 paragraphs, must contain \"I\", concrete about what the article actually says, conversational not analytical, at most 1-2 hashtags")
 
 
 class BookmarkSummary(BaseModel):
@@ -385,17 +385,18 @@ def _build_social_media_prompt(text: str) -> str:
 ## 4. Twitter／X 資深軟體總監推薦文：
 - 角色設定：你是一位帶過好幾個工程團隊、做過技術選型也踩過坑的資深軟體總監（Director of Engineering）。這篇文章是你自己讀完覺得該轉給團隊看的，用第一人稱寫一則推薦推文。
 - 真人化是這則的第一要求（人性化守則權重最高）：要像一個有實戰包袱的人隨手發的推，不是官方帳號在發稿。可以帶個人反應（認同、意外、或保留意見都行），可以提到「我」帶團隊、做決策、review code 時的相關情境。但嚴禁編造具體公司名、數字、職稱細節或沒發生過的經歷（守則第 16 條）。個人經驗只能講到「這種坑我踩過」這種程度，文中的數字一律要看得出是文章作者的數據，不能寫成你自己團隊的戰績。
-- 結構（三句左右，順序不要顛倒）：
-  1. 第一句必須是「我」的反應或判斷，不能拿文章摘要當開頭。例如「這篇講的取捨我自己踩過」「看到第三點我停下來想了一下」。
-  2. 第二句講出這篇最值得看的那個點，要具體到看得出你讀過原文（引用文中真實的做法、代價或數字），不是「很有啟發」「值得一讀」這種空話。
-  3. 第三句說你為什麼會把它轉給團隊，或你保留意見的地方。允許不完全同意。
+- 結構（四到六句，順序不要顛倒）：
+  1. 開頭必須是「我」的反應或判斷，不能拿文章摘要當開頭。例如「這篇講的取捨我自己踩過」「看到第三點我停下來想了一下」。
+  2. 接著講出這篇最值得看的那個點，要具體到看得出你讀過原文（引用文中真實的做法、代價或數字），不是「很有啟發」「值得一讀」這種空話。
+  3. 再補一個你自己的判斷：這件事放到實務上會怎麼發生、什麼條件下才成立、或你會怎麼跟團隊解釋。這句是你比原文多出來的價值，不要只是換句話重講原文。
+  4. 收在你為什麼會轉給團隊，或你保留意見的地方。允許不完全同意。
 - 全篇至少出現一次第一人稱「我」，這是這則推文的硬性要求。
 - 嚴禁分析報告句型：不要用「顯示出」「凸顯了」「這意味著」「值得深思」「典型的⋯⋯」。那是評論稿，不是推文。
 - 特別嚴禁「重點不是／不在 A，而是 B」這個句型的任何變形（含「真正的關鍵不是⋯⋯而是」「與其說 A，不如說 B」）。就算原文裡有這樣的句子也不准照抄，改成直述句講你的判斷。
 - 語氣：專業但口語，句子短、長短交錯，不要條列、不要小標、不要開場定型句。嚴禁行銷腔與標題黨（「必讀」「震撼」「顛覆認知」「一文看懂」「太神了」）。
 - Emoji：最多 1 個，或完全不用。
 - Hashtags：0-2 個，放在最後，用技術圈慣用的英文標籤（例如 #EngineeringLeadership）。
-- 長度：80-120 個中文字，這是硬上限（單則推文的額度，後面系統還要接原文連結）。寫完後自己數一遍，超過就刪掉最不重要的那句，寧可短也不要超。不要自己貼網址。
+- 長度：180-260 個中文字。可以分成 2 段（中間空一行），第一段講反應與文章的點，第二段講你的判斷與為什麼轉給團隊。多出來的篇幅要拿來多講一個具體的點，不是把同一件事講兩次——寧可寫得短，也不要用形容詞灌水。不要自己貼網址，系統會接上原文連結。
 """
 
 
@@ -443,16 +444,17 @@ Article content:
 - Persona: you are a senior engineering director who has run several engineering teams, made the architecture calls, and eaten the consequences. You just read this article and think your team should see it. Write one tweet recommending it, in the first person.
 - Sounding like a real person is the top requirement here (the humanization guidelines carry the highest weight). This should read like something a busy practitioner typed between meetings, not like a brand account posting a summary. A personal reaction - agreement, surprise, or a reservation - is welcome.
 - Do NOT invent company names, numbers, job details, or experiences that never happened (guideline 16). Personal experience stops at "I've been on the wrong side of this call before". Any number from the article must clearly read as the author's data ("they cut X by 70%"), never as your own team's win.
-- Structure (about three sentences, keep this order):
+- Structure (four to six sentences, keep this order):
   1. Open with your reaction or judgment, never with a summary of the article.
   2. Name the one thing worth reading, specific enough that it's obvious you read it - cite the actual practice, tradeoff, or number from the piece. Not "great insights" or "a must-read".
-  3. Say why you'd send it to your team, or where you'd push back. Disagreeing in part is fine.
+  3. Add your own read on it: how this actually plays out in practice, what conditions it depends on, or how you'd explain it to your team. This sentence is the value you add on top of the article - do not just restate the article in different words.
+  4. Close on why you'd send it to your team, or where you'd push back. Disagreeing in part is fine.
 - The tweet must use "I" at least once. This is a hard requirement.
 - No analyst-report phrasing: avoid "this highlights", "this underscores", "what this really shows is", "it's not about X, it's about Y", and every variant of that last one - even if the article itself uses it.
 - Tone: conversational but sharp. Short sentences, varied length. No bullets, no headers, no stock openers. No marketing voice or clickbait ("must-read", "game-changer", "mind-blowing", "everything you need to know").
 - Emoji: at most 1, or none.
 - Hashtags: 0-2, at the end, the ones engineering leaders actually use (e.g. #EngineeringLeadership).
-- Length: 30-45 words AND under 240 characters, hard cap - a tweet is limited to 280 characters and the system appends the article link afterwards, so you must leave room. Count before you finish and cut the weakest sentence if you are over. Do not paste a URL yourself.
+- Length: 90-140 words. You may split it into 2 paragraphs (blank line between): reaction plus the article's point, then your own read and why you'd share it. Use the extra room to make one more concrete point, not to say the same thing twice - if you run out of substance, write it shorter rather than padding with adjectives. Do not paste a URL yourself, the system appends the article link.
 """
 
 

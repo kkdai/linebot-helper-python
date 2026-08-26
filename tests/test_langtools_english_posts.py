@@ -92,9 +92,7 @@ def test_twitter_forbids_fabricated_experience():
 def test_twitter_single_tweet_constraints():
     """單則推文限制：字數、emoji、hashtag、不自己貼網址。"""
     section = _twitter_section()
-    assert "30-45 words" in section
-    assert "under 240 characters" in section
-    assert "280 characters" in section
+    assert "90-140 words" in section
     assert "at most 1, or none" in section      # emoji
     assert "Hashtags: 0-2" in section
     assert "Do not paste a URL yourself" in section
@@ -104,7 +102,7 @@ def test_twitter_schema_description_carries_key_constraints():
     """structured output 會吃 field description，人設與字數也要寫在那。"""
     desc = SocialMediaPostsEN.model_fields["twitter"].description
     assert "senior engineering director" in desc
-    assert "30-45 words" in desc
+    assert "90-140 words" in desc
     assert "first-person" in desc
 
 

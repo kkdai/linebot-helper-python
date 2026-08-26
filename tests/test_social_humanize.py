@@ -152,10 +152,13 @@ def test_twitter_humanization_weighted_highest():
 
 
 def test_twitter_single_tweet_constraints():
-    """單則推文限制：字數上限、少 emoji、少 hashtag、不自己貼網址。"""
+    """單則推文限制：字數、少 emoji、少 hashtag、不自己貼網址。
+
+    字數是照使用者的 X Premium Basic 額度設定，不是免費帳號的 280 字元。
+    """
     prompt = _build_social_media_prompt(SAMPLE_TEXT)
     twitter_section = prompt.split("## 4. Twitter／X 資深軟體總監推薦文")[1]
-    assert "80-120 個中文字" in twitter_section
+    assert "180-260 個中文字" in twitter_section
     assert "最多 1 個" in twitter_section          # emoji
     assert "0-2 個" in twitter_section             # hashtag
     assert "不要自己貼網址" in twitter_section
@@ -174,7 +177,7 @@ def test_twitter_schema_description_carries_key_constraints():
     """schema 的 field description 也要帶人設與字數，structured output 會吃這段。"""
     desc = SocialMediaPosts.model_fields["twitter"].description
     assert "資深軟體總監" in desc
-    assert "80-120 個中文字" in desc
+    assert "180-260 個中文字" in desc
     assert "第一人稱" in desc
 
 
