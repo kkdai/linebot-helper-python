@@ -12,10 +12,10 @@
 | 項目 | 狀態 |
 |---|---|
 | 部署 | Cloud Run `us-central1`，no-cpu-throttling |
-| 測試 | 167 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
+| 測試 | 178 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
 | 模型 | `gemini-3.1-flash-lite`（Vertex AI，`global` region） |
 | 持久化 | Firestore（chat sessions、bookmarks、reports、batch jobs） |
-| 目前焦點 | 網址分享卡片的文案品質（剛完成 Twitter／X 卡片） |
+| 目前焦點 | P0 已完成，下一步是 P1 爬取結果快取 |
 
 ---
 
@@ -36,15 +36,22 @@
 
 排序依據：**先修會咬人的、再省錢、再補安全網、最後才加功能。**
 
-### P0 — 已知缺陷（建議最先做）
+### P0 — 已知缺陷 — Completed（2026-08-26）
 
-| # | 項目 | 問題 | 估時 | 狀態 |
-|---|---|---|---|---|
-| 1 | 多網址訊息只回得出第一個 | `handle_url_message` 對每個網址產生 5 則訊息，結尾 `results[:5]` 直接截斷。傳 2 個網址時，第 2 個的爬取與 Gemini 呼叫已經花掉了，使用者卻什麼都收不到 | 0.5d | Not Started |
-| 2 | LINE 訊息額度已用滿 | carousel + 4 則純文字 = 5，剛好卡在單次上限。再加任何平台或提示都會擠掉東西，等於這個流程沒有擴充空間 | 1d | Not Started |
+| # | 項目 | 問題 | 狀態 |
+|---|---|---|---|
+| 1 | 多網址訊息只回得出第一個 | `handle_url_message` 對每個網址產生 5 則訊息，結尾 `results[:5]` 直接截斷 | Completed |
+| 2 | LINE 訊息額度已用滿 | carousel + 4 則純文字 = 5，剛好卡在單次上限，再加東西就會被擠掉 | Completed |
 
-> 1 和 2 是同一個結構問題，建議一起處理。方向：純文字版改成按需（carousel 已有複製按鈕），
-> 多網址改用 reply 一則 + push 其餘，把額度讓出來。
+作法：加 `_reply_with_overflow` / `_push_in_chunks`——前 5 則走 reply（不計 push 額度），
+其餘自動分批 push。單一網址的常見情境行為完全不變、不動用 push；多網址不再掉訊息；
+日後新增平台會自動溢位到 push 而不是被平台丟掉。
+
+順帶修掉同類的兩處：`handle_url_push_message`（訊息數等於網址數，上限只擋在 `/urls`
+端點那頭）與 `handle_agentic_vision_with_prompt`（回覆 + N 張標註圖，張數不固定）。
+
+回歸測試見 `tests/test_line_message_overflow.py`——把 `results[:5]` 放回去會直接失敗
+（10 則只送出 5 則）。
 
 ### P1 — 成本與延遲
 
@@ -84,6 +91,7 @@
 
 | 日期 | 決策 | 原因 |
 |---|---|---|
+| 2026-08-26 | 訊息一律走「reply 前 5 則 + push 溢位」，不再截斷 | 截斷會讓已付出的爬取與 Gemini 成本白費 |
 | 2026-08-26 | Twitter 文案採資深軟體總監人設，字數依 X Premium Basic 放寬 | 使用者帳號無 280 字元限制 |
 | 2026-08-26 | Threads 從「脆友吐槽」改為「專業觀點」 | 對外文案要維持專業形象 |
 | 2026-08-19 | 研究報告改存 Firestore | Cloud Run instance 回收會讓記憶體版失效 |

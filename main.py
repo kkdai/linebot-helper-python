@@ -243,6 +243,57 @@ def _schedule_event_processing(coro, event_desc: str) -> None:
     task.add_done_callback(_on_done)
 
 
+# LINE 的 reply/push 單次都最多帶 5 則訊息，超過的部分平台直接不收。
+LINE_MESSAGE_LIMIT = 5
+
+
+def _chunk_messages(messages: list) -> list:
+    """把訊息切成每組最多 LINE_MESSAGE_LIMIT 則。"""
+    return [messages[i:i + LINE_MESSAGE_LIMIT]
+            for i in range(0, len(messages), LINE_MESSAGE_LIMIT)]
+
+
+async def _push_in_chunks(user_id: str, messages: list, context: str,
+                          api=None) -> None:
+    """用 push 送出訊息，超過單次上限就分批。
+
+    api 可傳入另一個 AsyncLineBotApi（例如 /hn /hf 各自的 channel token）。
+    單批失敗只記錯不中斷，避免前面已送出的內容因為後面壞掉而看不到。
+    """
+    client = api if api is not None else line_bot_api
+    for batch in _chunk_messages(messages):
+        try:
+            await client.push_message(user_id, batch)
+        except Exception as e:
+            logger.error(f"Push failed ({context}): {e}", exc_info=True)
+
+
+async def _reply_with_overflow(event, user_id: Optional[str], messages: list,
+                               context: str) -> None:
+    """前 5 則走 reply，其餘用 push 補送。
+
+    reply 不計入 push 額度，所以常見的單一網址（剛好 5 則）完全不會用到 push；
+    只有真的超量時才補 push。這是為了修掉先前 `results[:5]` 的行為：
+    使用者一次傳兩個網址時，第二個網址的爬取與 Gemini 呼叫都已經花掉了，
+    產出的訊息卻被直接截掉，什麼都收不到。
+    """
+    if not messages:
+        return
+
+    await line_bot_api.reply_message(event.reply_token, messages[:LINE_MESSAGE_LIMIT])
+
+    overflow = messages[LINE_MESSAGE_LIMIT:]
+    if not overflow:
+        return
+    if not user_id:
+        # 沒有 user_id（例如群組來源）就補不了 push，至少留下紀錄而不是無聲丟棄
+        logger.warning(
+            f"Dropped {len(overflow)} overflow message(s) ({context}): no user_id to push to")
+        return
+
+    await _push_in_chunks(user_id, overflow, context)
+
+
 @app.post("/")
 async def handle_webhook_callback(request: Request):
     global app_base_url
@@ -562,6 +613,9 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
     copy-to-clipboard buttons, followed by 4 text messages containing the raw text copy of
     the posts for easy copying on computers.
 
+    每個網址產生 5 則訊息，剛好是 LINE 單次 reply 的上限，所以多網址時由
+    _reply_with_overflow 把第 2 個網址之後的訊息改用 push 補送（先前是直接截掉）。
+
     Args:
         event: LINE message event
         urls: List of URLs to process
@@ -649,8 +703,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             reply_msg = TextSendMessage(text=f"{url}\n\n{error_msg}")
             results.append(reply_msg)
 
-    if results:
-        await line_bot_api.reply_message(event.reply_token, results[:5])
+    await _reply_with_overflow(
+        event, getattr(event.source, "user_id", None), results, "URL 社群文案")
 
 
 
@@ -908,7 +962,8 @@ async def handle_agentic_vision_with_prompt(event: MessageEvent, user_id: str, p
             if img_msg:
                 messages.append(img_msg)
 
-        await line_bot_api.push_message(user_id, messages)
+        # 回覆 + N 張標註圖，張數不固定，超過 5 則要分批
+        await _push_in_chunks(user_id, messages, "圖片分析")
 
     except Exception as e:
         logger.error(f"Agentic vision with prompt error: {e}", exc_info=True)
@@ -1649,9 +1704,12 @@ async def handle_english_post_postback(event: PostbackEvent, data: dict, user_id
         th_text_msg = TextSendMessage(text=f"💬 Threads Post:\n--------------------\n{th_text_en}")
         tw_text_msg = TextSendMessage(text=f"🐦 Twitter/X Post:\n--------------------\n{tw_text_en}")
 
-        # carousel + 4 則純文字 = 5，剛好用滿 LINE push 的單次訊息上限
-        await line_bot_api.push_message(
-            user_id, [carousel_msg, fb_text_msg, li_text_msg, th_text_msg, tw_text_msg])
+        # carousel + 4 則純文字 = 5，剛好用滿 LINE push 的單次上限，
+        # 之後若再加平台會自動分批而不是被平台丟掉
+        await _push_in_chunks(
+            user_id,
+            [carousel_msg, fb_text_msg, li_text_msg, th_text_msg, tw_text_msg],
+            "英文貼文")
     except Exception as e:
         logger.error(f"English post generation failed for {url}: {e}", exc_info=True)
         error_msg = LineService.format_error_message(e, "產生英文貼文")
@@ -1755,7 +1813,10 @@ async def handle_url_push_message(title: str, urls: list, linebot_user_id: str, 
             # Create async client for this specific token
             temp_async_client = AiohttpAsyncHttpClient(session, timeout=60)
             temp_line_bot_api = AsyncLineBotApi(linebot_token, temp_async_client)
-            await temp_line_bot_api.push_message(linebot_user_id, results)
+            # 訊息數等於網址數。/urls 端點雖然擋在 5 個以內，但那個上限離這裡很遠，
+            # 分批送才不會依賴呼叫端記得檢查。
+            await _push_in_chunks(linebot_user_id, results, "URL 推播摘要",
+                                  api=temp_line_bot_api)
         except Exception as push_error:
             logger.error(f"Failed to push message: {push_error}")
             return "ERROR"
