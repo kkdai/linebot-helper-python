@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 VERTEX_PROJECT = os.getenv('GOOGLE_CLOUD_PROJECT')
 VERTEX_LOCATION = os.getenv('GOOGLE_CLOUD_LOCATION', 'global')
 
+# 聊天模型。必須是 stable 模型：preview 模型會無預警下架
+# （gemini-3-pro-preview 即為一例，見 tests/test_chat_session_model.py）。
+CHAT_MODEL = "gemini-3.7-flash"
+
 
 class ChatSessionManager:
     """
@@ -101,7 +105,7 @@ class ChatSessionManager:
 
             # 創建 chat session（使用共享的 client）
             chat = self.client.chats.create(
-                model="gemini-3-pro-preview",
+                model=CHAT_MODEL,
                 config=config
             )
 

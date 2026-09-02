@@ -3,7 +3,7 @@
 > 專案總覽與現況。細節不寫在這裡：功能設計看 [`docs/superpowers/specs/`](../superpowers/specs/)，
 > 執行細節看 `docs/02_implement/sprint-*.md`（尚未建立）。
 
-**最後更新**：2026-08-26
+**最後更新**：2026-09-03
 
 ---
 
@@ -12,10 +12,10 @@
 | 項目 | 狀態 |
 |---|---|
 | 部署 | Cloud Run `us-central1`，no-cpu-throttling |
-| 測試 | 192 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
+| 測試 | 196 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
 | 模型 | `gemini-3.1-flash-lite`（Vertex AI，`global` region） |
 | 持久化 | Firestore（chat sessions、bookmarks、reports、batch jobs） |
-| 目前焦點 | P0、P1-3 已完成，下一步是 P1-4 用量與成本觀測 |
+| 目前焦點 | 影片問答＋模型分級升級，設計見 [video-qa](../superpowers/specs/2026-09-02-video-qa-design.md)（P1-4 併入其中一起做） |
 
 ---
 
@@ -40,6 +40,7 @@
 
 | # | 項目 | 問題 | 狀態 |
 |---|---|---|---|
+| 0 | 聊天功能無法使用 | `loader/chat_session.py` 寫死的 `gemini-3-pro-preview` 已從 Vertex AI 下架，真實路徑回 404；該檔例外處理直接 raise。README 首項功能整段時間不能用，且無測試覆蓋 | Completed（2026-09-03） |
 | 1 | 多網址訊息只回得出第一個 | `handle_url_message` 對每個網址產生 5 則訊息，結尾 `results[:5]` 直接截斷 | Completed |
 | 2 | LINE 訊息額度已用滿 | carousel + 4 則純文字 = 5，剛好卡在單次上限，再加東西就會被擠掉 | Completed |
 
@@ -52,6 +53,11 @@
 
 回歸測試見 `tests/test_line_message_overflow.py`——把 `results[:5]` 放回去會直接失敗
 （10 則只送出 5 則）。
+
+P0-0 作法：模型抽成模組常數 `CHAT_MODEL`，改用實測可用的 `gemini-3.7-flash`。
+回歸測試見 `tests/test_chat_session_model.py`——守的是 bug class 而非單一字串：
+斷言不得使用 preview／實驗模型（preview 會無預警下架，這次就是這樣壞的），
+且必須在實測可用清單內。
 
 ### P1 — 成本與延遲
 
@@ -96,6 +102,7 @@ Firestore 不可用或讀寫出錯時安靜降級成直接爬。`use_cache=False
 
 | 日期 | 決策 | 原因 |
 |---|---|---|
+| 2026-09-03 | 模型一律不用 preview／實驗版，並以測試強制 | `gemini-3-pro-preview` 無預警下架把聊天功能弄壞，且完全沒被發現 |
 | 2026-08-26 | 爬取快取 TTL 設 24 小時，而非比照報告的 7 天 | 存的是網頁當下內容，新聞類頁面放太久會拿到舊資料 |
 | 2026-08-26 | 訊息一律走「reply 前 5 則 + push 溢位」，不再截斷 | 截斷會讓已付出的爬取與 Gemini 成本白費 |
 | 2026-08-26 | Twitter 文案採資深軟體總監人設，字數依 X Premium Basic 放寬 | 使用者帳號無 280 字元限制 |
