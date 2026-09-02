@@ -40,6 +40,9 @@ from loader.langtools import (
 from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
+from tools.youtube_tool import ask_youtube_video
+from services.usage_meter import get_usage_meter
+from services.video_qa import get_video_qa_sessions, should_exit_video_mode
 from google import genai as live_genai
 from google.genai import types as live_types
 
@@ -576,6 +579,10 @@ async def handle_message_event(event: MessageEvent):
             logger.info(f"UID: {user_id}")
             message_text = event.message.text
 
+            # 影片問答模式：已處理就結束，未處理（脫離）則交還原路
+            if user_id and await handle_video_qa_message(event, user_id, message_text):
+                return
+
             # Check if user has a pending agentic vision request
             if user_id in pending_agentic_vision:
                 await handle_agentic_vision_with_prompt(event, user_id, message_text)
@@ -599,10 +606,16 @@ async def handle_message_event(event: MessageEvent):
                 await handle_text_message_via_orchestrator(event, user_id)
 
         elif isinstance(event.message, ImageMessage):
+            if event.source.user_id:
+                get_video_qa_sessions().exit(event.source.user_id)
             await handle_image_message(event)
         elif isinstance(event.message, AudioMessage):
+            if event.source.user_id:
+                get_video_qa_sessions().exit(event.source.user_id)
             await handle_audio_message(event)
         elif isinstance(event.message, LocationMessage):
+            if event.source.user_id:
+                get_video_qa_sessions().exit(event.source.user_id)
             await handle_location_message(event)
 
 
@@ -686,6 +699,17 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             }
 
             carousel_msg = CustomFlexSendMessage(alt_text="📝 社群爆款文案摘要", contents=carousel_flex)
+            if is_youtube_url(url):
+                # YouTube 網址額外附上「問這部影片」入口，讓使用者能連續追問影片內容
+                carousel_msg.quick_reply = QuickReply(items=[
+                    QuickReplyButton(
+                        action=PostbackAction(
+                            label="🎬 問這部影片",
+                            data=json.dumps({"action": "video_qa", "url": url}),
+                            display_text="🎬 問這部影片",
+                        )
+                    ),
+                ])
             results.append(carousel_msg)
 
             # Construct separate text messages for easy copying on computers
@@ -1361,6 +1385,100 @@ async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
             await line_bot_api.push_message(user_id, [error_msg])
 
 
+def build_video_qa_quick_reply() -> QuickReply:
+    """影片問答模式的「結束」按鈕。
+
+    每則答案都掛著它——手動脫離比任何自動判斷都可靠。
+    """
+    return QuickReply(items=[
+        QuickReplyButton(
+            action=PostbackAction(
+                label="🚪 結束問影片",
+                data=json.dumps({"action": "video_qa_exit"}),
+                display_text="🚪 結束問影片",
+            )
+        )
+    ])
+
+
+async def handle_video_qa_enter_postback(event: PostbackEvent, data: dict, user_id: str):
+    """進入影片問答模式。刻意不呼叫 Gemini——按個按鈕不該花錢。"""
+    url = data.get("url")
+    if not url or not user_id:
+        logger.error("Missing url or user_id in video_qa postback")
+        return
+
+    get_video_qa_sessions().enter(user_id, url)
+    await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+        text=("🎬 已進入影片問答模式\n"
+              "接下來直接打字問我這部影片的內容就好，例如\n"
+              "「他有講到定價嗎？」「XR 眼鏡那段在哪裡？」\n\n"
+              "貼新網址或打指令會自動離開。"),
+        quick_reply=build_video_qa_quick_reply(),
+    )])
+
+
+async def handle_video_qa_exit_postback(event: PostbackEvent, user_id: str):
+    """手動離開影片問答模式。"""
+    get_video_qa_sessions().exit(user_id)
+    await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+        text="🚪 已結束影片問答。有需要隨時再貼影片連結給我。"
+    )])
+
+
+async def handle_video_qa_message(event: MessageEvent, user_id: str, text: str) -> bool:
+    """處理影片模式中的文字訊息。
+
+    回傳 True 表示已處理，False 表示交還給原本的訊息路由。
+
+    判斷順序是刻意的——脫離檢查在配額檢查之前。使用者貼新網址想換主題，
+    不該因為影片配額用完就被擋下來，那是兩件不相干的事。
+    """
+    sessions = get_video_qa_sessions()
+    session = sessions.get(user_id)
+    if session is None:
+        return False
+
+    # 1) 脫離檢查優先
+    if should_exit_video_mode(text):
+        sessions.exit(user_id)
+        return False
+
+    # 2) 配額檢查
+    meter = get_usage_meter()
+    allowed, remaining = meter.check_budget(user_id)
+    if not allowed:
+        sessions.exit(user_id)
+        await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+            text=(f"📊 今日影片問答用量已達上限（已用 "
+                  f"${meter.spent_today(user_id):.2f}）。\n"
+                  "明天會重置。影片摘要不受影響，還是可以用。")
+        )])
+        return True
+
+    # 3) 提問。長片實測 26–53 秒，先開 loading 動畫（不消耗 reply token）
+    await LineService.show_loading_animation(user_id)
+    result = ask_youtube_video(session["url"], text)
+
+    if result["status"] != "success":
+        await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+            text=f"⚠️ {result.get('error_message', '無法回答這個問題')}",
+            quick_reply=build_video_qa_quick_reply(),
+        )])
+        return True
+
+    meter.record(user_id, "video_qa", result["usage"])
+    sessions.bump(user_id)
+
+    await _reply_with_overflow(
+        event, user_id,
+        [TextSendMessage(text=result["answer"],
+                         quick_reply=build_video_qa_quick_reply())],
+        "video_qa",
+    )
+    return True
+
+
 async def handle_image_analyze_postback(event: PostbackEvent, data: dict, user_id: str):
     """Handle image analysis postback from quick reply"""
     try:
@@ -1441,6 +1559,15 @@ async def handle_postback_event(event: PostbackEvent):
         # Handle YouTube summary requests
         if action_value == "youtube_summary":
             await handle_youtube_summary_postback(event, data)
+            return
+
+        # Handle entering/exiting video Q&A mode
+        if action_value == "video_qa":
+            await handle_video_qa_enter_postback(event, data, user_id)
+            return
+
+        if action_value == "video_qa_exit":
+            await handle_video_qa_exit_postback(event, user_id)
             return
 
         # Handle read aloud requests
