@@ -9,6 +9,8 @@ import os
 import time
 from unittest.mock import patch
 
+import pytest
+
 os.environ.setdefault("GOOGLE_AI_API_KEY", "fake-key-for-test")
 
 from services.session_manager import SessionManager  # noqa: E402
@@ -154,3 +156,16 @@ def test_firestore_store_degrades_gracefully_without_credentials():
         assert store.load("k") is None
         store.delete("k")
         assert store.load_all() == {}
+
+
+def test_load_swallow_errors_false_reraises_read_failure():
+    """swallow_errors=False 讓呼叫方（例如 usage_meter.record()）能區分
+    「文件不存在」（回 None）與「讀取失敗」（往外拋）——預設值仍是 True，
+    既有呼叫方的降級行為不受影響。"""
+    from services import firestore_store
+
+    store = firestore_store.FirestoreKVStore("test_collection", client=object())
+    with patch.object(store, "_doc_ref", side_effect=RuntimeError("read failed")):
+        assert store.load("k") is None  # 預設仍優雅降級
+        with pytest.raises(RuntimeError):
+            store.load("k", swallow_errors=False)

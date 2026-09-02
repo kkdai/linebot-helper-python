@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 from google import genai
 from google.genai import types
 
+from config.agent_config import get_agent_config
 from .firestore_store import FirestoreKVStore, _sanitize_key
 
 logger = logging.getLogger(__name__)
@@ -226,7 +227,7 @@ class BatchService:
             config = types.CreateBatchJobConfig(**config_args)
             
             job = self.client.batches.create(
-                model="gemini-3.1-flash-lite",
+                model=get_agent_config().fast_model,
                 src=uploaded_file.name,
                 config=config
             )

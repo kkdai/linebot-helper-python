@@ -37,7 +37,7 @@
 
 ### 二、thinking token 是成本主角，且按 output 計價
 
-同一支 10 分鐘影片，`gemini-3.5-flash-lite`：
+同一支 10 分鐘影片，`gemini-3.5-flash-lite`，最初一次測試：
 
 | 模式 | in | out（含 thinking） | 成本 |
 |---|---|---|---|
@@ -46,29 +46,75 @@
 | AGENTIC + `thinking_level="LOW"` | 2,216 | 638 | $0.0023（比 static 便宜 7.4 倍） |
 
 agentic 把影片從 input 移除（54,546 → 2,216），但改用「思考」導航，而
-thinking token 按 output 計價（$2.50/M，是 input 的 8.3 倍）。
+thinking token 按 output 計價（$2.50/M，是 input 的 8.3 倍）。這一點站得住：
+thinking token 確實是成本主角，也確實按 output 計價。
 
-**漏設 `thinking_level` 不會報錯、不會有任何徵兆，只有帳單會變。**
-這是測試策略①存在的唯一理由。
+**但上表每格只測了一次，不是重複實驗。** 結論三的 27 次對照實驗顯示，
+同一組 AGENTIC + `thinking_level="LOW"` 設定本身就會在 ~0 與
+~35,000–37,000 thinking tokens 之間跳動——這張表的 $0.0023 很可能只是剛好
+抽到低點、$0.0946 剛好抽到高點，不是「設不設 `thinking_level` 決定成本
+高低」。可重複驗證的結論見結論三。
 
-### 三、長片上 thinking_level 會被忽略
+**漏設 `thinking_level` 仍然不會報錯、不會有任何徵兆**——這一點不受結論三
+影響，是 SDK 行為，與是否尖峰無關。這仍是測試策略①存在的理由：不是因為
+漏設會讓成本固定變某個倍數，而是因為漏設本身沒有任何機制會提醒你。
 
-2 小時影片（Google I/O '25 keynote），同樣設 `thinking_level="LOW"`：
+### 三、thinking token 是伺服器端非決定性，與影片長度無關
 
-| 影片長度 | thinking tokens | 每次成本 | 延遲 |
-|---|---|---|---|
-| 10 分鐘 | 0 | $0.0023 | ~10s |
-| 2 小時 | 359,961 | **$0.9067** | 26–53s |
-| （static 估算，2h） | — | ~$0.196 | — |
+**原先的推測（已被推翻，留供對照）**：最初的 spike 只各測一次就下結論——
+10 分鐘影片 `thinking_tokens=0`（$0.0023），2 小時 Google I/O '25 keynote
+`thinking_tokens=359,961`（$0.9067，延遲 26–53s）。兩次觀測剛好落在不同
+結果上，於是推論「長片上 `thinking_level` 會被忽略」，並據此算出「長片上
+agentic 比 static 貴約 4.6 倍」「公告宣稱的成本降 66% 不成立」。
 
-長片上 agentic 比 static 貴約 4.6 倍。公告宣稱的「成本降 66%」在 Vertex 的
-價格結構下，長片不成立（token 總數確實降約 40%，但貴的那部分變多了）。
+**這個推論是錯的。** Task 4 的 27 次對照實驗（同一支 10 分鐘影片、同一組
+設定，`.superpowers/sdd/2026-09-03-video-qa-and-model-tiering/thinking_round2.txt`，
+摘要見同目錄 `task-4-report.md`）證明問題與影片長度完全無關：
+
+| 呼叫 | thinking_tokens |
+|---|---|
+| 1 | 0 |
+| 2 | 0 |
+| 3 | 34,911 |
+| 4 | 35,122 |
+| 5 | 37,410 |
+
+同一支影片、同一組參數，連續呼叫在 ~0 與 ~35,000–37,000 之間跳動，中間沒有
+值——不是漸進分布，是兩個叢集。**這是伺服器端非決定性，不是影片長度、不是
+任何客戶端可控參數。**
+
+排除清單（27 次呼叫，皆用正式版 prompt `YOUTUBE_PROMPTS["normal"]` /
+`ASK_PROMPT_TEMPLATE`）：
+
+| 排除的假說 | 測試方式 | 結果 |
+|---|---|---|
+| `thinking_level` 沒設對 | `LOW` / `MINIMAL` / 省略 `thinking_config`，各 6 次 | 三者平均成本 $0.00137–$0.00146／次，量測不出差異 |
+| 該用 `thinking_budget` 取代 `thinking_level` | `thinking_budget=0`，6 次 | 平均 $0.00137／次，與上面三者量測不出差異 |
+| 兩者一起帶，取保險 | `thinking_budget` + `thinking_level` 並用 | 伺服器直接 `400 INVALID_ARGUMENT`——不能並用 |
+| prompt 太複雜觸發思考 | 同一份正式版 prompt：前一批 4 次中 3 次尖峰，本批 27 次中 0 次尖峰 | 尖峰與 prompt 複雜度無穩定關聯——同一 prompt 在不同批次表現完全不同 |
+
+唯一觀察到「決定性」的選項是 `media_processing="STATIC"`：0/6 尖峰，成本穩
+定在 $0.0165–$0.0167／次。但 STATIC 會把 `tool_use_tokens` 打成 0——等於
+整個關掉 agentic 影片導航，不是「同樣功能換一種穩定模式」，是換掉功能本身。
+
+**誠實的成本圖像**：正常情況約 $0.0014／次；一旦尖峰，成本約是正常情況的
+60 倍（約 $0.08 上下，與最初單次觀測的 $0.0946、round 1 實測的 $0.0846 同一
+量級）。尖峰無法從客戶端預測，也無法從客戶端阻止。`services/usage_meter.py`
+與 `tools/youtube_tool.py` 的 `THINKING_TOKENS_WARN_THRESHOLD` 警告 log
+正是因為這樣才存在——client 端擋不住尖峰，能做的只有讓它在 log／用量記錄裡
+被看見。
+
+**決策：維持 `thinking_level="LOW"`。** 不是因為它比較穩定（並沒有），而是
+它是唯一已經測過完整測試套件、且與 `thinking_budget=0`／省略 `thinking_config`
+相比量測不出任何優劣差異的既有實作——換一個沒有實測優勢的參數，只是把
+「已測試過的行為」換成「沒測試過的行為」。詳見 `task-4-report.md`
+「Final ruling and commit」一節。
 
 ### 四、模型可用性（實測）
 
 | 模型 | 結果 |
 |---|---|
-| `gemini-3.7-flash` | OK。但 agentic 影片會忽略 `thinking_level`（設 LOW 仍燒 36,354 thinking tokens，10 分鐘影片 $0.1389，是 3.5-flash-lite 的 60 倍），且易觸發 429 |
+| `gemini-3.7-flash` | OK。單次觀測到一次 thinking token 尖峰（36,354，$0.1389）——未針對 3.7-flash 重複實驗，不排除與結論三同一種非決定性；獨立於此，測試中該模型較易觸發 429 |
 | `gemini-3.6-flash` | OK |
 | `gemini-3.5-flash-lite` | OK。影片唯一划算的選擇 |
 | `gemini-3.1-flash-lite` | OK，但不在 agentic 支援名單，設 AGENTIC 會靜默降級為 STATIC |
@@ -121,7 +167,9 @@ check_budget(user_id) -> (bool, remaining)
 ```
 
 配額以**實際花費**計，不以影片長度計——用長度就得先查影片時長（需另接
-YouTube Data API），且長度與花費非線性（10 分鐘 $0.0023、2 小時 $0.91）。
+YouTube Data API），而且長度不是可靠的預算代理變數：同一支影片、同一組
+設定，單次花費本身就在 ~$0.0014 與 ~$0.08 間跳動（見結論三），即使查得到
+長度也算不出花費。
 
 同時完成 roadmap P1-4「用量與成本觀測」。
 
@@ -131,10 +179,25 @@ YouTube Data API），且長度與花費非線性（10 分鐘 $0.0023、2 小時
 ### ③ `services/video_qa.py`（新）
 
 記住使用者目前在問哪支影片。因 context 保不住，**不存 API history**，只存：
-影片網址、進入時間、純文字問答紀錄（供使用者閱讀，不回傳給模型）。
+影片網址、進入時間、提問次數。TTL 30 分鐘。
 
-**包一層 `services/session_manager.py`**，不自行實作持久化——TTL、Firestore、
-序列化該檔已具備且有測試（`tests/test_firestore_persistence.py`）。TTL 30 分鐘。
+**直接使用 `services/firestore_store.py` 的 `FirestoreKVStore("video_qa_sessions")`**，
+不包 `SessionManager`。
+
+原設計為「包一層 `SessionManager`」，實作前檢視其內部後改為此作法。
+`SessionManager` 是繞著「一個 Gemini chat 物件 + 會裁切的對話歷史」設計的，
+與本用途有四個摩擦點，前兩點會實際出錯：
+
+1. `_persist_session()` 不持久化 `metadata`（只存 `user_id` / `history` /
+   `created_at` / `last_active`）→ 影片網址放 `metadata` 會在 instance 重啟後消失。
+2. `add_to_history()` 超過 `max_history_length` 會保留最後 N 則 → 網址放
+   `history[0]` 會在第 N 次提問後被裁掉。
+3. `get_or_create_session()` 必填 `chat_factory`，但影片問答沒有 chat 物件。
+4. `get_session_manager()` 是單例，與聊天共用 `chat_sessions` collection 及
+   同一個 `_sessions` dict → 同一個 user_id 會相互覆蓋。
+
+`FirestoreKVStore` 同樣是現成且有測試覆蓋（`tests/test_firestore_persistence.py`）
+的元件，且形狀相符——影片模式要存的就是「使用者 → 影片」的 KV 對應。
 
 ### ④ `main.py`（改）
 
@@ -145,7 +208,8 @@ YouTube Data API），且長度與花費非線性（10 分鐘 $0.0023、2 小時
 
 ### 明確不做
 
-- 不碰 `loader/chat_session.py` 的 history 機制（語意不同，且零測試）。
+- 不碰 `loader/chat_session.py` 的 history 機制（語意不同）。模型已於 2026-09-03
+  修復為 `gemini-3.7-flash`（PR #17），本設計不再變更該檔。
 - 不碰 `services/voice_live.py`、`tools/tts_tool.py` 的模型（見模型分級）。
 - 不做影片上傳（LINE `VideoMessage`）——需 GCS bucket、生命週期規則、
   記憶體重估，與本設計無關，另案。
@@ -213,13 +277,13 @@ YouTube 摘要按鈕組新增 quick reply：
 硬寫模型字串的是 `tools/` 與 `loader/`（不走 ADK、直接呼叫 SDK 的路徑）。
 收斂工作主要在這兩層。
 
-### Tier 1 — `gemini-3.7-flash`（4 處字面值，3 個邏輯位置）
+### Tier 1 — `gemini-3.7-flash`（剩 3 處字面值，2 個邏輯位置）
 
-| 位置 | 現況 | 理由 |
-|---|---|---|
-| `loader/chat_session.py:104` | `gemini-3-pro-preview` | **404，修故障**；實測 grounding 正常 |
-| `config/agent_config.py:22,58`（`orchestrator_model`） | `gemini-2.5-pro` | 過舊；回一字燒 1,066 tokens |
-| `tools/summarizer.py:227`（agentic vision） | `gemini-3-flash-preview` | preview → stable |
+| 位置 | 現況 | 理由 | 狀態 |
+|---|---|---|---|
+| `loader/chat_session.py` | ~~`gemini-3-pro-preview`~~ → `CHAT_MODEL = "gemini-3.7-flash"` | 404，修故障 | **已完成**（PR #17，2026-09-03） |
+| `config/agent_config.py:22,58`（`orchestrator_model`） | `gemini-2.5-pro` | 過舊；回一字燒 1,066 tokens | 待做 |
+| `tools/summarizer.py:227`（agentic vision） | `gemini-3-flash-preview` | preview → stable（實測仍存活，但同屬會下架的一類） | 待做 |
 
 原則是**維持既有能力層級，只做現代化**：現在是 pro 級的升到 3.7-flash，
 現在是 lite 級的升到 3.5-flash-lite。

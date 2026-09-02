@@ -491,7 +491,7 @@ class Orchestrator:
         prompt: Optional[str] = None
     ) -> OrchestratorResult:
         """
-        Process an image using Agentic Vision (gemini-3-flash-preview).
+        Process an image using Agentic Vision (see config.agent_config.orchestrator_model).
 
         Args:
             image_data: Image bytes

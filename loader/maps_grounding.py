@@ -6,6 +6,8 @@ import os
 import logging
 from typing import Optional
 
+from config.agent_config import get_agent_config
+
 logger = logging.getLogger(__name__)
 
 # Check if new google-genai SDK is available
@@ -83,9 +85,9 @@ async def search_nearby_places(
         )
 
         # Call API with Maps grounding
-        # Using gemini-3.1-flash-lite which supports Maps Grounding
+        # Uses fast_model (see config.agent_config) which supports Maps Grounding
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=query,
             config=types.GenerateContentConfig(
                 tools=[

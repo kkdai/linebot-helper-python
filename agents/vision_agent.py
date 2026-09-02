@@ -128,7 +128,7 @@ class VisionAgent:
         prompt: Optional[str] = None
     ) -> dict:
         """
-        Analyze an image using Agentic Vision (gemini-3-flash-preview + code execution).
+        Analyze an image using Agentic Vision (see config.agent_config.orchestrator_model, plus code execution).
 
         Args:
             image_data: Image data as bytes
