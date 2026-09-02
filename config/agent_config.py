@@ -35,9 +35,10 @@ class AgentConfig:
     # agentic vision（tools/summarizer.py）、grounded chat（loader/chat_session.py）。
     orchestrator_model: str = "gemini-3.7-flash"
     fast_model: str = "gemini-3.5-flash-lite"
-    # 影片固定用 3.5-flash-lite：唯一經端到端實測、成本穩定的模型；
-    # 3.7-flash 測試中較易觸發 429，且曾單次觀測到 thinking token 尖峰
-    # （非重複實驗，不是 3.7-flash 特有的行為）。判斷依據見
+    # 影片固定用 3.5-flash-lite：唯一經端到端驗證的模型，正常情況下較
+    # 便宜（~$0.0014／次）——但不代表成本穩定，結論三的 27 次對照實驗
+    # （~0 或 ~35,000-37,000 thinking tokens 間跳動）正是在這個模型上量到
+    # 的。3.7-flash 從未重複測試，且測試中較易觸發 429。見
     # docs/superpowers/specs/2026-09-02-video-qa-design.md 結論三、四。
     video_model: str = "gemini-3.5-flash-lite"
 
