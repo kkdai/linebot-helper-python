@@ -10,6 +10,8 @@ from typing import Literal
 import PIL.Image
 from io import BytesIO
 
+from config.agent_config import get_agent_config
+
 try:
     from google import genai
     from google.genai import types
@@ -156,7 +158,7 @@ def summarize_text(
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,
@@ -189,7 +191,8 @@ def analyze_image_agentic(
     prompt: str = "請仔細分析這張圖片，使用 agentic vision 能力來深入檢視細節，包括放大、裁切、標註等。使用繁體中文回答。"
 ) -> dict:
     """
-    Analyze an image using Gemini 3 Flash Agentic Vision with code execution.
+    Process an image using Agentic Vision (see config.agent_config.orchestrator_model)
+    with code execution.
 
     The model can write and execute Python code to zoom, crop, annotate,
     and perform detailed visual analysis on the image. Returns both text
@@ -224,7 +227,7 @@ def analyze_image_agentic(
         ]
 
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=get_agent_config().orchestrator_model,
             contents=contents,
             config=types.GenerateContentConfig(
                 temperature=0.5,
@@ -319,7 +322,7 @@ def analyze_image(
         ]
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=contents,
             config=types.GenerateContentConfig(
                 temperature=0.5,

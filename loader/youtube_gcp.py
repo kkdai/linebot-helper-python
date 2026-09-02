@@ -2,6 +2,8 @@ import os
 import logging
 import time
 
+from config.agent_config import get_agent_config
+
 # Use new google-genai SDK with Vertex AI
 try:
     from google import genai
@@ -159,7 +161,7 @@ async def load_transcript_from_youtube(youtube_url: str, mode: str = "normal") -
 
             # Generate content
             response = client.models.generate_content(
-                model="gemini-3.1-flash-lite",
+                model=get_agent_config().fast_model,
                 contents=contents,
                 config=GenerateContentConfig(
                     labels={"client_id": "info_helper"},

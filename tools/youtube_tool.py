@@ -9,6 +9,8 @@ import logging
 import time
 from typing import Literal
 
+from config.agent_config import get_agent_config
+
 try:
     from google import genai
     from google.genai.types import HttpOptions, Part, GenerateContentConfig
@@ -201,7 +203,7 @@ def summarize_youtube_video(
             ]
 
             response = client.models.generate_content(
-                model="gemini-3.1-flash-lite",
+                model=get_agent_config().video_model,
                 contents=contents,
                 config=GenerateContentConfig(
                     labels={"client_id": "info_helper"},

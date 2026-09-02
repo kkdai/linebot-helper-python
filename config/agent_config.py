@@ -22,6 +22,8 @@ class AgentConfig:
     # 禁止 preview／實驗模型——會無預警下架（見 gemini-3-pro-preview 404）。
     # 例外僅 services/voice_live.py 與 tools/tts_tool.py，見 tests/test_model_config.py。
     chat_model: str = "gemini-3.5-flash-lite"
+    # Tier 1「capable model」槽位。共用者：ADK orchestrator、
+    # agentic vision（tools/summarizer.py）、grounded chat（loader/chat_session.py）。
     orchestrator_model: str = "gemini-3.7-flash"
     fast_model: str = "gemini-3.5-flash-lite"
     # 影片必須用 3.5-flash-lite：3.7-flash 在 agentic 會忽略 thinking_level，

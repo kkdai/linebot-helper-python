@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 import requests
 
+from config.agent_config import get_agent_config
+
 # Use google-genai SDK for Vertex AI
 try:
     from google import genai
@@ -151,7 +153,7 @@ def summarized_yesterday_github_issues() -> str:
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,

@@ -43,7 +43,6 @@ def _source_files():
         yield rel, path
 
 
-@pytest.mark.xfail(reason="呼叫點遷移在 Task 3 完成", strict=True)
 def test_no_hardcoded_model_ids_outside_config():
     """模型 ID 只能出現在 config/agent_config.py。
 
