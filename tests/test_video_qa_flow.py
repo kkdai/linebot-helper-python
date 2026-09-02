@@ -29,19 +29,15 @@ VIDEO = "https://www.youtube.com/watch?v=o8NiE3XMPrM"
 
 
 @pytest.fixture(autouse=True)
-def _ensure_line_bot_api():
-    """main.line_bot_api 只在 FastAPI startup 時才會被賦值。
-
-    這支檔案獨立執行（不經過任何觸發 startup 的測試）時它還是 None，
-    這裡補一個假物件讓 `patch.object(main.line_bot_api, ...)` 有東西可以掛。
-    跑全套測試、line_bot_api 已經是真物件時，這裡什麼都不做。
+def _fake_line_bot_api(monkeypatch):
+    """main.line_bot_api 是模組層級的全域，只在 FastAPI startup 時被賦值一次，
+    之後不會重置。誰先跑（例如 test_report_route.py 觸發過 TestClient startup）
+    會讓它變成真物件，這支檔案不該依賴那個順序——不管其他檔案跑了什麼，
+    一律換成假物件；monkeypatch 保證測試結束後自動還原成原本的值。
     """
-    if main.line_bot_api is None:
-        with patch.object(main, "line_bot_api",
-                           MagicMock(reply_message=AsyncMock(), push_message=AsyncMock())):
-            yield
-    else:
-        yield
+    fake = MagicMock(reply_message=AsyncMock(), push_message=AsyncMock())
+    monkeypatch.setattr(main, "line_bot_api", fake)
+    yield fake
 
 
 @pytest.fixture
