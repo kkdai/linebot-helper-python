@@ -653,6 +653,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
         mode: Summary mode (not used directly now since we always generate social media posts)
     """
     results = []
+    # 最後一個 YouTube 網址（若有）。按鈕在迴圈外才掛，理由見送出前的說明。
+    video_qa_url = None
 
     for url in urls:
         try:
@@ -729,25 +731,29 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             results.extend([fb_text_msg, li_text_msg, th_text_msg, tw_text_msg])
 
             if is_youtube_url(url):
-                # YouTube 網址額外附上「問這部影片」入口，讓使用者能連續追問影片內容。
-                # 必須掛在這批訊息的最後一則（目前是 tw_text_msg）——LINE 只從
-                # reply 陣列的最後一則渲染 quickReply，掛在 carousel 上會被後面
-                # 4 則文字訊息蓋掉，按鈕永遠不會出現。
-                results[-1].quick_reply = QuickReply(items=[
-                    QuickReplyButton(
-                        action=PostbackAction(
-                            label="🎬 問這部影片",
-                            data=json.dumps({"action": "video_qa", "url": url}),
-                            display_text="🎬 問這部影片",
-                        )
-                    ),
-                ])
+                # 只記下來，等所有網址都處理完再掛按鈕——見迴圈外的說明
+                video_qa_url = url
 
         except Exception as e:
             logger.error(f"Unexpected error processing URL: {e}", exc_info=True)
             error_msg = LineService.format_error_message(e, "處理網址")
             reply_msg = TextSendMessage(text=f"{url}\n\n{error_msg}")
             results.append(reply_msg)
+
+    if video_qa_url and results:
+        # LINE 只從 reply 陣列的「最後一則」渲染 quickReply，所以按鈕必須等所有
+        # 網址都處理完、掛在真正的最後一則上。掛在迴圈內（該網址那批的最後一則）
+        # 的話，只要後面還有別的網址，按鈕就會被擠掉、完全不顯示。
+        # 多個 YouTube 網址時取最後一個——它離按鈕最近。
+        results[-1].quick_reply = QuickReply(items=[
+            QuickReplyButton(
+                action=PostbackAction(
+                    label="🎬 問這部影片",
+                    data=json.dumps({"action": "video_qa", "url": video_qa_url}),
+                    display_text="🎬 問這部影片",
+                )
+            ),
+        ])
 
     await _reply_with_overflow(
         event, getattr(event.source, "user_id", None), results, "URL 社群文案")

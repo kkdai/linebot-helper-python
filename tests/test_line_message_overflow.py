@@ -271,6 +271,40 @@ async def test_single_url_still_fits_in_one_reply():
 # --- 影片問答入口按鈕（quickReply 只從 reply 陣列最後一則渲染） ---
 
 @pytest.mark.asyncio
+async def test_youtube_quick_reply_survives_a_later_non_youtube_url():
+    """多網址時，入口按鈕必須掛在「全部訊息的最後一則」，不是「該網址那批的最後一則」。
+
+    背景：quick_reply 原本在 `for url in urls` 迴圈內取 results[-1]，所以
+    YouTube 之後若還有別的網址，後面那批訊息會把按鈕擠出最後一位——LINE
+    只渲染最後一則的 quickReply，按鈕就完全不顯示。這是本 repo P0 修過的
+    多網址情境，會真的發生。
+    """
+    fake = FakeLineBotApi()
+    posts = {
+        "title": "標題", "summary_analysis": "摘要",
+        "facebook": "FB", "linkedin": "LI", "threads": "TH", "twitter": "TW",
+    }
+    youtube_url = "https://www.youtube.com/watch?v=abc12345678"
+    other_url = "https://example.com/article"
+
+    class NoBookmarkService:
+        available = False
+
+    with patch.object(main, "line_bot_api", fake), \
+         patch.object(main, "load_url", new=AsyncMock(return_value="內容")), \
+         patch.object(main, "generate_social_media_posts", return_value=posts), \
+         patch.object(main, "get_bookmark_service", return_value=NoBookmarkService()):
+        await main.handle_url_message(_url_event("x"), [youtube_url, other_url])
+
+    delivered = fake.delivered
+    assert len(delivered) == 10, "兩個網址各 5 則"
+    quick_replies = [getattr(m, "quick_reply", None) for m in delivered]
+    assert quick_replies[-1] is not None, (
+        "按鈕必須在最後一則；掛在前面等於不存在（LINE 只渲染最後一則的 quickReply）")
+    assert all(q is None for q in quick_replies[:-1]), "只有最後一則該有按鈕"
+
+
+@pytest.mark.asyncio
 async def test_youtube_url_quick_reply_is_on_the_last_message():
     """LINE 只從 reply 陣列的『最後一則』渲染 quickReply。掛在 carousel（第一則）
     上會被後面 4 則文字訊息蓋掉，整個入口按鈕就形同不存在。"""
