@@ -60,7 +60,8 @@ def test_record_accumulates_daily_spend():
     meter = UsageMeter(store=FakeStore())
     meter.record(USER, "video_qa", USAGE_SHORT)
     meter.record(USER, "video_qa", USAGE_SHORT)
-    assert meter.spent_today(USER) == pytest.approx(2 * meter.estimate_cost(USAGE_SHORT))
+    # Stored costs are rounded to 6 decimal places, so accumulation is exact only to that precision.
+    assert meter.spent_today(USER) == pytest.approx(2 * meter.estimate_cost(USAGE_SHORT), abs=1e-6)
 
 
 def test_spend_is_per_user():
