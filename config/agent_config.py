@@ -8,6 +8,15 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+# USD per 1M tokens。thinking token 計入 output。
+# 價目更新時一併更新 tests/test_usage_meter.py 的對照數字。
+MODEL_PRICING = {
+    "gemini-3.7-flash": (0.75, 3.75),
+    "gemini-3.6-flash": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    "gemini-3.1-flash-lite": (0.25, 1.50),
+}
+
 
 @dataclass
 class AgentConfig:

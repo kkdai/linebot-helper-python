@@ -38,7 +38,8 @@ AGENTIC_CAPABLE = {"gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lit
 def _source_files():
     for path in REPO_ROOT.rglob("*.py"):
         rel = path.relative_to(REPO_ROOT).as_posix()
-        if rel.startswith(("tests/", "docs/")) or "__pycache__" in rel:
+        # Exclude tests, docs, gitignored scratch dirs, and cache
+        if rel.startswith(("tests/", "docs/", ".superpowers/")) or "__pycache__" in rel:
             continue
         yield rel, path
 
