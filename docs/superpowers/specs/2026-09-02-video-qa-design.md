@@ -131,10 +131,25 @@ YouTube Data API），且長度與花費非線性（10 分鐘 $0.0023、2 小時
 ### ③ `services/video_qa.py`（新）
 
 記住使用者目前在問哪支影片。因 context 保不住，**不存 API history**，只存：
-影片網址、進入時間、純文字問答紀錄（供使用者閱讀，不回傳給模型）。
+影片網址、進入時間、提問次數。TTL 30 分鐘。
 
-**包一層 `services/session_manager.py`**，不自行實作持久化——TTL、Firestore、
-序列化該檔已具備且有測試（`tests/test_firestore_persistence.py`）。TTL 30 分鐘。
+**直接使用 `services/firestore_store.py` 的 `FirestoreKVStore("video_qa_sessions")`**，
+不包 `SessionManager`。
+
+原設計為「包一層 `SessionManager`」，實作前檢視其內部後改為此作法。
+`SessionManager` 是繞著「一個 Gemini chat 物件 + 會裁切的對話歷史」設計的，
+與本用途有四個摩擦點，前兩點會實際出錯：
+
+1. `_persist_session()` 不持久化 `metadata`（只存 `user_id` / `history` /
+   `created_at` / `last_active`）→ 影片網址放 `metadata` 會在 instance 重啟後消失。
+2. `add_to_history()` 超過 `max_history_length` 會保留最後 N 則 → 網址放
+   `history[0]` 會在第 N 次提問後被裁掉。
+3. `get_or_create_session()` 必填 `chat_factory`，但影片問答沒有 chat 物件。
+4. `get_session_manager()` 是單例，與聊天共用 `chat_sessions` collection 及
+   同一個 `_sessions` dict → 同一個 user_id 會相互覆蓋。
+
+`FirestoreKVStore` 同樣是現成且有測試覆蓋（`tests/test_firestore_persistence.py`）
+的元件，且形狀相符——影片模式要存的就是「使用者 → 影片」的 KV 對應。
 
 ### ④ `main.py`（改）
 
@@ -145,7 +160,8 @@ YouTube Data API），且長度與花費非線性（10 分鐘 $0.0023、2 小時
 
 ### 明確不做
 
-- 不碰 `loader/chat_session.py` 的 history 機制（語意不同，且零測試）。
+- 不碰 `loader/chat_session.py` 的 history 機制（語意不同）。模型已於 2026-09-03
+  修復為 `gemini-3.7-flash`（PR #17），本設計不再變更該檔。
 - 不碰 `services/voice_live.py`、`tools/tts_tool.py` 的模型（見模型分級）。
 - 不做影片上傳（LINE `VideoMessage`）——需 GCS bucket、生命週期規則、
   記憶體重估，與本設計無關，另案。
@@ -213,13 +229,13 @@ YouTube 摘要按鈕組新增 quick reply：
 硬寫模型字串的是 `tools/` 與 `loader/`（不走 ADK、直接呼叫 SDK 的路徑）。
 收斂工作主要在這兩層。
 
-### Tier 1 — `gemini-3.7-flash`（4 處字面值，3 個邏輯位置）
+### Tier 1 — `gemini-3.7-flash`（剩 3 處字面值，2 個邏輯位置）
 
-| 位置 | 現況 | 理由 |
-|---|---|---|
-| `loader/chat_session.py:104` | `gemini-3-pro-preview` | **404，修故障**；實測 grounding 正常 |
-| `config/agent_config.py:22,58`（`orchestrator_model`） | `gemini-2.5-pro` | 過舊；回一字燒 1,066 tokens |
-| `tools/summarizer.py:227`（agentic vision） | `gemini-3-flash-preview` | preview → stable |
+| 位置 | 現況 | 理由 | 狀態 |
+|---|---|---|---|
+| `loader/chat_session.py` | ~~`gemini-3-pro-preview`~~ → `CHAT_MODEL = "gemini-3.7-flash"` | 404，修故障 | **已完成**（PR #17，2026-09-03） |
+| `config/agent_config.py:22,58`（`orchestrator_model`） | `gemini-2.5-pro` | 過舊；回一字燒 1,066 tokens | 待做 |
+| `tools/summarizer.py:227`（agentic vision） | `gemini-3-flash-preview` | preview → stable（實測仍存活，但同屬會下架的一類） | 待做 |
 
 原則是**維持既有能力層級，只做現代化**：現在是 pro 級的升到 3.7-flash，
 現在是 lite 級的升到 3.5-flash-lite。
