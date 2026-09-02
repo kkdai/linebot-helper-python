@@ -35,8 +35,10 @@ class AgentConfig:
     # agentic vision（tools/summarizer.py）、grounded chat（loader/chat_session.py）。
     orchestrator_model: str = "gemini-3.7-flash"
     fast_model: str = "gemini-3.5-flash-lite"
-    # 影片必須用 3.5-flash-lite：3.7-flash 在 agentic 會忽略 thinking_level，
-    # 10 分鐘影片成本是前者的 60 倍，且易觸發 429。
+    # 影片固定用 3.5-flash-lite：唯一經端到端實測、成本穩定的模型；
+    # 3.7-flash 測試中較易觸發 429，且曾單次觀測到 thinking token 尖峰
+    # （非重複實驗，不是 3.7-flash 特有的行為）。判斷依據見
+    # docs/superpowers/specs/2026-09-02-video-qa-design.md 結論三、四。
     video_model: str = "gemini-3.5-flash-lite"
 
     # Session settings

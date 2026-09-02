@@ -24,5 +24,6 @@ def test_media_processing_enum_has_agentic():
 
 
 def test_thinking_config_supports_thinking_level():
-    """thinking_level 是控制影片成本的關鍵參數（漏設成本變 5.5 倍）。"""
+    """thinking_level 是影片查詢必帶的參數；SDK 支援與否決定能不能顯式控制
+    它（早期單次觀測的「漏設變 5.5 倍」不是穩定效果，見 spec 結論二、三）。"""
     assert "thinking_level" in types.ThinkingConfig.model_fields

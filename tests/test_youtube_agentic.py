@@ -6,8 +6,9 @@
 1. api_version="v1beta1"      → v1 不支援 agentic，靜默退回 STATIC
 2. media_processing="AGENTIC" → 不設就是 STATIC
 3. 模型在支援名單內           → 否則靜默降級為 STATIC
-4. thinking_level="LOW"       → 漏設時 thinking token 暴增，成本變 5.5 倍
-                                （10 分鐘影片：$0.0946 vs $0.0023）
+4. thinking_level="LOW"       → thinking token 是成本主角，這個參數必須被
+                                顯式決定（早期單次觀測的「漏設變 5.5 倍」
+                                不是穩定可重現的效果，見 spec 結論二、三）
 
 這種 bug 靠 code review 抓不到，只有帳單會告訴你。所以這四項各有一個測試。
 
@@ -70,7 +71,8 @@ def test_video_part_sets_agentic_media_processing(captured):
 
 
 def test_thinking_level_is_low(captured):
-    """漏設 thinking_level，10 分鐘影片成本從 $0.0023 變 $0.0946。"""
+    """thinking_level 必須顯式帶入且為 LOW；不保證能避免 thinking token
+    尖峰（見 spec 結論三），但仍是唯一已測過完整套件的選擇。"""
     youtube_tool.summarize_youtube_video(VIDEO_URL)
     config = captured["call_kwargs"]["config"]
     assert config.thinking_config is not None, "必須設 thinking_config"

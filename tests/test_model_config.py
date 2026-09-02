@@ -94,7 +94,9 @@ def test_video_model_supports_agentic():
 
 
 def test_video_model_is_flash_lite():
-    """gemini-3.7-flash 在 agentic 影片會忽略 thinking_level，成本是 3.5-flash-lite 的 60 倍。"""
+    """3.5-flash-lite 是唯一經端到端實測、成本穩定的影片模型；3.7-flash
+    測試中較易觸發 429，且曾單次觀測到 thinking token 尖峰（非重複實驗、
+    非 3.7-flash 特有，見 spec 結論三、四）。"""
     assert get_agent_config().video_model == "gemini-3.5-flash-lite"
 
 

@@ -1,11 +1,13 @@
 """測試：用量與成本記錄
 
 背景：這個專案原本沒有任何 token／成本統計（roadmap P1-4）。影片問答讓這件事
-從「想做」變成「必須做」——spike 實測 2 小時影片單次提問要 $0.91，
+從「想做」變成「必須做」——單次觀測到 2 小時影片一次提問要價 $0.91，
 沒有記錄就完全不知道錢花到哪去。
 
 配額以實際花費計，不以影片長度計：用長度得先查影片時長（需另接 YouTube
-Data API），而且長度與花費非線性（10 分鐘 $0.0023、2 小時 $0.91）。
+Data API），而且長度不是可靠的預算代理變數——同一支影片、同一組設定，單次
+花費本身就在 ~$0.0014 與 ~$0.08 間跳動（見 spec 結論三），即使查得到長度
+也算不出花費。
 
 本階段只做記錄不做強制——未設 VIDEO_QA_DAILY_BUDGET_USD 即不限制。
 
@@ -36,7 +38,9 @@ USAGE_LONG = {
 # --- 成本換算 ---
 
 def test_estimate_cost_matches_spike_measurement():
-    """對照 spike 實測：10 分鐘影片 agentic + thinking LOW 約 $0.0023。"""
+    """成本估算公式套用固定 token 數（USAGE_SHORT）算出的預期值，驗證的是
+    計價公式本身，不代表 agentic + thinking LOW 的呼叫成本是穩定值——
+    同一設定的實際花費本身就有大幅波動，見 spec 結論三。"""
     cost = UsageMeter(store=FakeStore()).estimate_cost(USAGE_SHORT)
     assert cost == pytest.approx(0.0023, abs=0.0005)
 

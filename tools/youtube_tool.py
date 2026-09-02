@@ -177,9 +177,12 @@ def _extract_usage(response, model: str) -> dict:
 def _generate_video(youtube_url: str, prompt: str, *, thinking_level: str) -> dict:
     """對 YouTube 影片跑一次 agentic 查詢。
 
-    thinking_level 刻意設為必填且無預設值：2026-09-02 spike 實測，
-    漏設時 10 分鐘影片成本從 $0.0023 變成 $0.0946（5.5 倍），
-    而且不會報錯、不會有任何徵兆。給它預設值就是給人漏掉的機會。
+    thinking_level 刻意設為必填且無預設值：thinking token 是這通呼叫的成本
+    主角，而其尖峰屬伺服器端非決定性，任何單一 thinking_level 設定都管不住
+    （早期單次測試量到的「未設時貴 5.5 倍」不是穩定可重現的效果）。顯式帶入
+    是為了把這個參數變成一個必須被看見、寫進 code review 的決定，而不是悄悄
+    繼承 SDK 預設值。詳見 docs/superpowers/specs/2026-09-02-video-qa-design.md
+    結論二、三。
     """
     if not youtube_url:
         return {"status": "error", "error_message": "No YouTube URL provided"}
