@@ -9,18 +9,16 @@
 在使用中消失。
 """
 import logging
-import re
 import time
 from typing import Optional
 
+from loader.utils import find_url
 from services.firestore_store import FirestoreKVStore
 
 logger = logging.getLogger(__name__)
 
 VIDEO_QA_COLLECTION = "video_qa_sessions"
 DEFAULT_TTL_SECONDS = 30 * 60   # 與聊天 session 一致
-
-_URL_PATTERN = re.compile(r"https?://", re.IGNORECASE)
 
 
 def should_exit_video_mode(message_text: str) -> bool:
@@ -31,13 +29,15 @@ def should_exit_video_mode(message_text: str) -> bool:
 
     涵蓋「換主題」的實際訊號：貼了新網址、打了指令。
     非文字訊息（圖片／語音／位置）由呼叫端處理，不走這個函式。
+
+    使用同一個 find_url() 作為主流程，確保 URL 偵測邏輯不會分歧。
     """
     if not message_text:
         return False
     text = message_text.strip()
     if text.startswith("/"):
         return True
-    return bool(_URL_PATTERN.search(text))
+    return bool(find_url(text))
 
 
 class VideoQASessions:

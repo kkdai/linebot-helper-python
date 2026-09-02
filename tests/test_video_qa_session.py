@@ -81,6 +81,32 @@ def test_entering_a_new_video_replaces_the_old_one():
     assert s.get(USER)["asked"] == 0
 
 
+def test_bump_renews_ttl():
+    """bump() must update last_active to extend the TTL, not just increment asked.
+
+    Without this renewal, a user asking many questions about one video would have
+    the session expire mid-conversation. This test verifies the renewal happens.
+    """
+    ttl = 0.15  # 150ms — large enough for reliable timing
+    s = VideoQASessions(store=FakeStore(), ttl_seconds=ttl)
+    s.enter(USER, VIDEO)
+
+    # Wait partway through TTL
+    time.sleep(0.08)
+
+    # Bump should renew the session (set last_active to now)
+    s.bump(USER)
+
+    # Wait past the original TTL from enter(), but not past the new TTL from bump()
+    # Original enter was at t=0, would expire at t=0.15
+    # But bump renewed at t=0.08, so now expires at t=0.08+0.15=0.23
+    # Total elapsed is 0.08 + 0.1 = 0.18, which is < 0.23
+    time.sleep(0.10)
+
+    # Session should still be active (wouldn't be without the renewal)
+    assert s.get(USER) is not None
+
+
 def test_store_unavailable_degrades_to_not_in_mode():
     """Firestore 掛掉時退化成「不在影片模式」，訊息照原路走，不會壞掉。"""
     s = VideoQASessions(store=UnavailableStore())
