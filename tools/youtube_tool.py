@@ -250,7 +250,7 @@ def _generate_video(youtube_url: str, prompt: str, *, thinking_level: str) -> di
                 retry_delay *= 2
                 continue
             if e.code == 429:
-                return {"status": "error", "error_message": (
+                return {"status": "error", "rate_limited": True, "error_message": (
                     "Vertex AI 使用量已達上限，請稍後再試。建議等待 1-2 分鐘後重試。")}
             logger.error(f"Vertex AI API error: {e}", exc_info=True)
             return {"status": "error",
@@ -320,5 +320,6 @@ def ask_youtube_video(youtube_url: str, question: str) -> dict:
     prompt = ASK_PROMPT_TEMPLATE.format(question=question)
     result = _generate_video(youtube_url, prompt, thinking_level="LOW")
     if result["status"] != "success":
-        return {"status": "error", "error_message": result["error_message"]}
+        return {"status": "error", "error_message": result["error_message"],
+                "rate_limited": result.get("rate_limited", False)}
     return {"status": "success", "answer": result["text"], "usage": result["usage"]}

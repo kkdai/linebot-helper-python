@@ -15,7 +15,7 @@ class FakeStore:
     def save(self, key: str, doc: dict) -> None:
         self.data[key] = dict(doc)
 
-    def load(self, key: str) -> Optional[dict]:
+    def load(self, key: str, swallow_errors: bool = True) -> Optional[dict]:
         doc = self.data.get(key)
         return dict(doc) if doc is not None else None
 

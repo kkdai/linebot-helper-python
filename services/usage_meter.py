@@ -55,13 +55,28 @@ class UsageMeter:
         """累加一次呼叫的用量，回傳本次花費（美金）。
 
         記帳失敗不影響主流程——照樣回傳成本，只是沒存進去。
+
+        讀取這步刻意跟「改值＋寫回」分開處理：這是 read-modify-write，
+        FirestoreKVStore 的讀取失敗如果被當成「文件不存在」，接下來就會拿一份
+        空白文件蓋掉今天已經存在、只是這次剛好讀不到的花費紀錄——配額本來就
+        沒開強制擋，這份每日累計是唯一的成本防線，讀失敗絕不能變成把它歸零。
+        所以讀取失敗就整段跳過、什麼都不寫，寧可漏記這一次也不能蓋掉舊資料。
         """
         cost = self.estimate_cost(usage)
         if not self.available:
             return cost
+
+        key = self._key(user_id)
         try:
-            key = self._key(user_id)
-            doc = self._store.load(key) or {}
+            doc = self._store.load(key, swallow_errors=False)
+        except Exception as e:
+            logger.warning(
+                "Failed to read usage before recording (skipping write to avoid "
+                "clobbering existing spend): %s", e)
+            return cost
+
+        try:
+            doc = doc or {}
             doc["user_id"] = user_id
             doc["date"] = date.today().isoformat()
             doc["cost_usd"] = round(doc.get("cost_usd", 0.0) + cost, 6)

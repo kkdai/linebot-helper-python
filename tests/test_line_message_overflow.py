@@ -7,6 +7,7 @@
 
 正確行為：前 5 則走 reply（不計 push 額度），其餘用 push 補送，一則都不能少。
 """
+import json
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -149,6 +150,55 @@ async def test_one_failed_push_batch_does_not_block_the_rest():
 
 
 @pytest.mark.asyncio
+async def test_reply_failure_falls_back_to_push_when_user_id_present():
+    """reply token 過期（影片問答常見，答案算 26–53 秒）不能讓已經算好的答案
+    人間蒸發——花的錢跟算出的結果都還在，改用 push 補送，一則都不能少。"""
+    class FailingReplyApi(FakeLineBotApi):
+        async def reply_message(self, reply_token, messages):
+            raise RuntimeError("reply token expired")
+
+    fake = FailingReplyApi()
+    msgs = [f"m{i}" for i in range(3)]
+    with patch.object(main, "line_bot_api", fake):
+        await main._reply_with_overflow(_url_event("x"), "U-alice", msgs, "test")
+
+    assert fake.replies == []
+    assert fake.pushed_messages == msgs
+
+
+@pytest.mark.asyncio
+async def test_reply_failure_with_overflow_pushes_everything():
+    """reply 失敗時要退回去補送的是全部訊息，不是只有本來要走 reply 的前 5 則。"""
+    class FailingReplyApi(FakeLineBotApi):
+        async def reply_message(self, reply_token, messages):
+            raise RuntimeError("reply token expired")
+
+    fake = FailingReplyApi()
+    msgs = [f"m{i}" for i in range(8)]
+    with patch.object(main, "line_bot_api", fake):
+        await main._reply_with_overflow(_url_event("x"), "U-alice", msgs, "test")
+
+    assert fake.replies == []
+    assert fake.pushed_messages == msgs
+
+
+@pytest.mark.asyncio
+async def test_reply_failure_without_user_id_is_logged_not_crashed(caplog):
+    """沒有 user_id 就補不了 push，但不能讓例外往外炸——留紀錄就好。"""
+    class FailingReplyApi(FakeLineBotApi):
+        async def reply_message(self, reply_token, messages):
+            raise RuntimeError("reply token expired")
+
+    fake = FailingReplyApi()
+    msgs = [f"m{i}" for i in range(3)]
+    with patch.object(main, "line_bot_api", fake):
+        await main._reply_with_overflow(_url_event("x"), None, msgs, "test")
+
+    assert fake.pushes == []
+    assert "reply token expired" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_push_in_chunks_uses_supplied_api_client():
     """/hn /hf 各自帶不同的 channel token，要能指定 client 而不是走全域那顆。"""
     default_api = FakeLineBotApi()
@@ -216,6 +266,61 @@ async def test_single_url_still_fits_in_one_reply():
 
     assert len(fake.replied_messages) == 5
     assert fake.pushes == []
+
+
+# --- 影片問答入口按鈕（quickReply 只從 reply 陣列最後一則渲染） ---
+
+@pytest.mark.asyncio
+async def test_youtube_url_quick_reply_is_on_the_last_message():
+    """LINE 只從 reply 陣列的『最後一則』渲染 quickReply。掛在 carousel（第一則）
+    上會被後面 4 則文字訊息蓋掉，整個入口按鈕就形同不存在。"""
+    fake = FakeLineBotApi()
+    posts = {
+        "title": "標題", "summary_analysis": "摘要",
+        "facebook": "FB", "linkedin": "LI", "threads": "TH", "twitter": "TW",
+    }
+    youtube_url = "https://www.youtube.com/watch?v=abc12345678"
+
+    class NoBookmarkService:
+        available = False
+
+    with patch.object(main, "line_bot_api", fake), \
+         patch.object(main, "load_url", new=AsyncMock(return_value="內容")), \
+         patch.object(main, "generate_social_media_posts", return_value=posts), \
+         patch.object(main, "get_bookmark_service", return_value=NoBookmarkService()):
+        await main.handle_url_message(_url_event("x"), [youtube_url])
+
+    delivered = fake.delivered
+    assert len(delivered) == 5
+    quick_replies = [getattr(m, "quick_reply", None) for m in delivered]
+    assert quick_replies[:-1] == [None, None, None, None], \
+        "只有最後一則能帶 quickReply，前面幾則帶了也不會被 LINE 渲染"
+    assert quick_replies[-1] is not None, "最後一則必須帶 quickReply，不然按鈕整個不會出現"
+    data = json.loads(quick_replies[-1].items[0].action.data)
+    assert data == {"action": "video_qa", "url": youtube_url}
+
+
+@pytest.mark.asyncio
+async def test_non_youtube_url_has_no_quick_reply_anywhere():
+    """非 YouTube 網址不該出現「問這部影片」入口。"""
+    fake = FakeLineBotApi()
+    posts = {
+        "title": "標題", "summary_analysis": "摘要",
+        "facebook": "FB", "linkedin": "LI", "threads": "TH", "twitter": "TW",
+    }
+
+    class NoBookmarkService:
+        available = False
+
+    with patch.object(main, "line_bot_api", fake), \
+         patch.object(main, "load_url", new=AsyncMock(return_value="內容")), \
+         patch.object(main, "generate_social_media_posts", return_value=posts), \
+         patch.object(main, "get_bookmark_service", return_value=NoBookmarkService()):
+        await main.handle_url_message(_url_event("x"), ["https://a.example.com/1"])
+
+    delivered = fake.delivered
+    assert len(delivered) == 5
+    assert all(getattr(m, "quick_reply", None) is None for m in delivered)
 
 
 if __name__ == "__main__":

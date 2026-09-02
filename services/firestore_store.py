@@ -59,7 +59,17 @@ class FirestoreKVStore:
         except Exception as e:
             logger.error(f"Firestore save failed ({self.collection_name}/{key}): {e}")
 
-    def load(self, key: str) -> Optional[dict]:
+    def load(self, key: str, swallow_errors: bool = True) -> Optional[dict]:
+        """讀一筆文件。不存在回傳 None。
+
+        swallow_errors=True（預設，所有既有呼叫方的行為不變）：讀取失敗一律
+        當成 None 回傳，維持優雅降級。
+        swallow_errors=False：讀取失敗改為往外拋——給像 usage_meter.record()
+        這種 read-modify-write 呼叫方用，讓它們能區分「文件不存在」與「讀取
+        失敗」。這兩種狀況對 read-modify-write 來說天差地遠：前者是真的沒
+        資料，可以放心從空白開始；後者若當空白處理，寫回去就是拿一個殘缺的
+        新文件蓋掉先前已經存在、只是這次讀不到的舊資料。
+        """
         if not self.is_available:
             return None
         try:
@@ -67,6 +77,8 @@ class FirestoreKVStore:
             return snapshot.to_dict() if snapshot.exists else None
         except Exception as e:
             logger.error(f"Firestore load failed ({self.collection_name}/{key}): {e}")
+            if not swallow_errors:
+                raise
             return None
 
     def delete(self, key: str) -> None:

@@ -178,6 +178,37 @@ async def test_usage_is_recorded_after_a_successful_answer(sessions, fake_event,
     assert meter.record.call_args[0][1] == "video_qa"
 
 
+# --- 影片壞掉時的錯誤處理 ---
+
+@pytest.mark.asyncio
+async def test_non_429_error_exits_video_mode(sessions, fake_event, no_network):
+    """影片下架／變私人這類不會自己好的錯誤必須清掉 session，否則接下來
+    30 分鐘每則訊息都會被攔截、重試、再花一次 Vertex 呼叫卻注定失敗。"""
+    sessions.enter(USER, VIDEO)
+    no_network["ask"].return_value = {
+        "status": "error", "error_message": "影片為私人或已移除，無法存取",
+    }
+    with patch.object(main.line_bot_api, "reply_message", new=AsyncMock()):
+        handled = await main.handle_video_qa_message(fake_event, USER, "他有講到定價嗎？")
+    assert handled is True
+    assert sessions.get(USER) is None, "非 429 錯誤必須讓使用者離開影片問答模式"
+
+
+@pytest.mark.asyncio
+async def test_429_error_does_not_exit_video_mode(sessions, fake_event, no_network):
+    """429 是暫時性的用量上限，值得重試——不該把使用者踢出模式，逼他重新
+    按一次入口按鈕。"""
+    sessions.enter(USER, VIDEO)
+    no_network["ask"].return_value = {
+        "status": "error", "rate_limited": True,
+        "error_message": "Vertex AI 使用量已達上限，請稍後再試。建議等待 1-2 分鐘後重試。",
+    }
+    with patch.object(main.line_bot_api, "reply_message", new=AsyncMock()):
+        handled = await main.handle_video_qa_message(fake_event, USER, "他有講到定價嗎？")
+    assert handled is True
+    assert sessions.get(USER) is not None, "429 是暫時性的，不該清掉 session"
+
+
 # --- 離開模式 ---
 
 @pytest.mark.asyncio

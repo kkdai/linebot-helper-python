@@ -273,19 +273,37 @@ async def _push_in_chunks(user_id: str, messages: list, context: str,
 
 async def _reply_with_overflow(event, user_id: Optional[str], messages: list,
                                context: str) -> None:
-    """前 5 則走 reply，其餘用 push 補送。
+    """前 5 則走 reply，其餘用 push 補送；reply 失敗就全部改用 push。
 
     reply 不計入 push 額度，所以常見的單一網址（剛好 5 則）完全不會用到 push；
     只有真的超量時才補 push。這是為了修掉先前 `results[:5]` 的行為：
     使用者一次傳兩個網址時，第二個網址的爬取與 Gemini 呼叫都已經花掉了，
     產出的訊息卻被直接截掉，什麼都收不到。
+
+    reply_message 本身也可能失敗——影片問答一次要 26–53 秒，reply token
+    很可能在算完答案時已經過期。錢已經花了（record/bump 都跑過了），這裡
+    再讓例外原地丟掉就是人不知鬼不覺地把答案弄丟，所以失敗一律退回 push，
+    不能只記個 log 就算了。
     """
     if not messages:
         return
 
-    await line_bot_api.reply_message(event.reply_token, messages[:LINE_MESSAGE_LIMIT])
-
+    head = messages[:LINE_MESSAGE_LIMIT]
     overflow = messages[LINE_MESSAGE_LIMIT:]
+
+    try:
+        await line_bot_api.reply_message(event.reply_token, head)
+    except Exception as e:
+        if not user_id:
+            # 沒有 user_id 就補不了 push，至少留下紀錄而不是無聲丟棄
+            logger.warning(
+                f"Reply failed ({context}) and no user_id to push to, "
+                f"dropping {len(messages)} message(s): {e}")
+            return
+        logger.warning(f"Reply failed ({context}), falling back to push: {e}")
+        await _push_in_chunks(user_id, messages, context)
+        return
+
     if not overflow:
         return
     if not user_id:
@@ -699,17 +717,6 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             }
 
             carousel_msg = CustomFlexSendMessage(alt_text="📝 社群爆款文案摘要", contents=carousel_flex)
-            if is_youtube_url(url):
-                # YouTube 網址額外附上「問這部影片」入口，讓使用者能連續追問影片內容
-                carousel_msg.quick_reply = QuickReply(items=[
-                    QuickReplyButton(
-                        action=PostbackAction(
-                            label="🎬 問這部影片",
-                            data=json.dumps({"action": "video_qa", "url": url}),
-                            display_text="🎬 問這部影片",
-                        )
-                    ),
-                ])
             results.append(carousel_msg)
 
             # Construct separate text messages for easy copying on computers
@@ -720,6 +727,21 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
 
             # carousel + 4 則純文字 = 5，剛好用滿 LINE reply 的單次訊息上限
             results.extend([fb_text_msg, li_text_msg, th_text_msg, tw_text_msg])
+
+            if is_youtube_url(url):
+                # YouTube 網址額外附上「問這部影片」入口，讓使用者能連續追問影片內容。
+                # 必須掛在這批訊息的最後一則（目前是 tw_text_msg）——LINE 只從
+                # reply 陣列的最後一則渲染 quickReply，掛在 carousel 上會被後面
+                # 4 則文字訊息蓋掉，按鈕永遠不會出現。
+                results[-1].quick_reply = QuickReply(items=[
+                    QuickReplyButton(
+                        action=PostbackAction(
+                            label="🎬 問這部影片",
+                            data=json.dumps({"action": "video_qa", "url": url}),
+                            display_text="🎬 問這部影片",
+                        )
+                    ),
+                ])
 
         except Exception as e:
             logger.error(f"Unexpected error processing URL: {e}", exc_info=True)
@@ -1461,10 +1483,20 @@ async def handle_video_qa_message(event: MessageEvent, user_id: str, text: str) 
     result = ask_youtube_video(session["url"], text)
 
     if result["status"] != "success":
-        await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
-            text=f"⚠️ {result.get('error_message', '無法回答這個問題')}",
-            quick_reply=build_video_qa_quick_reply(),
-        )])
+        error_text = result.get('error_message', '無法回答這個問題')
+        if result.get("rate_limited"):
+            # 429 是暫時性的，值得重試——留在模式裡，不強迫使用者重新按一次入口
+            await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+                text=f"⚠️ {error_text}",
+                quick_reply=build_video_qa_quick_reply(),
+            )])
+        else:
+            # 非 429（影片下架、私人影片等）不會自己好——清掉 session，否則接下來
+            # 30 分鐘每則訊息都會被攔截、重試、再花一次 Vertex 呼叫卻注定失敗
+            sessions.exit(user_id)
+            await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+                text=f"⚠️ {error_text}\n\n已離開影片問答模式。"
+            )])
         return True
 
     meter.record(user_id, "video_qa", result["usage"])

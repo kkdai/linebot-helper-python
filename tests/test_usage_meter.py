@@ -103,6 +103,26 @@ def test_store_exception_degrades_silently():
         meter.record(USER, "video_qa", USAGE_SHORT)  # 不可拋例外
 
 
+def test_read_failure_does_not_clobber_previously_recorded_spend():
+    """FirestoreKVStore.load() 對「文件不存在」與「讀取失敗」回的都是 None
+    （見 services/firestore_store.py）。record() 是 read-modify-write：如果把
+    讀取失敗當成「今天還沒有任何紀錄」，就會拿一份空白文件覆蓋掉今天已經存在
+    的花費——配額沒開強制擋，這份每日累計是唯一的成本防線，讀失敗絕不能讓
+    它被歸零。"""
+    store = FakeStore()
+    meter = UsageMeter(store=store)
+
+    meter.record(USER, "video_qa", USAGE_SHORT)
+    spent_before = meter.spent_today(USER)
+    assert spent_before > 0
+
+    with patch.object(store, "load", side_effect=RuntimeError("firestore read failed")):
+        meter.record(USER, "video_qa", USAGE_SHORT)  # 不可拋例外，也不可寫入
+
+    assert meter.spent_today(USER) == pytest.approx(spent_before), \
+        "讀取失敗的那次呼叫不該動到既有紀錄"
+
+
 # --- 配額接縫 ---
 
 def test_budget_unset_means_unlimited(monkeypatch):
