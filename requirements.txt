@@ -3,7 +3,9 @@ google-genai>=2.20.0
 google-cloud-firestore>=2.19.0
 Markdown>=3.7
 # Google Agent Development Kit (ADK)
-google-adk>=1.0.0
+# >=1.36.2：這是 google-adk 開始要求 google-genai>=2.9,<3（相容 google-genai>=2.20 的下限）的最低版本；
+# 更早版本的 ADK 宣告 google-genai<2.0.0，會跟本檔案的 google-genai>=2.20.0 互斥
+google-adk>=1.36.2
 beautifulsoup4
 llmsherpa
 fastapi
