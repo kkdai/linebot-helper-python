@@ -9,9 +9,10 @@ import os
 from google import genai
 from google.genai import types
 
+from config.agent_config import get_agent_config
+
 logger = logging.getLogger(__name__)
 
-TRANSCRIPTION_MODEL = "gemini-3.1-flash-lite"
 VERTEX_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
 VERTEX_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "global")
 
@@ -39,7 +40,7 @@ async def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/mp4") -> 
     audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
 
     response = await client.aio.models.generate_content(
-        model=TRANSCRIPTION_MODEL,
+        model=get_agent_config().fast_model,
         contents=[
             types.Content(
                 role="user",

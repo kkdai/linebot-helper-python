@@ -13,6 +13,8 @@ import requests
 import os
 import logging
 
+from config.agent_config import get_agent_config
+
 # Use new google-genai SDK with Vertex AI
 try:
     from google import genai
@@ -64,7 +66,7 @@ def extract_keywords_with_gemini(text, gemini_api_key, num_keywords=5):
 
         # 生成回應
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 labels={"client_id": "info_helper"},

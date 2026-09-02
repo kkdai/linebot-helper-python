@@ -5,6 +5,8 @@ A Python application that provides LINE bot functionality with tools for searchi
 ## ✨ Features
 
 ### Core Features
+- **🎬 Video Q&A** - Ask follow-up questions about any YouTube video and get
+  answers with precise timestamps (agentic video understanding)
 - **🤖 Intelligent Conversation with Memory** - Ask questions and get AI-powered answers with automatic web search (NEW!)
 - **💬 Multi-turn Dialogue Support** - Remembers conversation context for 30 minutes
 - **URL Content Extraction & Summarization** - Extract and summarize web content with AI
@@ -42,6 +44,12 @@ These environment variables enable additional features:
 - `firecrawl_key`: Firecrawl API key for enhanced web scraping of PTT, Medium, and OpenAI websites
 - `SINGLEFILE_PATH`: Path to SingleFile executable (defaults to `/Users/narumi/.local/bin/single-file`)
 - `GITHUB_TOKEN`: GitHub personal access token for accessing private repositories (optional)
+- `CHAT_MODEL` / `FAST_MODEL` / `ORCHESTRATOR_MODEL` / `VIDEO_MODEL`: Override the
+  models in `config/agent_config.py`. Preview models are rejected by tests. Model
+  pricing lives alongside the model IDs in `config/agent_config.py`
+  (`MODEL_PRICING`) - adding a new model means adding its pricing row there too,
+  or `services/usage_meter.py` cost tracking silently misses it.
+- `VIDEO_QA_DAILY_BUDGET_USD`: Daily spend cap for video Q&A. Unset means unlimited.
 
 ### Vertex AI Setup (Required for All AI Features)
 
@@ -160,6 +168,19 @@ evidence review) and serves the report as a styled web page at
 indefinitely.
 
 **Note:** Conversations automatically expire after 30 minutes of inactivity.
+
+---
+
+### 🎬 Video Q&A
+
+Send a YouTube link and the summary carousel includes a "🎬 問這部影片" button.
+Tap it to enter video Q&A mode - ask follow-up questions about the video and
+get answers in Traditional Chinese with precise timestamps (e.g. "定價在
+1:24:40"), powered by Gemini agentic video understanding. Each answer has a
+"🚪 結束問影片" button; the mode also exits automatically on a new URL, a `/`
+command, a non-text message, or after 30 minutes idle. See
+[video-qa design](docs/superpowers/specs/2026-09-02-video-qa-design.md) for
+how the cost profile (and its non-determinism) works.
 
 ---
 

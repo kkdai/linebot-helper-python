@@ -8,6 +8,15 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+# USD per 1M tokens。thinking token 計入 output。
+# 價目更新時一併更新 tests/test_usage_meter.py 的對照數字。
+MODEL_PRICING = {
+    "gemini-3.7-flash": (0.75, 3.75),
+    "gemini-3.6-flash": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    "gemini-3.1-flash-lite": (0.25, 1.50),
+}
+
 
 @dataclass
 class AgentConfig:
@@ -18,9 +27,20 @@ class AgentConfig:
     location: str
 
     # Model settings
-    chat_model: str = "gemini-3.1-flash-lite"
-    orchestrator_model: str = "gemini-2.5-pro"
-    fast_model: str = "gemini-3.1-flash-lite"
+    # 分級原則：維持既有能力層級，只做現代化。
+    # 禁止 preview／實驗模型——會無預警下架（見 gemini-3-pro-preview 404）。
+    # 例外僅 services/voice_live.py 與 tools/tts_tool.py，見 tests/test_model_config.py。
+    chat_model: str = "gemini-3.5-flash-lite"
+    # Tier 1「capable model」槽位。共用者：ADK orchestrator、
+    # agentic vision（tools/summarizer.py）、grounded chat（loader/chat_session.py）。
+    orchestrator_model: str = "gemini-3.7-flash"
+    fast_model: str = "gemini-3.5-flash-lite"
+    # 影片固定用 3.5-flash-lite：唯一經端到端驗證的模型，正常情況下較
+    # 便宜（~$0.0014／次）——但不代表成本穩定，結論三的 27 次對照實驗
+    # （~0 或 ~35,000-37,000 thinking tokens 間跳動）正是在這個模型上量到
+    # 的。3.7-flash 從未重複測試，且測試中較易觸發 429。見
+    # docs/superpowers/specs/2026-09-02-video-qa-design.md 結論三、四。
+    video_model: str = "gemini-3.5-flash-lite"
 
     # Session settings
     session_timeout_minutes: int = 30
@@ -54,9 +74,10 @@ def get_agent_config() -> AgentConfig:
     return AgentConfig(
         project_id=project_id,
         location=location,
-        chat_model=os.getenv('CHAT_MODEL', 'gemini-3.1-flash-lite'),
-        orchestrator_model=os.getenv('ORCHESTRATOR_MODEL', 'gemini-2.5-pro'),
-        fast_model=os.getenv('FAST_MODEL', 'gemini-3.1-flash-lite'),
+        chat_model=os.getenv('CHAT_MODEL', 'gemini-3.5-flash-lite'),
+        orchestrator_model=os.getenv('ORCHESTRATOR_MODEL', 'gemini-3.7-flash'),
+        fast_model=os.getenv('FAST_MODEL', 'gemini-3.5-flash-lite'),
+        video_model=os.getenv('VIDEO_MODEL', 'gemini-3.5-flash-lite'),
         session_timeout_minutes=int(os.getenv('SESSION_TIMEOUT_MINUTES', '30')),
         max_history_length=int(os.getenv('MAX_HISTORY_LENGTH', '20')),
         max_output_tokens=int(os.getenv('MAX_OUTPUT_TOKENS', '2048')),

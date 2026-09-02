@@ -40,6 +40,9 @@ from loader.langtools import (
 from loader.error_handler import FriendlyErrorMessage
 from tools.audio_tool import transcribe_audio
 from tools.tts_tool import text_to_speech
+from tools.youtube_tool import ask_youtube_video
+from services.usage_meter import get_usage_meter
+from services.video_qa import get_video_qa_sessions, should_exit_video_mode
 from google import genai as live_genai
 from google.genai import types as live_types
 
@@ -270,19 +273,37 @@ async def _push_in_chunks(user_id: str, messages: list, context: str,
 
 async def _reply_with_overflow(event, user_id: Optional[str], messages: list,
                                context: str) -> None:
-    """前 5 則走 reply，其餘用 push 補送。
+    """前 5 則走 reply，其餘用 push 補送；reply 失敗就全部改用 push。
 
     reply 不計入 push 額度，所以常見的單一網址（剛好 5 則）完全不會用到 push；
     只有真的超量時才補 push。這是為了修掉先前 `results[:5]` 的行為：
     使用者一次傳兩個網址時，第二個網址的爬取與 Gemini 呼叫都已經花掉了，
     產出的訊息卻被直接截掉，什麼都收不到。
+
+    reply_message 本身也可能失敗——影片問答一次要 26–53 秒，reply token
+    很可能在算完答案時已經過期。錢已經花了（record/bump 都跑過了），這裡
+    再讓例外原地丟掉就是人不知鬼不覺地把答案弄丟，所以失敗一律退回 push，
+    不能只記個 log 就算了。
     """
     if not messages:
         return
 
-    await line_bot_api.reply_message(event.reply_token, messages[:LINE_MESSAGE_LIMIT])
-
+    head = messages[:LINE_MESSAGE_LIMIT]
     overflow = messages[LINE_MESSAGE_LIMIT:]
+
+    try:
+        await line_bot_api.reply_message(event.reply_token, head)
+    except Exception as e:
+        if not user_id:
+            # 沒有 user_id 就補不了 push，至少留下紀錄而不是無聲丟棄
+            logger.warning(
+                f"Reply failed ({context}) and no user_id to push to, "
+                f"dropping {len(messages)} message(s): {e}")
+            return
+        logger.warning(f"Reply failed ({context}), falling back to push: {e}")
+        await _push_in_chunks(user_id, messages, context)
+        return
+
     if not overflow:
         return
     if not user_id:
@@ -576,6 +597,10 @@ async def handle_message_event(event: MessageEvent):
             logger.info(f"UID: {user_id}")
             message_text = event.message.text
 
+            # 影片問答模式：已處理就結束，未處理（脫離）則交還原路
+            if user_id and await handle_video_qa_message(event, user_id, message_text):
+                return
+
             # Check if user has a pending agentic vision request
             if user_id in pending_agentic_vision:
                 await handle_agentic_vision_with_prompt(event, user_id, message_text)
@@ -599,10 +624,16 @@ async def handle_message_event(event: MessageEvent):
                 await handle_text_message_via_orchestrator(event, user_id)
 
         elif isinstance(event.message, ImageMessage):
+            if event.source.user_id:
+                get_video_qa_sessions().exit(event.source.user_id)
             await handle_image_message(event)
         elif isinstance(event.message, AudioMessage):
+            if event.source.user_id:
+                get_video_qa_sessions().exit(event.source.user_id)
             await handle_audio_message(event)
         elif isinstance(event.message, LocationMessage):
+            if event.source.user_id:
+                get_video_qa_sessions().exit(event.source.user_id)
             await handle_location_message(event)
 
 
@@ -622,6 +653,8 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
         mode: Summary mode (not used directly now since we always generate social media posts)
     """
     results = []
+    # 最後一個 YouTube 網址（若有）。按鈕在迴圈外才掛，理由見送出前的說明。
+    video_qa_url = None
 
     for url in urls:
         try:
@@ -697,11 +730,30 @@ async def handle_url_message(event: MessageEvent, urls: list, mode: str = "norma
             # carousel + 4 則純文字 = 5，剛好用滿 LINE reply 的單次訊息上限
             results.extend([fb_text_msg, li_text_msg, th_text_msg, tw_text_msg])
 
+            if is_youtube_url(url):
+                # 只記下來，等所有網址都處理完再掛按鈕——見迴圈外的說明
+                video_qa_url = url
+
         except Exception as e:
             logger.error(f"Unexpected error processing URL: {e}", exc_info=True)
             error_msg = LineService.format_error_message(e, "處理網址")
             reply_msg = TextSendMessage(text=f"{url}\n\n{error_msg}")
             results.append(reply_msg)
+
+    if video_qa_url and results:
+        # LINE 只從 reply 陣列的「最後一則」渲染 quickReply，所以按鈕必須等所有
+        # 網址都處理完、掛在真正的最後一則上。掛在迴圈內（該網址那批的最後一則）
+        # 的話，只要後面還有別的網址，按鈕就會被擠掉、完全不顯示。
+        # 多個 YouTube 網址時取最後一個——它離按鈕最近。
+        results[-1].quick_reply = QuickReply(items=[
+            QuickReplyButton(
+                action=PostbackAction(
+                    label="🎬 問這部影片",
+                    data=json.dumps({"action": "video_qa", "url": video_qa_url}),
+                    display_text="🎬 問這部影片",
+                )
+            ),
+        ])
 
     await _reply_with_overflow(
         event, getattr(event.source, "user_id", None), results, "URL 社群文案")
@@ -1361,6 +1413,110 @@ async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
             await line_bot_api.push_message(user_id, [error_msg])
 
 
+def build_video_qa_quick_reply() -> QuickReply:
+    """影片問答模式的「結束」按鈕。
+
+    每則答案都掛著它——手動脫離比任何自動判斷都可靠。
+    """
+    return QuickReply(items=[
+        QuickReplyButton(
+            action=PostbackAction(
+                label="🚪 結束問影片",
+                data=json.dumps({"action": "video_qa_exit"}),
+                display_text="🚪 結束問影片",
+            )
+        )
+    ])
+
+
+async def handle_video_qa_enter_postback(event: PostbackEvent, data: dict, user_id: str):
+    """進入影片問答模式。刻意不呼叫 Gemini——按個按鈕不該花錢。"""
+    url = data.get("url")
+    if not url or not user_id:
+        logger.error("Missing url or user_id in video_qa postback")
+        return
+
+    get_video_qa_sessions().enter(user_id, url)
+    await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+        text=("🎬 已進入影片問答模式\n"
+              "接下來直接打字問我這部影片的內容就好，例如\n"
+              "「他有講到定價嗎？」「XR 眼鏡那段在哪裡？」\n\n"
+              "貼新網址或打指令會自動離開。"),
+        quick_reply=build_video_qa_quick_reply(),
+    )])
+
+
+async def handle_video_qa_exit_postback(event: PostbackEvent, user_id: str):
+    """手動離開影片問答模式。"""
+    get_video_qa_sessions().exit(user_id)
+    await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+        text="🚪 已結束影片問答。有需要隨時再貼影片連結給我。"
+    )])
+
+
+async def handle_video_qa_message(event: MessageEvent, user_id: str, text: str) -> bool:
+    """處理影片模式中的文字訊息。
+
+    回傳 True 表示已處理，False 表示交還給原本的訊息路由。
+
+    判斷順序是刻意的——脫離檢查在配額檢查之前。使用者貼新網址想換主題，
+    不該因為影片配額用完就被擋下來，那是兩件不相干的事。
+    """
+    sessions = get_video_qa_sessions()
+    session = sessions.get(user_id)
+    if session is None:
+        return False
+
+    # 1) 脫離檢查優先
+    if should_exit_video_mode(text):
+        sessions.exit(user_id)
+        return False
+
+    # 2) 配額檢查
+    meter = get_usage_meter()
+    allowed, remaining = meter.check_budget(user_id)
+    if not allowed:
+        sessions.exit(user_id)
+        await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+            text=(f"📊 今日影片問答用量已達上限（已用 "
+                  f"${meter.spent_today(user_id):.2f}）。\n"
+                  "明天會重置。影片摘要不受影響，還是可以用。")
+        )])
+        return True
+
+    # 3) 提問。長片實測 26–53 秒，先開 loading 動畫（不消耗 reply token）
+    await LineService.show_loading_animation(user_id)
+    result = ask_youtube_video(session["url"], text)
+
+    if result["status"] != "success":
+        error_text = result.get('error_message', '無法回答這個問題')
+        if result.get("rate_limited"):
+            # 429 是暫時性的，值得重試——留在模式裡，不強迫使用者重新按一次入口
+            await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+                text=f"⚠️ {error_text}",
+                quick_reply=build_video_qa_quick_reply(),
+            )])
+        else:
+            # 非 429（影片下架、私人影片等）不會自己好——清掉 session，否則接下來
+            # 30 分鐘每則訊息都會被攔截、重試、再花一次 Vertex 呼叫卻注定失敗
+            sessions.exit(user_id)
+            await line_bot_api.reply_message(event.reply_token, [TextSendMessage(
+                text=f"⚠️ {error_text}\n\n已離開影片問答模式。"
+            )])
+        return True
+
+    meter.record(user_id, "video_qa", result["usage"])
+    sessions.bump(user_id)
+
+    await _reply_with_overflow(
+        event, user_id,
+        [TextSendMessage(text=result["answer"],
+                         quick_reply=build_video_qa_quick_reply())],
+        "video_qa",
+    )
+    return True
+
+
 async def handle_image_analyze_postback(event: PostbackEvent, data: dict, user_id: str):
     """Handle image analysis postback from quick reply"""
     try:
@@ -1441,6 +1597,15 @@ async def handle_postback_event(event: PostbackEvent):
         # Handle YouTube summary requests
         if action_value == "youtube_summary":
             await handle_youtube_summary_postback(event, data)
+            return
+
+        # Handle entering/exiting video Q&A mode
+        if action_value == "video_qa":
+            await handle_video_qa_enter_postback(event, data, user_id)
+            return
+
+        if action_value == "video_qa_exit":
+            await handle_video_qa_exit_postback(event, user_id)
             return
 
         # Handle read aloud requests

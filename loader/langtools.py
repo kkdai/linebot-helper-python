@@ -6,6 +6,8 @@ from io import BytesIO
 from typing import Any
 from pydantic import BaseModel, Field
 
+from config.agent_config import get_agent_config
+
 
 # Use google-genai SDK for Vertex AI
 try:
@@ -158,7 +160,7 @@ reply in zh-TW"""
         client = _get_vertex_client()
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0,
@@ -203,7 +205,7 @@ def generate_json_from_image(img: PIL.Image.Image, prompt: str) -> Any:
         ]
 
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=contents,
             config=types.GenerateContentConfig(
                 temperature=0.5,
@@ -488,7 +490,7 @@ def generate_social_media_posts(text: str) -> dict:
     try:
         client = _get_vertex_client()
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
@@ -547,7 +549,7 @@ def generate_social_media_posts_en(text: str) -> dict:
     try:
         client = _get_vertex_client()
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
@@ -631,7 +633,7 @@ def generate_research_report(text: str, url: str) -> dict:
         client = _get_vertex_client()
         tools = [types.Tool(google_search=types.GoogleSearch())] if with_grounding else None
         return client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.4,
@@ -683,7 +685,7 @@ def summarize_for_bookmark(text: str) -> dict:
     try:
         client = _get_vertex_client()
         response = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=get_agent_config().fast_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.3,

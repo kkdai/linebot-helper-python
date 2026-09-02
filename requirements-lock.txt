@@ -3,7 +3,7 @@
 # No LangChain - Pure Vertex AI implementation
 
 # Google AI (Vertex AI)
-google-genai==2.7.0
+google-genai==2.21.0
 google-cloud-firestore==2.21.0
 
 # Web framework
@@ -31,7 +31,7 @@ requests==2.32.3
 
 # Utilities
 tenacity==8.5.0
-pydantic==2.10.3
+pydantic==2.13.4
 Markdown==3.10.2
 
 # Additional dependencies
