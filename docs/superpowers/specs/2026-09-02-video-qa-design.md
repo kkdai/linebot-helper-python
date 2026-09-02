@@ -37,7 +37,7 @@
 
 ### 二、thinking token 是成本主角，且按 output 計價
 
-同一支 10 分鐘影片，`gemini-3.5-flash-lite`：
+同一支 10 分鐘影片，`gemini-3.5-flash-lite`，最初一次測試：
 
 | 模式 | in | out（含 thinking） | 成本 |
 |---|---|---|---|
@@ -46,23 +46,69 @@
 | AGENTIC + `thinking_level="LOW"` | 2,216 | 638 | $0.0023（比 static 便宜 7.4 倍） |
 
 agentic 把影片從 input 移除（54,546 → 2,216），但改用「思考」導航，而
-thinking token 按 output 計價（$2.50/M，是 input 的 8.3 倍）。
+thinking token 按 output 計價（$2.50/M，是 input 的 8.3 倍）。這一點站得住：
+thinking token 確實是成本主角，也確實按 output 計價。
 
-**漏設 `thinking_level` 不會報錯、不會有任何徵兆，只有帳單會變。**
-這是測試策略①存在的唯一理由。
+**但上表每格只測了一次，不是重複實驗。** 結論三的 27 次對照實驗顯示，
+同一組 AGENTIC + `thinking_level="LOW"` 設定本身就會在 ~0 與
+~35,000–37,000 thinking tokens 之間跳動——這張表的 $0.0023 很可能只是剛好
+抽到低點、$0.0946 剛好抽到高點，不是「設不設 `thinking_level` 決定成本
+高低」。可重複驗證的結論見結論三。
 
-### 三、長片上 thinking_level 會被忽略
+**漏設 `thinking_level` 仍然不會報錯、不會有任何徵兆**——這一點不受結論三
+影響，是 SDK 行為，與是否尖峰無關。這仍是測試策略①存在的理由：不是因為
+漏設會讓成本固定變某個倍數，而是因為漏設本身沒有任何機制會提醒你。
 
-2 小時影片（Google I/O '25 keynote），同樣設 `thinking_level="LOW"`：
+### 三、thinking token 是伺服器端非決定性，與影片長度無關
 
-| 影片長度 | thinking tokens | 每次成本 | 延遲 |
-|---|---|---|---|
-| 10 分鐘 | 0 | $0.0023 | ~10s |
-| 2 小時 | 359,961 | **$0.9067** | 26–53s |
-| （static 估算，2h） | — | ~$0.196 | — |
+**原先的推測（已被推翻，留供對照）**：最初的 spike 只各測一次就下結論——
+10 分鐘影片 `thinking_tokens=0`（$0.0023），2 小時 Google I/O '25 keynote
+`thinking_tokens=359,961`（$0.9067，延遲 26–53s）。兩次觀測剛好落在不同
+結果上，於是推論「長片上 `thinking_level` 會被忽略」，並據此算出「長片上
+agentic 比 static 貴約 4.6 倍」「公告宣稱的成本降 66% 不成立」。
 
-長片上 agentic 比 static 貴約 4.6 倍。公告宣稱的「成本降 66%」在 Vertex 的
-價格結構下，長片不成立（token 總數確實降約 40%，但貴的那部分變多了）。
+**這個推論是錯的。** Task 4 的 27 次對照實驗（同一支 10 分鐘影片、同一組
+設定，`.superpowers/sdd/2026-09-03-video-qa-and-model-tiering/thinking_round2.txt`，
+摘要見同目錄 `task-4-report.md`）證明問題與影片長度完全無關：
+
+| 呼叫 | thinking_tokens |
+|---|---|
+| 1 | 0 |
+| 2 | 0 |
+| 3 | 34,911 |
+| 4 | 35,122 |
+| 5 | 37,410 |
+
+同一支影片、同一組參數，連續呼叫在 ~0 與 ~35,000–37,000 之間跳動，中間沒有
+值——不是漸進分布，是兩個叢集。**這是伺服器端非決定性，不是影片長度、不是
+任何客戶端可控參數。**
+
+排除清單（27 次呼叫，皆用正式版 prompt `YOUTUBE_PROMPTS["normal"]` /
+`ASK_PROMPT_TEMPLATE`）：
+
+| 排除的假說 | 測試方式 | 結果 |
+|---|---|---|
+| `thinking_level` 沒設對 | `LOW` / `MINIMAL` / 省略 `thinking_config`，各 6 次 | 三者平均成本 $0.00137–$0.00146／次，量測不出差異 |
+| 該用 `thinking_budget` 取代 `thinking_level` | `thinking_budget=0`，6 次 | 平均 $0.00137／次，與上面三者量測不出差異 |
+| 兩者一起帶，取保險 | `thinking_budget` + `thinking_level` 並用 | 伺服器直接 `400 INVALID_ARGUMENT`——不能並用 |
+| prompt 太複雜觸發思考 | 同一份正式版 prompt：前一批 4 次中 3 次尖峰，本批 27 次中 0 次尖峰 | 尖峰與 prompt 複雜度無穩定關聯——同一 prompt 在不同批次表現完全不同 |
+
+唯一觀察到「決定性」的選項是 `media_processing="STATIC"`：0/6 尖峰，成本穩
+定在 $0.0165–$0.0167／次。但 STATIC 會把 `tool_use_tokens` 打成 0——等於
+整個關掉 agentic 影片導航，不是「同樣功能換一種穩定模式」，是換掉功能本身。
+
+**誠實的成本圖像**：正常情況約 $0.0014／次；一旦尖峰，成本約是正常情況的
+60 倍（約 $0.08 上下，與最初單次觀測的 $0.0946、round 1 實測的 $0.0846 同一
+量級）。尖峰無法從客戶端預測，也無法從客戶端阻止。`services/usage_meter.py`
+與 `tools/youtube_tool.py` 的 `THINKING_TOKENS_WARN_THRESHOLD` 警告 log
+正是因為這樣才存在——client 端擋不住尖峰，能做的只有讓它在 log／用量記錄裡
+被看見。
+
+**決策：維持 `thinking_level="LOW"`。** 不是因為它比較穩定（並沒有），而是
+它是唯一已經測過完整測試套件、且與 `thinking_budget=0`／省略 `thinking_config`
+相比量測不出任何優劣差異的既有實作——換一個沒有實測優勢的參數，只是把
+「已測試過的行為」換成「沒測試過的行為」。詳見 `task-4-report.md`
+「Final ruling and commit」一節。
 
 ### 四、模型可用性（實測）
 
