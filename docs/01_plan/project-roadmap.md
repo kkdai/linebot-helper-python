@@ -115,7 +115,7 @@ Firestore 不可用或讀寫出錯時安靜降級成直接爬。`use_cache=False
 | 日期 | 決策 | 原因 |
 |---|---|---|
 | 2026-09-03 | 影片問答的 `thinking_tokens` 屬伺服器端非決定性（同設定同影片同批次仍在 ~0 與 ~35,000–37,000 間跳動），維持 `thinking_level="LOW"` 並加 `THINKING_TOKENS_WARN_THRESHOLD` 警告 log，不切換其他 thinking 參數 | 27 次對照實驗顯示 `thinking_budget=0`、省略 `thinking_config` 與 `LOW` 量測不出差異，換一個沒有實測優勢的參數只是把「測過的行為」換成「沒測過的行為」；`thinking_budget` 與 `thinking_level` 也不能並用（400 錯誤），見 [video-qa 結論三](../superpowers/specs/2026-09-02-video-qa-design.md) |
-| 2026-09-03 | 影片一律 thinking_level=LOW，且固定用 3.5-flash-lite | 漏設成本變 5.5 倍且無徵兆；3.7-flash 在 agentic 會忽略此參數，成本高 60 倍 |
+| 2026-09-03 | 影片一律 thinking_level=LOW，且固定用 3.5-flash-lite | 3.5-flash-lite 是唯一在測試中維持穩定低成本的模型；3.7-flash 較易觸發 429，且未排除與結論三同源的 thinking token 尖峰 |
 | 2026-09-03 | 影片問答採 stateless 重新查詢，不保留 context | Vertex AI 不回傳 tool_call/tool_response parts，history 重播會 400 或被完整重跑 |
 | 2026-09-03 | 模型一律不用 preview／實驗版，並以測試強制 | `gemini-3-pro-preview` 無預警下架把聊天功能弄壞，且完全沒被發現 |
 | 2026-08-26 | 爬取快取 TTL 設 24 小時，而非比照報告的 7 天 | 存的是網頁當下內容，新聞類頁面放太久會拿到舊資料 |

@@ -114,7 +114,7 @@ agentic 比 static 貴約 4.6 倍」「公告宣稱的成本降 66% 不成立」
 
 | 模型 | 結果 |
 |---|---|
-| `gemini-3.7-flash` | OK。但 agentic 影片會忽略 `thinking_level`（設 LOW 仍燒 36,354 thinking tokens，10 分鐘影片 $0.1389，是 3.5-flash-lite 的 60 倍），且易觸發 429 |
+| `gemini-3.7-flash` | OK。單次觀測到一次 thinking token 尖峰（36,354，$0.1389）——未針對 3.7-flash 重複實驗，不排除與結論三同一種非決定性；獨立於此，測試中該模型較易觸發 429 |
 | `gemini-3.6-flash` | OK |
 | `gemini-3.5-flash-lite` | OK。影片唯一划算的選擇 |
 | `gemini-3.1-flash-lite` | OK，但不在 agentic 支援名單，設 AGENTIC 會靜默降級為 STATIC |
@@ -167,7 +167,9 @@ check_budget(user_id) -> (bool, remaining)
 ```
 
 配額以**實際花費**計，不以影片長度計——用長度就得先查影片時長（需另接
-YouTube Data API），且長度與花費非線性（10 分鐘 $0.0023、2 小時 $0.91）。
+YouTube Data API），而且長度不是可靠的預算代理變數：同一支影片、同一組
+設定，單次花費本身就在 ~$0.0014 與 ~$0.08 間跳動（見結論三），即使查得到
+長度也算不出花費。
 
 同時完成 roadmap P1-4「用量與成本觀測」。
 
