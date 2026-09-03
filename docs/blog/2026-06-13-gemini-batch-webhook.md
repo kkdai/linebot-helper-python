@@ -9,6 +9,11 @@ category:
 tags: ["LINE Bot", "Gemini API", "Batch API", "Webhook", "Google Maps Grounding", "Asynchronous Programming", "FastAPI"]
 ---
 
+> **這是一篇部落格文章，不是專案文件。** 寫於 2026-06-13，內容是當時的實作快照——
+> 例如文中的 `gemini-2.5-flash` 現在已改由 `config/agent_config.py` 的
+> `fast_model` 統一決定。專案的現況看
+> [docs/01_plan/project-roadmap.md](../01_plan/project-roadmap.md)。
+
 # 異步處理的利器：Gemini Batch API & Webhooks
 
 在開發基於 LLM 的應用程式時，我們常常需要處理大量的數據分析任務——例如一次性分析數十家餐廳的評論、對大量文章進行分類、或是批次生成翻譯。如果採用傳統的同步 API（即時呼叫），不僅會面臨嚴重的 **Rate Limit (速率限制)** 阻塞，更會因為網路連線逾時（Timeout）與極高的運算成本而宣告失敗。
@@ -49,7 +54,7 @@ graph TD
 # 核心實作
 
 ### 1. 使用 Gemini 從 Grounding 文字中精準提取餐廳名
-在 [tools/maps_tool.py](file:///Users/al03034132/Documents/linebot-helper-python/tools/maps_tool.py) 中，地圖搜尋返回的是一段富含格式與說明的純文字。我們使用 Gemini-2.5-flash 的 structured output 概念，以 JSON 格式精確擷取餐廳名稱：
+在 [tools/maps_tool.py](../../tools/maps_tool.py) 中，地圖搜尋返回的是一段富含格式與說明的純文字。我們使用 Gemini-2.5-flash 的 structured output 概念，以 JSON 格式精確擷取餐廳名稱：
 
 ```python
         # 擷取前三大餐廳名稱以供 Quick Reply 使用
@@ -79,7 +84,7 @@ graph TD
 ```
 
 ### 2. 動態生成 LINE Quick Reply 按鈕
-在 [main.py](file:///Users/al03034132/Documents/linebot-helper-python/main.py) 中，我們取得餐廳列表後，動態產生 `QuickReplyButton`。我們需要特別注意 LINE API 對於按鈕 `label` 的長度限制：
+在 [main.py](../../main.py) 中，我們取得餐廳列表後，動態產生 `QuickReplyButton`。我們需要特別注意 LINE API 對於按鈕 `label` 的長度限制：
 
 ```python
         quick_reply = None
