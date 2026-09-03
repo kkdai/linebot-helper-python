@@ -2,10 +2,13 @@
 google-genai>=2.20.0
 google-cloud-firestore>=2.19.0
 Markdown>=3.7
-# Google Agent Development Kit (ADK)
-# >=1.36.2：這是 google-adk 開始要求 google-genai>=2.9,<3（相容 google-genai>=2.20 的下限）的最低版本；
-# 更早版本的 ADK 宣告 google-genai<2.0.0，會跟本檔案的 google-genai>=2.20.0 互斥
-google-adk>=1.36.2
+# Google Agent Development Kit (ADK)：刻意不列入依賴。
+# agents/ 下每個 agent 都有 `from google.adk.agents import Agent` 的 import guard，
+# 但建出來的 `adk_agent` 物件沒有任何一條路徑會呼叫它（沒有 runner、沒有 .run()），
+# 所有實際工作都是直接呼叫 tools/ 底下的函式。裝了它只會多建幾個沒人用的物件，
+# 代價卻是 fastapi/starlette 的大版本升級（google-adk 2.x 要 fastapi>=0.133、
+# starlette>=1.3.1，本專案鎖在 0.115.5 / 0.41.3）。
+# 真的要讓 ADK 上線，得先做 web 堆疊升級與回歸測試——見 docs/01_plan/project-roadmap.md P0.5-13。
 beautifulsoup4
 llmsherpa
 fastapi
