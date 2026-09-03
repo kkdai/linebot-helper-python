@@ -7,12 +7,28 @@ A Python application that provides LINE bot functionality with tools for searchi
 ### Core Features
 - **🎬 Video Q&A** - Ask follow-up questions about any YouTube video and get
   answers with precise timestamps (agentic video understanding)
-- **🤖 Intelligent Conversation with Memory** - Ask questions and get AI-powered answers with automatic web search (NEW!)
+- **🤖 Intelligent Conversation with Memory** - Ask questions and get AI-powered answers with automatic web search
 - **💬 Multi-turn Dialogue Support** - Remembers conversation context for 30 minutes
-- **URL Content Extraction & Summarization** - Extract and summarize web content with AI
+- **URL Content Extraction & Summarization** - Extract and summarize web content with AI.
+  URLs without a scheme (`www.youtube.com/watch?v=...`) are recognised too
+- **📣 Social Media Posts** - Every URL also becomes ready-to-post copy for Facebook,
+  LinkedIn, Threads and Twitter/X in Traditional Chinese, with an English version on demand
+- **🔖 Bookmarks & 📄 Research Reports** - Save summaries to Firestore, or generate a
+  grounded deep-dive report served as a web page
+- **🎤 Voice In and Out** - Send a LINE voice message and the answer comes back with a
+  "🔊 用語音聽" button that reads it aloud (Gemini TTS)
+- **🗣️ LIFF Live Voice Assistant** - Real-time voice conversation in a LIFF page over
+  WebSocket (Gemini Live), push-to-talk or hands-free
+- **📍 Location & Restaurant Search** - Share a location for nearby recommendations
+  (Maps Grounding), with an optional Batch API deep-dive on reviews and signature dishes
 - **Flexible Summary Modes** - Choose between short, normal, or detailed summaries
-- **Image Processing** - Analyze images with Gemini AI
+- **Image Processing** - Analyze images with Gemini AI, including agentic vision driven
+  by your own prompt
 - **GitHub Issues Summary** - Daily digest of GitHub activity
+- **💰 Usage & Cost Tracking** - Per-user token and cost records in Firestore, with an
+  optional daily budget cap for video Q&A
+- **⚡ Crawl Cache** - Crawled pages are cached for 24 hours, so the follow-up buttons
+  (English post, research report) don't pay to crawl the same page again
 - **Enhanced Error Handling** - Friendly Chinese error messages with automatic retry
 
 ### Special Website Support
@@ -50,6 +66,20 @@ These environment variables enable additional features:
   (`MODEL_PRICING`) - adding a new model means adding its pricing row there too,
   or `services/usage_meter.py` cost tracking silently misses it.
 - `VIDEO_QA_DAILY_BUDGET_USD`: Daily spend cap for video Q&A. Unset means unlimited.
+- `GOOGLE_AI_API_KEY` (or `GEMINI_API_KEY`): Google AI Studio key. Required for the
+  three features that do **not** run on Vertex AI - read-aloud TTS
+  (`tools/tts_tool.py`), the LIFF live voice assistant (`/ws/voice/...`), and the
+  Batch API restaurant analysis (`services/batch_service.py`).
+- `LIFF_ID`: LIFF app ID injected into the voice assistant page. Without it `/liff/`
+  is served with the placeholder unsubstituted and the page won't initialise.
+- `WEBHOOK_DOMAIN`: Public domain used as the callback base for Batch API jobs.
+  Falls back to the domain of the incoming request.
+- `WEBHOOK_SIGNING_SECRET`: Shared secret for validating Batch API callbacks. If it is
+  unset, signature validation is **skipped** (a warning is logged) - set it in production.
+- `ENABLE_GROUNDING` / `ENABLE_MAPS_GROUNDING`: Turn Google Search / Maps grounding off
+  (both default to `true`).
+- `SESSION_TIMEOUT_MINUTES` (30), `MAX_HISTORY_LENGTH` (20), `MAX_OUTPUT_TOKENS` (2048),
+  `AGENT_TEMPERATURE` (0.7): Conversation tuning, see `config/agent_config.py`.
 
 ### Vertex AI Setup (Required for All AI Features)
 
@@ -84,9 +114,13 @@ These environment variables enable additional features:
 **Note:** For Maps Grounding specifically, `global` location is recommended.
 
 **Migration from Gemini API Key:**
-- `GOOGLE_API_KEY` is **no longer used** - all features now use Vertex AI
+- `GOOGLE_API_KEY` is **no longer used** - summarization, chat, vision, video and
+  grounding all run on Vertex AI
 - This provides higher rate limits and better quota management
 - Vertex AI is a paid service - see [pricing](https://cloud.google.com/vertex-ai/pricing)
+- Three features still need a Google AI Studio key (`GOOGLE_AI_API_KEY` /
+  `GEMINI_API_KEY`) because they use APIs Vertex AI doesn't expose the same way:
+  read-aloud TTS, the LIFF live voice assistant, and Batch API restaurant analysis
 
 **Google Search Grounding:**
 - The intelligent chat feature uses **Vertex AI Grounding with Google Search**
@@ -184,6 +218,55 @@ how the cost profile (and its non-determinism) works.
 
 ---
 
+### 📣 Social Media Posts
+
+Send any URL and the reply is a Flex carousel: a "📌 摘要與分析" bubble followed by
+ready-to-post copy for Facebook, LinkedIn, Threads and Twitter/X in Traditional
+Chinese (each with a copy button), plus the same four as plain text messages for
+desktop copy-paste. The summary bubble carries four buttons - "🔗 開啟原文",
+"📄 詳細研究報告", "🇺🇸 英文貼文" (generates the English versions on demand) and
+"🔖 儲存書籤".
+
+Sending several URLs in one message works too - the first 5 messages go out as a
+reply and the rest are pushed in batches, so nothing gets dropped at LINE's 5-message
+limit.
+
+### 🎤 Voice Messages and Read Aloud
+
+- Send a **LINE voice message**: it is transcribed, answered through the same
+  Orchestrator as text, and the reply carries a "🔊 用語音聽" button.
+- Tap that button to get the same answer back as an audio message
+  (Gemini TTS, `tools/tts_tool.py`). The button is offered on replies to voice
+  messages - text conversations stay text-only.
+
+### 🗣️ LIFF Live Voice Assistant
+
+`/liff/` serves a LIFF page that talks to Gemini Live over a WebSocket
+(`/ws/voice/{session_id}`) for real-time voice conversation, with nearby-place search
+available as a tool mid-conversation. Two modes: push-to-talk (browser sends
+activity signals, automatic VAD disabled) and hands-free (Gemini's own VAD).
+Requires `LIFF_ID` and `GOOGLE_AI_API_KEY`. See
+[design](docs/superpowers/specs/2026-03-28-liff-voice-assistant-design.md).
+
+### 📍 Location and Restaurant Search
+
+Share a location and the bot suggests nearby places using Maps Grounding, with a
+"🔍 深度評論分析 (Batch)" button. That kicks off a Gemini Batch API job which analyses
+reviews and signature dishes in the background and pushes the result back when done
+(callbacks land on `/api/gemini-callback/*`). You can also ask in text, e.g.
+`幫我查一下 <店名> 的菜色`.
+
+### 💰 Usage and Cost Tracking
+
+Every Gemini call's token counts and converted cost are accumulated per user per day
+in Firestore (`services/usage_meter.py`), priced from `MODEL_PRICING` in
+`config/agent_config.py`. Video Q&A honours `VIDEO_QA_DAILY_BUDGET_USD` as a daily
+spend cap - the budget is enforced on actual spend, not video length, because the
+cost of a single call varies by more than an order of magnitude. Metering failures
+degrade silently and never block a reply.
+
+---
+
 ### 📝 URL Summarization with Modes
 
 Send a URL to the bot and it will extract and summarize the content. You can choose different summary lengths:
@@ -191,6 +274,10 @@ Send a URL to the bot and it will extract and summarize the content. You can cho
 - **Standard Summary** (default): `https://example.com`
 - **Short Summary** (1-3 key points): `https://example.com [短]` or `https://example.com [short]`
 - **Detailed Summary** (comprehensive analysis): `https://example.com [詳]` or `https://example.com [detailed]`
+
+The scheme is optional - `www.example.com/a` and `youtu.be/xxxx` are recognised and
+normalised to `https://`. Punctuation stuck to the end of a URL (`...com/a，很讚`)
+is stripped, while genuinely balanced brackets (Wikipedia's `/wiki/Foo_(bar)`) are kept.
 
 ### 🐙 GitHub Summary
 
@@ -207,6 +294,14 @@ Send an image to the bot and it will analyze and describe the content in Traditi
 - `POST /hn`: Endpoint for Hacker News summarization
 - `POST /hf`: Endpoint for Hugging Face paper summarization
 - `POST /urls`: Multi-URL batch processing (up to 5 URLs)
+
+### Other Endpoints
+- `GET /reports/{report_id}`: Rendered research report page
+- `GET /liff/`: LIFF voice assistant page (`LIFF_ID` is injected into the template)
+- `WS /ws/voice/{session_id}`: Gemini Live relay for the voice assistant
+- `GET /images/{image_id}`, `GET /audio/{audio_id}`: Temporary media served back to LINE
+- `POST /api/gemini-callback/static`, `POST /api/gemini-callback/dynamic`: Batch API
+  job callbacks (validated with `WEBHOOK_SIGNING_SECRET`)
 
 For detailed API documentation, see [IMPROVEMENTS.md](docs/IMPROVEMENTS.md).
 
@@ -282,6 +377,8 @@ For detailed documentation, see:
 
 ## 📚 Documentation
 
+- **Project Roadmap** (current status, what's next): [project-roadmap.md](docs/01_plan/project-roadmap.md)
+- **Feature Designs**: [docs/superpowers/specs/](docs/superpowers/specs/)
 - **Quick Start Guide**: [QUICK_START.md](docs/QUICK_START.md)
 - **Technical Documentation**: [IMPROVEMENTS.md](docs/IMPROVEMENTS.md)
 - **N8N Workflow**: [n8n.json](n8n.json)
@@ -294,6 +391,7 @@ Key dependencies:
 - `fastapi` - Web framework
 - `line-bot-sdk` - LINE Bot SDK
 - `google-genai` - Vertex AI SDK (no LangChain)
+- `google-cloud-firestore` - Persistence for sessions, bookmarks, reports, usage records
 - `tenacity` - Retry logic
 - `pypdf` - PDF processing (fallback)
 - `firecrawl-anydoc` - Document to Markdown conversion (Office, OpenDocument, EPUB, PDF)
