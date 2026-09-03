@@ -379,6 +379,7 @@ For detailed documentation, see:
 
 - **Project Roadmap** (current status, what's next): [project-roadmap.md](docs/01_plan/project-roadmap.md)
 - **Feature Designs**: [docs/superpowers/specs/](docs/superpowers/specs/)
+- **Blog Post**: [Gemini Batch API & Webhook 實戰記](docs/blog/2026-06-13-gemini-batch-webhook.md) - how the restaurant deep-analysis flow was built
 - **Quick Start Guide**: [QUICK_START.md](docs/QUICK_START.md)
 - **Technical Documentation**: [IMPROVEMENTS.md](docs/IMPROVEMENTS.md)
 - **N8N Workflow**: [n8n.json](n8n.json)
