@@ -1362,57 +1362,6 @@ async def run_specific_restaurant_analysis_background(user_id: str, restaurant_n
 
 
 
-async def handle_youtube_summary_postback(event: PostbackEvent, data: dict):
-    """
-    Handle YouTube summary requests using ContentAgent
-
-    Args:
-        event: LINE postback event
-        data: Parsed JSON data containing YouTube URL and mode
-    """
-    try:
-        mode = data.get('mode')
-        url = data.get('url')
-        user_id = event.source.user_id if isinstance(event.source, SourceUser) else None
-
-        if not mode or not url:
-            logger.error("Missing mode or url in YouTube summary postback")
-            return
-
-        logger.info(f"Generating YouTube summary: mode={mode}, url={url}")
-
-        # Send "processing" message
-        mode_text = "詳細摘要" if mode == "detail" else "Twitter 分享文案"
-        processing_msg = TextSendMessage(text=f"⏳ 正在生成{mode_text}，請稍候...")
-        await line_bot_api.reply_message(event.reply_token, [processing_msg])
-
-        # Use Orchestrator's ContentAgent to summarize YouTube video
-        result = await orchestrator.content_agent.summarize_youtube(url, mode=mode)
-
-        if result["status"] != "success":
-            error_msg = result.get("error_message", "無法生成影片摘要")
-            logger.error(f"ContentAgent failed for YouTube URL: {url} - {error_msg}")
-            result_msg = TextSendMessage(text=f"⚠️ {error_msg}")
-        else:
-            # Format result with URL
-            formatted_result = f"{url}\n\n{result['summary']}"
-            result_msg = TextSendMessage(text=formatted_result)
-
-        # Send result using push message
-        if user_id:
-            await line_bot_api.push_message(user_id, [result_msg])
-        else:
-            logger.warning("No user_id available, cannot push result message")
-
-    except Exception as e:
-        logger.error(f"YouTube summary error: {e}", exc_info=True)
-        error_msg = TextSendMessage(
-            text=LineService.format_error_message(e, "生成影片摘要")
-        )
-        if user_id:
-            await line_bot_api.push_message(user_id, [error_msg])
-
-
 def build_video_qa_quick_reply() -> QuickReply:
     """影片問答模式的「結束」按鈕。
 
@@ -1592,11 +1541,6 @@ async def handle_postback_event(event: PostbackEvent):
         # Handle image analysis requests
         if action_value == "image_analyze":
             await handle_image_analyze_postback(event, data, user_id)
-            return
-
-        # Handle YouTube summary requests
-        if action_value == "youtube_summary":
-            await handle_youtube_summary_postback(event, data)
             return
 
         # Handle entering/exiting video Q&A mode

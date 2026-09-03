@@ -12,7 +12,7 @@
 | 項目 | 狀態 |
 |---|---|
 | 部署 | Cloud Run `us-central1`，no-cpu-throttling |
-| 測試 | 265 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
+| 測試 | 293 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
 | 模型 | `gemini-3.7-flash`（推理）／`gemini-3.5-flash-lite`（高頻、影片），見 `config/agent_config.py` |
 | 持久化 | Firestore（chat sessions、bookmarks、reports、batch jobs、usage records） |
 | 目前焦點 | P2 測試安全網——見下方 P2 清單 |
@@ -60,16 +60,40 @@ P0-0 作法：模型抽成模組常數 `CHAT_MODEL`，改用實測可用的 `gem
 斷言不得使用 preview／實驗模型（preview 會無預警下架，這次就是這樣壞的），
 且必須在實測可用清單內。
 
-### P0.5 — 影片問答任務中發現的既有問題（未修復）
+### P0.5 — 影片問答任務中發現的既有問題 — Completed（2026-09-03）
 
 以下三項是 2026-09-03 影片問答＋模型分級升級任務過程中發現的既有問題，與該
-任務無關、非該任務造成，尚未修復，先記錄避免遺失：
+任務無關、非該任務造成。
 
-| # | 項目 | 問題 | 估時 |
+| # | 項目 | 問題 | 狀態 |
 |---|---|---|---|
-| 13 | 正式環境沒裝 `google-adk` | `Dockerfile:15` 把 `requirements-lock.txt` 複製成 `requirements.txt`，第 42 行照這份鎖定檔安裝，但 `requirements-lock.txt` 沒有 `google-adk`。三個 ADK 呼叫端都有 import guard 並降級（`agents/chat_agent.py:19` log 出 "using fallback implementation"），所以 `agents/` 這一層目前正式環境一直跑的是 non-ADK 路徑。要補上得先把 `fastapi` 從 0.115.5 升到 0.141.1（`google-adk` 依賴），連帶 `starlette` 大版本升級，需要獨立的 web 堆疊升級與回歸測試，不是加一行 lock 檔就能解決 | 1-2d（獨立驗證） |
-| 14 | YouTube 摘要按鈕是死碼 | `"youtube_summary"` postback action 只有 `main.py:1560` 一個 handler，repo 裡沒有任何地方會產生送出這個 action 的按鈕。「詳細摘要」「Twitter 文案」兩種模式因此永遠按不到 | 0.5d（先確認要保留哪個入口，再補按鈕或砍 handler） |
-| 15 | `find_url()` 抓不到省略協定的網址 | `loader/utils.py:47` 的正則是 `r'https?://[^\s]+'`，像 `www.youtube.com/watch?v=...` 這種沒帶 `https://` 的網址完全偵測不到。影響整條網址處理流程（摘要、書籤、研究報告），不只影片模式 | 0.5-1d |
+| 13 | 正式環境沒裝 `google-adk` | `Dockerfile:15` 把 `requirements-lock.txt` 複製成 `requirements.txt` 安裝，但鎖定檔沒有 `google-adk`，三個呼叫端的 import guard 安靜降級 | Completed（2026-09-03，改為明確不依賴 ADK） |
+| 14 | YouTube 摘要按鈕是死碼 | `"youtube_summary"` postback 有 handler，但沒有任何地方會產生送出這個 action 的按鈕 | Completed（2026-09-03，砍掉 handler） |
+| 15 | `find_url()` 抓不到省略協定的網址 | 正則是 `r'https?://[^\s]+'`，`www.youtube.com/watch?v=...` 完全偵測不到。影響整條網址流程 | Completed（2026-09-03） |
+
+P0.5-13 作法：查證後發現 `adk_agent` 物件只有被「建立」、沒有任何一條路徑會呼叫
+（沒有 runner、沒有 `.run()`），所有工作都是直接呼叫 `tools/` 的函式。裝上去只是
+多建幾個沒人用的物件，代價卻是 fastapi 0.115.5 → >=0.133、starlette 0.41.3 → >=1.3.1
+的大版本升級。因此改成明確不依賴：從 `requirements.txt` 移除並寫清楚原因，
+`agents/` 的 import guard 保留（ADK 遷移分支還在）。回歸測試
+`tests/test_requirements_lock.py` 守的是 bug class——任何寫進 `requirements.txt`
+卻沒進鎖定檔的套件都會失敗，不必再靠人眼發現「正式環境其實沒裝」。
+
+P0.5-14 作法：砍掉 handler 而不是補按鈕——Twitter 文案已由網址流程的 carousel
+產出，而那則訊息的 quick reply 位置現在掛的是「🎬 問這部影片」。
+`tests/test_postback_actions.py` 要求 handler 與按鈕成對存在（兩個方向都檢查）。
+
+P0.5-15 作法：帶協定／`www.` 開頭／白名單 TLD 的裸網域三種都認，一律補 `https://`
+再回傳（下游 `is_youtube_url()`、爬蟲、書籤都預期完整網址）。TLD 走白名單，否則
+`main.py`、`app.json` 這類檔名會被當成網址。全形標點排除在網址字元外、但保留中文
+字（`zh.wikipedia.org/wiki/台灣` 是合法網址），半形標點在尾端剝除且保留成對括號。
+已知取捨：純文字提到裸網域會被當成網址，影片問答模式下會觸發離開——該啟發式本來
+就偏向離開，誤判成本低。測試見 `tests/test_find_url.py`。
+
+未處理的相關發現：`agents/orchestrator.py:122` 自己有一份 `https?://` 正則，
+沒有共用 `find_url()`，同樣抓不到省略協定的網址。目前 `main.py` 會先用
+`find_url()` 把帶網址的訊息路由到 `handle_url_message`，所以這條路徑影響有限，
+但邏輯分歧仍在。
 
 ### P1 — 成本與延遲
 

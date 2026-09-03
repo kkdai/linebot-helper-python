@@ -1,8 +1,13 @@
 """
-ADK Agents for LINE Bot
+Agents for LINE Bot
 
-This module provides ADK-based agents for handling different types of user requests.
+This module provides agents for handling different types of user requests.
 Each agent is specialized for a specific task domain, coordinated by the Orchestrator.
+
+關於 ADK：每個 agent 都留著 `from google.adk.agents import Agent` 的 import guard，
+但 `google-adk` 不在依賴裡（見 requirements.txt 的說明），而且就算裝了，建出來的
+`adk_agent` 物件也沒有任何一條路徑會呼叫它——所有實際工作都是直接呼叫 tools/
+底下的函式。讀這裡的程式碼時請不要假設正式環境跑的是 ADK 路徑。
 """
 
 from .chat_agent import (
