@@ -2,7 +2,7 @@
 
 從 main.py 抽出，讓 WebSocket relay 邏輯可以獨立測試。
 
-協定重點（gemini-3.1-flash-live）：
+協定重點（Live API，目前為 gemini-3.8-live）：
 - send_client_content 只能用於連線初期塞入歷史，不可在對話中使用
 - PTT 模式：停用自動 VAD，由瀏覽器送 activity_start / activity_end
 - 免持模式：保留自動 VAD，由 Gemini 偵測說話結束（此時不可送 activity 信號）
@@ -14,11 +14,13 @@ from typing import Awaitable, Callable, Optional
 
 from google.genai import types as live_types
 
+from config.agent_config import VOICE_MODEL
 from tools.maps_tool import search_nearby_places
 
 logger = logging.getLogger(__name__)
 
-VOICE_MODEL = "gemini-3.1-flash-live-preview"
+# VOICE_MODEL 自 config.agent_config re-export（單一來源，可用 VOICE_MODEL
+# 環境變數覆寫），讓既有呼叫端 voice_live.VOICE_MODEL 不用改。
 VOICE_NAME = "Aoede"
 
 

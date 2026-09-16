@@ -18,7 +18,7 @@ A Python application that provides LINE bot functionality with tools for searchi
 - **🎤 Voice In and Out** - Send a LINE voice message and the answer comes back with a
   "🔊 用語音聽" button that reads it aloud (Gemini TTS)
 - **🗣️ LIFF Live Voice Assistant** - Real-time voice conversation in a LIFF page over
-  WebSocket (Gemini Live), push-to-talk or hands-free
+  WebSocket (Gemini 3.8 Live), push-to-talk or hands-free
 - **📍 Location & Restaurant Search** - Share a location for nearby recommendations
   (Maps Grounding), with an optional Batch API deep-dive on reviews and signature dishes
 - **Flexible Summary Modes** - Choose between short, normal, or detailed summaries
@@ -245,6 +245,8 @@ limit.
 (`/ws/voice/{session_id}`) for real-time voice conversation, with nearby-place search
 available as a tool mid-conversation. Two modes: push-to-talk (browser sends
 activity signals, automatic VAD disabled) and hands-free (Gemini's own VAD).
+Runs on `gemini-3.8-live` (GA), configurable via the `VOICE_MODEL` environment
+variable; the model id lives in `config/agent_config.py`.
 Requires `LIFF_ID` and `GOOGLE_AI_API_KEY`. See
 [design](docs/superpowers/specs/2026-03-28-liff-voice-assistant-design.md).
 

@@ -18,6 +18,19 @@ MODEL_PRICING = {
 }
 
 
+# Live API（bidiGenerateContent）語音模型。
+# 獨立成模組常數而非只放 dataclass：services/voice_live.py 在 import 時就需要它，
+# 但 get_agent_config() 要求 GOOGLE_CLOUD_PROJECT，沒設會直接 raise。
+# 2026-09-16 起改用 gemini-3.8-live（GA，名稱不含 -preview）。
+# 實測與舊的 gemini-3.1-flash-live-preview 對現有 LiveConnectConfig 完全相容：
+# PTT activity 信號、session_resumption、context_window_compression、
+# 雙向 audio transcription、Aoede 語音、google_search + function_declarations
+# 兩個 Tool 物件、tool calling 實際觸發，逐項驗過。
+# 勿改為 gemini-3.8-live-extended-thinking：該模型強制要求 thinking_level，
+# build_live_config() 目前不送 thinking_config，會連不上（1007）。
+VOICE_MODEL = os.getenv("VOICE_MODEL", "gemini-3.8-live")
+
+
 @dataclass
 class AgentConfig:
     """Configuration for ADK agents"""
@@ -41,6 +54,8 @@ class AgentConfig:
     # 的。3.7-flash 從未重複測試，且測試中較易觸發 429。見
     # docs/superpowers/specs/2026-09-02-video-qa-design.md 結論三、四。
     video_model: str = "gemini-3.5-flash-lite"
+    # Live API 語音助理（LIFF）。字面值見上方 VOICE_MODEL 模組常數。
+    voice_model: str = VOICE_MODEL
 
     # Session settings
     session_timeout_minutes: int = 30
@@ -78,6 +93,7 @@ def get_agent_config() -> AgentConfig:
         orchestrator_model=os.getenv('ORCHESTRATOR_MODEL', 'gemini-3.7-flash'),
         fast_model=os.getenv('FAST_MODEL', 'gemini-3.5-flash-lite'),
         video_model=os.getenv('VIDEO_MODEL', 'gemini-3.5-flash-lite'),
+        voice_model=VOICE_MODEL,
         session_timeout_minutes=int(os.getenv('SESSION_TIMEOUT_MINUTES', '30')),
         max_history_length=int(os.getenv('MAX_HISTORY_LENGTH', '20')),
         max_output_tokens=int(os.getenv('MAX_OUTPUT_TOKENS', '2048')),

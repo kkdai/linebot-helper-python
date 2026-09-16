@@ -3,7 +3,7 @@
 > 專案總覽與現況。細節不寫在這裡：功能設計看 [`docs/superpowers/specs/`](../superpowers/specs/)，
 > 執行細節看 `docs/02_implement/sprint-*.md`（尚未建立）。
 
-**最後更新**：2026-09-03
+**最後更新**：2026-09-16
 
 ---
 
@@ -12,8 +12,8 @@
 | 項目 | 狀態 |
 |---|---|
 | 部署 | Cloud Run `us-central1`，no-cpu-throttling |
-| 測試 | 293 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
-| 模型 | `gemini-3.7-flash`（推理）／`gemini-3.5-flash-lite`（高頻、影片），見 `config/agent_config.py` |
+| 測試 | 296 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
+| 模型 | `gemini-3.7-flash`（推理）／`gemini-3.5-flash-lite`（高頻、影片）／`gemini-3.8-live`（LIFF 語音），見 `config/agent_config.py` |
 | 持久化 | Firestore（chat sessions、bookmarks、reports、batch jobs、usage records） |
 | 目前焦點 | P2 測試安全網——見下方 P2 清單 |
 
@@ -27,7 +27,7 @@
 | 社群文案 | 中英文各 4 平台（FB／LinkedIn／Threads／Twitter），人性化守則 + 台灣在地化 | — |
 | 書籤系統 | `/save` `/list` `/search`，候選 → 確認儲存兩段式 | [bookmark](../superpowers/specs/2026-08-13-bookmark-system-design.md) |
 | 研究報告 | 按鈕產生 grounded 報告，Firestore 永久保存 + 7 天快取 | [research-report](../superpowers/specs/2026-08-15-research-report-design.md) |
-| 語音 | LINE 語音訊息、朗讀摘要、LIFF 即時語音助理（Gemini Live） | [voice](../superpowers/specs/2026-03-28-liff-voice-assistant-design.md) |
+| 語音 | LINE 語音訊息、朗讀摘要、LIFF 即時語音助理（Gemini 3.8 Live） | [voice](../superpowers/specs/2026-03-28-liff-voice-assistant-design.md) |
 | 影片問答 | 針對 YouTube 影片連續提問，答案帶時間戳（agentic video understanding） | [video-qa](../superpowers/specs/2026-09-02-video-qa-design.md) |
 | 其他 | 圖片分析、地點/美食查詢、GitHub 摘要、Gemini Batch webhook |  |
 
@@ -138,6 +138,9 @@ Firestore 不可用或讀寫出錯時安靜降級成直接爬。`use_cache=False
 
 | 日期 | 決策 | 原因 |
 |---|---|---|
+| 2026-09-16 | LIFF 語音助理從 `gemini-3.1-flash-live-preview` 換成 `gemini-3.8-live`（GA），模型 ID 收回 `config/agent_config.py`，`EXEMPT_FILES` 由 2 個檔縮為 1 個 | 3.8 Live 是 GA（名稱不含 `-preview`），堵上 P0-0 那個 bug class 最後一個缺口。實測對現有 `LiveConnectConfig` 完全相容：PTT activity 信號、`session_resumption`、雙向 transcription、Aoede 語音、兩個 Tool 物件與 tool calling 皆逐項驗過 |
+| 2026-09-16 | 不採用 `gemini-3.8-live-extended-thinking` | 該模型強制要求 `thinking_level`，未帶 `thinking_config` 連線直接被擋（1007）。`build_live_config()` 目前不送，已用 `LIVE_CAPABLE` 名單擋住誤設 |
+| 2026-09-16 | `tools/tts_tool.py` 維持 preview 例外 | 查證當日 API 上三個 TTS 模型全是 preview（`2.5-flash-preview-tts`／`2.5-pro-preview-tts`／`3.1-flash-tts-preview`），無 GA 版可換 |
 | 2026-09-03 | 影片問答的 `thinking_tokens` 屬伺服器端非決定性（同設定同影片同批次仍在 ~0 與 ~35,000–37,000 間跳動），維持 `thinking_level="LOW"` 並加 `THINKING_TOKENS_WARN_THRESHOLD` 警告 log，不切換其他 thinking 參數 | 27 次對照實驗顯示 `thinking_budget=0`、省略 `thinking_config` 與 `LOW` 量測不出差異，換一個沒有實測優勢的參數只是把「測過的行為」換成「沒測過的行為」；`thinking_budget` 與 `thinking_level` 也不能並用（400 錯誤），見 [video-qa 結論三](../superpowers/specs/2026-09-02-video-qa-design.md) |
 | 2026-09-03 | 影片一律 thinking_level=LOW，且固定用 3.5-flash-lite | 3.5-flash-lite 是唯一經端到端驗證、正常情況下較便宜的基準模型（不代表成本穩定——結論三的 27 次尖峰量測就是在這個模型上做的）；3.7-flash 從未重複測試，且測試中較易觸發 429 |
 | 2026-09-03 | 影片問答採 stateless 重新查詢，不保留 context | Vertex AI 不回傳 tool_call/tool_response parts，history 重播會 400 或被完整重跑 |
