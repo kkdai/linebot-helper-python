@@ -387,7 +387,7 @@ async def voice_ws(websocket: WebSocket, session_id: str):
         vad_sensitivity = init_data.get("vad_sensitivity")
         system_instruction = voice_live.build_system_instruction(lat, lng)
 
-        # api_version="v1beta" required for gemini-3.1-flash-live-preview per cookbook sample
+        # api_version="v1beta" 是 Live API 的需求；2026-09-16 對 gemini-3.8-live 實測仍需要
         client = live_genai.Client(
             api_key=GOOGLE_AI_API_KEY,
             vertexai=False,
