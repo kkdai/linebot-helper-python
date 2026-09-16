@@ -7,6 +7,8 @@
 - 免持模式：保留自動 VAD，由 Gemini 偵測說話結束
 """
 import json
+import logging
+from pathlib import Path
 
 import pytest
 from google.genai import types as live_types
@@ -523,3 +525,79 @@ def test_system_instruction_includes_location_when_given():
 def test_system_instruction_without_location():
     text = build_system_instruction(None, None)
     assert "未提供位置" in text
+
+
+# ── 前端錯誤回報（client_error）────────────────────────────────────────────
+# 背景（2026-09-16）：切換免持時手機上的麥克風啟動失敗，前端 catch 一律顯示
+# 「請允許麥克風權限」，真正的錯誤被蓋掉，伺服器 log 也看不到任何東西，
+# 只能靠猜。改成前端回報真實錯誤，由伺服器寫進 Cloud Run log。
+
+def _client_error(**fields):
+    payload = {"type": "client_error", "where": "handsfree",
+               "name": "NotReadableError", "message": "Could not start audio source",
+               "ua": "Mozilla/5.0 (iPhone) Line/14.0"}
+    payload.update(fields)
+    return _text_event(payload)
+
+
+@pytest.mark.asyncio
+async def test_client_error_is_logged(caplog):
+    """前端回報的錯誤要寫進 log，才能從 Cloud Run 看到手機上發生什麼事。"""
+    session = FakeLiveSession()
+    ws = FakeBrowserWS([_client_error()])
+    with caplog.at_level(logging.WARNING, logger="services.voice_live"):
+        await browser_to_gemini(ws, session, {"handsfree": True, "interrupted": False})
+
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "NotReadableError" in logged
+    assert "Could not start audio source" in logged
+    assert "handsfree" in logged
+
+
+@pytest.mark.asyncio
+async def test_client_error_not_forwarded_to_gemini():
+    """前端錯誤是給我們看的，不能當成使用者輸入送給模型。"""
+    session = FakeLiveSession()
+    ws = FakeBrowserWS([_client_error()])
+    await browser_to_gemini(ws, session, {"handsfree": True, "interrupted": False})
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_client_error_does_not_mark_session_failed():
+    """麥克風壞掉不代表 Gemini session 壞掉，不能讓 resume handle 被作廢。"""
+    state = {"handsfree": True, "interrupted": False}
+    ws = FakeBrowserWS([_client_error()])
+    await browser_to_gemini(ws, FakeLiveSession(), state)
+    assert not state.get("session_failed")
+
+
+@pytest.mark.asyncio
+async def test_client_error_fields_are_clipped_and_single_line(caplog):
+    """欄位來自瀏覽器、不可信：要截斷長度並去掉換行，避免偽造 log 行或灌爆 log。"""
+    forged = "boom\nERROR:main:偽造的一行" + "x" * 5000
+    session = FakeLiveSession()
+    ws = FakeBrowserWS([_client_error(message=forged, name="A\r\nB")])
+    with caplog.at_level(logging.WARNING, logger="services.voice_live"):
+        await browser_to_gemini(ws, session, {"handsfree": True, "interrupted": False})
+
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    # 先確認真的有寫 log，否則下面兩條在「什麼都沒寫」時也會通過
+    assert "boom" in logged and "A" in logged and "B" in logged
+    assert "\n" not in logged and "\r" not in logged
+    assert len(logged) < 1200, f"log 太長（{len(logged)} 字元），欄位沒有截斷"
+
+
+def test_liff_mic_errors_are_reported_not_swallowed():
+    """voice.js 的兩個麥克風 catch 都要走 reportMicError。
+
+    防止回到「什麼錯誤都顯示權限提示」的寫法：權限提示只能出現在
+    reportMicError 裡、且只針對 NotAllowedError。
+    """
+    js = (Path(__file__).resolve().parent.parent / "static/liff/voice.js").read_text(encoding="utf-8")
+    assert js.count("請允許麥克風權限才能使用語音功能") == 1, "權限提示只能在 reportMicError 裡出現一次"
+    assert "reportMicError(e, 'ptt')" in js
+    assert "reportMicError(e, 'handsfree')" in js
+    assert "NotAllowedError" in js
+    assert "type: 'client_error'" in js
+

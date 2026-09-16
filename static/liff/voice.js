@@ -271,8 +271,9 @@ function setupMicButton() {
     try {
       audioStreamer = new AudioStreamer();
       await audioStreamer.start();
-    } catch {
-      showError('請允許麥克風權限才能使用語音功能');
+    } catch (e) {
+      releaseMic();
+      reportMicError(e, 'ptt');
       // 已送出 start_of_speech，必須補上結束信號關閉 activity
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'end_of_speech' }));
@@ -370,8 +371,9 @@ async function startHandsfreeRecording() {
   try {
     audioStreamer = new AudioStreamer();
     await audioStreamer.start();
-  } catch {
-    showError('請允許麥克風權限才能使用語音功能');
+  } catch (e) {
+    releaseMic();
+    reportMicError(e, 'handsfree');
     setState(STATE.IDLE);
     handsfreeEnabled = false;
     handsfreeSwitch.classList.remove('on');
@@ -423,6 +425,35 @@ function addBubble(type, text) {
 function appendToBubble(bubble, text) {
   bubble.textContent += text;
   chat.scrollTop = chat.scrollHeight;
+}
+
+// start() 可能在中途失敗（getUserMedia 已拿到麥克風，之後的 AudioContext／
+// addModule 才失敗）。不釋放的話麥克風音軌會一直被占住，手機上下一次申請
+// 可能直接失敗，變成「一切換免持就被關掉」的循環。
+function releaseMic() {
+  if (audioStreamer) {
+    try { audioStreamer.stop(); } catch { /* 已在失敗路徑上，盡力釋放即可 */ }
+    audioStreamer = null;
+  }
+}
+
+// 麥克風啟動失敗：顯示真正的錯誤，並回報伺服器寫進 Cloud Run log。
+// 原本一律顯示「請允許麥克風權限」，把非權限類錯誤（例如裝置被占用的
+// NotReadableError）也蓋掉，伺服器端完全看不到手機上發生了什麼。
+function reportMicError(e, where) {
+  const name = (e && e.name) || 'Error';
+  const detail = String((e && e.message) || e || '').slice(0, 200);
+  if (name === 'NotAllowedError') {
+    showError('請允許麥克風權限才能使用語音功能');
+  } else {
+    showError(`麥克風啟動失敗（${name}）${detail ? '：' + detail : ''}`);
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'client_error', where, name, message: detail,
+      ua: navigator.userAgent.slice(0, 200),
+    }));
+  }
 }
 
 function showError(msg) {

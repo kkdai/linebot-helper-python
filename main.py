@@ -422,36 +422,26 @@ async def voice_ws(websocket: WebSocket, session_id: str):
             # 額度優化：每輪只累積，session 結束時推一則彙整訊息
             state["turns"].append((user_speech, ai_response))
 
-        # GoAway（Live 連線約 10 分鐘被回收）時帶 resumption handle 無縫重連
-        while True:
+        def connect(resume_handle):
             config = voice_live.build_live_config(
                 system_instruction,
                 handsfree=handsfree,
                 tools=voice_live.build_voice_tools(),
-                resume_handle=state.get("resume_handle"),
+                resume_handle=resume_handle,
                 vad_sensitivity=vad_sensitivity,
             )
-            async with client.aio.live.connect(model=voice_live.VOICE_MODEL, config=config) as session:
-                t1 = asyncio.create_task(voice_live.browser_to_gemini(websocket, session, state))
-                t2 = asyncio.create_task(voice_live.gemini_to_browser(
-                    websocket, session, state, push_fn, tool_handler=tool_handler))
-                done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
-                for task in pending:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
+            return client.aio.live.connect(model=voice_live.VOICE_MODEL, config=config)
 
-            # 保存 handle，瀏覽器斷線重連（15 分鐘內）也能接回對話
-            if state.get("resume_handle"):
-                voice_resume_handles[user_id] = {
-                    "handle": state["resume_handle"], "ts": time.time(),
-                }
-            if state.pop("go_away", False):
-                logger.info(f"Voice Live GoAway — reconnecting Gemini for {user_id}")
-                continue
-            break
+        # GoAway 重連與 resume handle 的保存／作廢都在這裡，見該函式 docstring
+        await voice_live.run_relay_with_resumption(
+            connect=connect,
+            websocket=websocket,
+            state=state,
+            handle_store=voice_resume_handles,
+            user_id=user_id,
+            push_fn=push_fn,
+            tool_handler=tool_handler,
+        )
 
         # Session 結束：整段對話推一則彙整（取代每輪一則，節省訊息額度）
         summary = voice_live.format_session_summary(state["turns"])
