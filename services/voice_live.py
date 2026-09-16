@@ -10,7 +10,8 @@
 import asyncio
 import json
 import logging
-from typing import Awaitable, Callable, Optional
+import time
+from typing import AsyncContextManager, Awaitable, Callable, Optional
 
 from google.genai import types as live_types
 
@@ -232,6 +233,8 @@ async def browser_to_gemini(websocket, session, state: dict) -> None:
                 elif etype == "interrupt":
                     state["interrupted"] = True
     except Exception as e:
+        # 往 session 送資料失敗 = session 已不可用，其 resume handle 不可再用
+        state["session_failed"] = True
         logger.error(f"browser_to_gemini error: {e}", exc_info=True)
 
 
@@ -339,6 +342,10 @@ async def gemini_to_browser(
                 user_text_accum.clear()
 
     except Exception as e:
+        # 伺服器在 receive 階段殺掉 session（例如 1007 Precondition check failed）。
+        # 注意：使用者正常掛斷時本函式是被 cancel，拋的是 CancelledError
+        # （BaseException），不會走到這裡，所以不會被誤判成失敗。
+        state["session_failed"] = True
         logger.error(f"gemini_to_browser error: {e}", exc_info=True)
         try:
             await websocket.send_text(
@@ -346,3 +353,68 @@ async def gemini_to_browser(
             )
         except Exception:
             pass
+
+
+async def run_relay_with_resumption(
+    *,
+    connect: Callable[[Optional[str]], AsyncContextManager],
+    websocket,
+    state: dict,
+    handle_store: dict,
+    user_id: str,
+    push_fn: Optional[Callable[[str, str], Awaitable[None]]] = None,
+    tool_handler: Optional[Callable[[str, dict], Awaitable[dict]]] = None,
+    now: Callable[[], float] = time.time,
+) -> None:
+    """建立 Live 連線並雙向 relay，處理 GoAway 重連與 resume handle 的保存／作廢。
+
+    connect(resume_handle) 回傳 async context manager（即 client.aio.live.connect）。
+    handle_store 是 {user_id: {"handle", "ts"}}，供瀏覽器 15 分鐘內重連接回對話。
+
+    2026-09-16 事故：gemini-3.8-live 會在 1007 殺掉 session「之前」先送出
+    resume handle。舊迴圈照存不誤，之後每次連線都帶著指向死 session 的
+    handle，全部 1011，使用者被鎖到 TTL 過期。因此：
+    - 以錯誤結束的 session，其 handle 不保存，已存的一併作廢
+    - 帶 handle 連不上時，丟掉 handle 不帶 handle 重試一次（只重試一次）
+    """
+    while True:
+        state.pop("session_failed", None)
+        used_handle = state.get("resume_handle")
+        connected = False
+        try:
+            async with connect(used_handle) as session:
+                connected = True
+                t1 = asyncio.create_task(browser_to_gemini(websocket, session, state))
+                t2 = asyncio.create_task(gemini_to_browser(
+                    websocket, session, state, push_fn, tool_handler=tool_handler))
+                done, pending = await asyncio.wait(
+                    [t1, t2], return_when=asyncio.FIRST_COMPLETED)
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+        except Exception:
+            # 連線層級失敗：不管原因，這個 handle 都不該再被用
+            state.pop("resume_handle", None)
+            handle_store.pop(user_id, None)
+            if not connected and used_handle:
+                logger.warning(
+                    f"Voice Live connect failed with resume handle — "
+                    f"discarding handle and retrying fresh for {user_id}"
+                )
+                continue
+            raise
+
+        if state.get("session_failed"):
+            state.pop("resume_handle", None)
+            handle_store.pop(user_id, None)
+        elif state.get("resume_handle"):
+            # 保存 handle，瀏覽器斷線重連（TTL 內）也能接回對話
+            handle_store[user_id] = {"handle": state["resume_handle"], "ts": now()}
+
+        if state.pop("go_away", False):
+            logger.info(f"Voice Live GoAway — reconnecting Gemini for {user_id}")
+            continue
+        break
