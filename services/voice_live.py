@@ -199,6 +199,14 @@ def format_session_summary(turns: list) -> str:
     return text
 
 
+def _clip(value, limit: int = 200) -> str:
+    """瀏覽器送來的欄位不可信：轉字串、去掉換行（避免偽造 log 行）、截斷長度。"""
+    if value is None:
+        return ""
+    text = str(value).replace("\r", " ").replace("\n", " ")
+    return text[:limit]
+
+
 async def browser_to_gemini(websocket, session, state: dict) -> None:
     """Relay PCM audio and control events from browser to Gemini Live session."""
     try:
@@ -232,6 +240,17 @@ async def browser_to_gemini(websocket, session, state: dict) -> None:
                         await session.send_realtime_input(text=text)
                 elif etype == "interrupt":
                     state["interrupted"] = True
+                elif etype == "client_error":
+                    # 前端回報（例如麥克風啟動失敗）：只寫 log。
+                    # 不送給 Gemini（不是使用者輸入），也不標記 session_failed
+                    # （麥克風壞掉不代表 Gemini session 壞掉）。
+                    logger.warning(
+                        "LIFF client error where=%s name=%s message=%s ua=%s",
+                        _clip(event.get("where"), 20),
+                        _clip(event.get("name"), 60),
+                        _clip(event.get("message")),
+                        _clip(event.get("ua")),
+                    )
     except Exception as e:
         # 往 session 送資料失敗 = session 已不可用，其 resume handle 不可再用
         state["session_failed"] = True

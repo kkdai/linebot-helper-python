@@ -12,7 +12,7 @@
 | 項目 | 狀態 |
 |---|---|
 | 部署 | Cloud Run `us-central1`，no-cpu-throttling |
-| 測試 | 306 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
+| 測試 | 311 passed / 2 skipped（`pytest -v`，CI 見 `.github/workflows/`） |
 | 模型 | `gemini-3.7-flash`（推理）／`gemini-3.5-flash-lite`（高頻、影片）／LIFF 語音程式預設 `gemini-3.8-live`，**但正式環境以 `VOICE_MODEL` 釘在 `gemini-3.1-flash-live-preview`**（見決策紀錄 2026-09-16 事故），見 `config/agent_config.py` |
 | 持久化 | Firestore（chat sessions、bookmarks、reports、batch jobs、usage records） |
 | 目前焦點 | P2 測試安全網——見下方 P2 清單 |
@@ -138,6 +138,7 @@ Firestore 不可用或讀寫出錯時安靜降級成直接爬。`use_cache=False
 
 | 日期 | 決策 | 原因 |
 |---|---|---|
+| 2026-09-16 | LIFF 麥克風啟動失敗改為回報真實錯誤（`client_error` 事件寫進 Cloud Run log），失敗路徑補上釋放麥克風 | 在 3.8 上測免持時 UI 一直被切回 PTT，唯一路徑是 `voice.js` 麥克風啟動的 catch，但它對任何錯誤都顯示「請允許麥克風權限」，伺服器端完全看不到原因。伺服器端的 3.8 免持實測正常（含帶 PTT handle 切換），根因仍未確認；另發現 `start()` 中途失敗時麥克風音軌未釋放，可能讓下一次申請失敗 |
 | 2026-09-16 | **事故**：LIFF 語音全面連不上（13:45–14:37 UTC）。正式環境 `VOICE_MODEL` 回滾到 `gemini-3.1-flash-live-preview`（revision `00278-hsv`）；resume handle 保存邏輯抽到 `voice_live.run_relay_with_resumption()` 並修正 | 兩層原因。(1) Google 端 `gemini-3.8-live` 行為改變：標準 PTT 流程（activity_start→音訊→activity_end）穩定回 1007 Precondition check failed，同一份 config 當天稍早是成功的，3.1 仍正常。(2) 我們的潛伏 bug：3.8 在 1007 之前就先送出 resume handle，舊迴圈把死 session 的 handle 存起來，之後 15 分鐘內每次連線都 1011，使用者被鎖住。3.1 在 1007 前不發 handle，所以從沒踩到。修正後：失敗的 session 不存 handle 且作廢舊的；帶 handle 連不上時丟掉重試一次。已對真實 API 驗證兩個情境。**修正只解決鎖死，不解決 3.8 PTT 本身壞掉** |
 | 2026-09-16 | LIFF 語音助理從 `gemini-3.1-flash-live-preview` 換成 `gemini-3.8-live`（GA），模型 ID 收回 `config/agent_config.py`，`EXEMPT_FILES` 由 2 個檔縮為 1 個 | 3.8 Live 是 GA（名稱不含 `-preview`），堵上 P0-0 那個 bug class 最後一個缺口。實測對現有 `LiveConnectConfig` 完全相容：PTT activity 信號、`session_resumption`、雙向 transcription、Aoede 語音、兩個 Tool 物件與 tool calling 皆逐項驗過 |
 | 2026-09-16 | 不採用 `gemini-3.8-live-extended-thinking` | 該模型強制要求 `thinking_level`，未帶 `thinking_config` 連線直接被擋（1007）。`build_live_config()` 目前不送，已用 `LIVE_CAPABLE` 名單擋住誤設 |
