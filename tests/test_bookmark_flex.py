@@ -194,3 +194,26 @@ def test_platform_bubble_clipboard_action_matches_input():
     assert button["action"]["type"] == "clipboard"
     assert button["action"]["label"] == "Copy Facebook Post"
     assert button["action"]["clipboardText"] == "post body + link"
+
+
+def test_platform_bubble_long_text_drops_clipboard_button():
+    # LINE 的 clipboardText 上限 1000（以 UTF-16 計），超過會讓整批 push 被 400 拒收；
+    # 英文 LinkedIn 貼文 + 連結很容易超過，實際在正式環境發生過。
+    long_text = "a" * 1001
+    bubble = build_platform_bubble(
+        "💼 LinkedIn Post", "#0A66C2", long_text,
+        "Copy LinkedIn Post", long_text)
+    text = json.dumps(bubble, ensure_ascii=False)
+    assert "clipboard" not in text
+    # 內文仍完整保留
+    assert bubble["body"]["contents"][0]["text"] == long_text
+
+
+def test_platform_bubble_clipboard_limit_counts_utf16_units():
+    # emoji 在 UTF-16 佔 2 個單位：500 個 emoji = 1000 單位（剛好可以），501 個就超過
+    ok = "🔥" * 500
+    too_long = "🔥" * 501
+    ok_bubble = build_platform_bubble("h", "#000000", ok, "Copy", ok)
+    long_bubble = build_platform_bubble("h", "#000000", too_long, "Copy", too_long)
+    assert ok_bubble["footer"]["contents"][0]["action"]["clipboardText"] == ok
+    assert "clipboard" not in json.dumps(long_bubble, ensure_ascii=False)

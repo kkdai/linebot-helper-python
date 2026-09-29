@@ -229,13 +229,47 @@ def build_bookmark_carousel(bookmarks: List[dict]) -> dict:
     }
 
 
+# LINE clipboard action 的 clipboardText 上限（以 UTF-16 code unit 計）。
+# 超過時整批 push 會被 400 拒收，連同後面的純文字訊息一起消失。
+CLIPBOARD_TEXT_LIMIT = 1000
+
+
+def _utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
 def build_platform_bubble(header_text: str, color: str, body_text: str,
                           clipboard_label: str, clipboard_text: str) -> dict:
     """單一社群平台貼文 bubble：header + 內文 + 複製到剪貼簿按鈕。
 
     中英文貼文共用此函式（差異只在傳入的文字語言），FB／LinkedIn／Threads
     各自呼叫一次即可組出對應 bubble，避免三份平台重複的 dict 字面值。
+
+    clipboard_text 超過 LINE 上限時改顯示提示文字而非複製按鈕：截斷會讓使用者
+    複製到不完整的貼文，而每個平台都另外附有純文字訊息可以直接複製。
     """
+    if _utf16_len(clipboard_text) <= CLIPBOARD_TEXT_LIMIT:
+        footer_item = {
+            "type": "button",
+            "style": "primary",
+            "color": color,
+            "height": "sm",
+            "action": {
+                "type": "clipboard",
+                "label": clipboard_label,
+                "clipboardText": clipboard_text,
+            },
+        }
+    else:
+        footer_item = {
+            "type": "text",
+            "text": "📋 內容較長，請從下方純文字訊息複製",
+            "wrap": True,
+            "size": "xs",
+            "color": "#888888",
+            "align": "center",
+        }
+
     return {
         "type": "bubble",
         "size": "mega",
@@ -271,19 +305,7 @@ def build_platform_bubble(header_text: str, color: str, body_text: str,
         "footer": {
             "type": "box",
             "layout": "vertical",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "color": color,
-                    "height": "sm",
-                    "action": {
-                        "type": "clipboard",
-                        "label": clipboard_label,
-                        "clipboardText": clipboard_text,
-                    },
-                },
-            ],
+            "contents": [footer_item],
             "paddingAll": "md",
         },
     }
