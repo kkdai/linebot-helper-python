@@ -12,9 +12,9 @@ from markdownify import markdownify
 
 logger = logging.getLogger(__name__)
 
-# Import the FirecrawlApp if available
+# Import the Firecrawl client if available
 try:
-    from firecrawl import FirecrawlApp
+    from firecrawl import Firecrawl
     FIRECRAWL_AVAILABLE = True
 except ImportError:
     FIRECRAWL_AVAILABLE = False
@@ -161,30 +161,22 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
     parsed_url = urlparse(url)
 
     try:
-        # Initialize the Firecrawl app with API key
-        app = FirecrawlApp(api_key=firecrawl_key)
+        # Initialize the Firecrawl v2 client with API key
+        app = Firecrawl(api_key=firecrawl_key)
 
-        # Base parameters for all sites
-        params = {
-            "url": url,  # This is redundant as we also pass url directly to scrape_url, but included for completeness
-            "formats": ["markdown"] if markdown else ["html"],
-            "onlyMainContent": True,  # Extract main content only
-            "removeBase64Images": True,  # Remove base64 images to reduce response size
-            "blockAds": True,  # Block ads
-            "timeout": 30000,  # Default timeout in milliseconds
-            "headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-            }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
         }
+        actions = None
 
         # Site-specific customizations
         if url.startswith("https://www.ptt.cc/bbs"):
             # PTT requires over18 cookie
-            params["headers"]["Cookie"] = "over18=1"
+            headers["Cookie"] = "over18=1"
             # PTT specific actions
-            params["actions"] = [
+            actions = [
                 {
                     "type": "wait",
                     "selector": ".bbs-screen"  # Wait for main content
@@ -194,40 +186,33 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         # Handle any Medium domain (including subdomains)
         elif parsed_url.netloc.endswith("medium.com"):
             # Medium has paywalls and special content
-            params["headers"]["Cookie"] = "uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt"
-            # Medium specific actions to handle dynamic loading
-            # params["actions"] = [
-            #     {
-            #         "type": "wait",
-            #         "selector": "article, [data-test-id='post-content']",
-            #         "milliseconds": 2000
-            #     }
-            # ]
-            # params["timeout"] = 60000  # Longer timeout for Medium
+            headers["Cookie"] = "uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt"
 
         elif url.startswith("https://openai.com"):
             # OpenAI requires JavaScript and cookies
-            params["headers"]["Cookie"] = "cookieConsent=true; OptanonAlertBoxClosed=true"
-            # params["actions"] = [
-            #     {
-            #         "type": "wait",
-            #         "selector": "main, article, .content, h1",
-            #         "milliseconds": 5000
-            #     }
-            # ]
-            # # Set location for better access
-            # params["location"] = {
-            #     "country": "US",
-            #     "languages": ["en-US"]
-            # }
-            # params["timeout"] = 60000  # Longer timeout for OpenAI
+            headers["Cookie"] = "cookieConsent=true; OptanonAlertBoxClosed=true"
 
-        # Make the request
-        result = app.scrape_url(url, params=params)
+        # Make the v2 scrape request (returns a Document object)
+        result = app.scrape(
+            url,
+            formats=["markdown"] if markdown else ["html"],
+            only_main_content=True,
+            remove_base64_images=True,
+            block_ads=True,
+            timeout=30000,
+            headers=headers,
+            actions=actions,
+        )
+
+        markdown_content = getattr(result, "markdown", None)
+        if markdown_content is None and isinstance(result, dict):
+            markdown_content = result.get("markdown")
+        html_content = getattr(result, "html", None)
+        if html_content is None and isinstance(result, dict):
+            html_content = result.get("html")
 
         # If we requested markdown and it's available, use it directly
-        if markdown and 'markdown' in result and result['markdown']:
-            markdown_content = result['markdown']
+        if markdown and markdown_content:
             # Check if we got a message about enabling JavaScript/cookies
             if "enable javascript" in markdown_content.lower() or "enable cookies" in markdown_content.lower():
                 logger.warning(
@@ -241,8 +226,7 @@ def load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
             return markdown_content
 
         # Otherwise parse the HTML content
-        elif 'html' in result and result['html']:
-            html_content = result['html']
+        elif html_content:
             # Check if we got a message about enabling JavaScript/cookies
             if "enable javascript" in html_content.lower() or "enable cookies" in html_content.lower():
                 logger.warning(

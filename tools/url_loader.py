@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Import optional dependencies
 try:
-    from firecrawl import FirecrawlApp
+    from firecrawl import Firecrawl
     FIRECRAWL_AVAILABLE = True
 except ImportError:
     FIRECRAWL_AVAILABLE = False
@@ -383,34 +383,42 @@ def _load_html_with_firecrawl(url: str, markdown: bool = True) -> str:
         raise ImportError("firecrawl package is not installed")
 
     parsed_url = urlparse(url)
-    app = FirecrawlApp(api_key=firecrawl_key)
+    app = Firecrawl(api_key=firecrawl_key)
 
-    params = {
-        "formats": ["markdown"] if markdown else ["html"],
-        "onlyMainContent": True,
-        "removeBase64Images": True,
-        "blockAds": True,
-        "timeout": 30000,
-        "headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
 
     # Site-specific customizations
     if url.startswith("https://www.ptt.cc/bbs"):
-        params["headers"]["Cookie"] = "over18=1"
+        headers["Cookie"] = "over18=1"
     elif parsed_url.netloc.endswith("medium.com"):
-        params["headers"]["Cookie"] = "uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt"
+        headers["Cookie"] = "uid=lo_5f5a79a81615; sid=1:zKvtbbPVwGuLiOQjwgkt"
     elif url.startswith("https://openai.com"):
-        params["headers"]["Cookie"] = "cookieConsent=true; OptanonAlertBoxClosed=true"
+        headers["Cookie"] = "cookieConsent=true; OptanonAlertBoxClosed=true"
 
-    result = app.scrape_url(url, params=params)
+    result = app.scrape(
+        url,
+        formats=["markdown"] if markdown else ["html"],
+        only_main_content=True,
+        remove_base64_images=True,
+        block_ads=True,
+        timeout=30000,
+        headers=headers,
+    )
 
-    if markdown and 'markdown' in result and result['markdown']:
-        return result['markdown']
-    elif 'html' in result and result['html']:
-        return _parse_html(result['html'], markdown=markdown)
+    markdown_content = getattr(result, "markdown", None)
+    if markdown_content is None and isinstance(result, dict):
+        markdown_content = result.get("markdown")
+    html_content = getattr(result, "html", None)
+    if html_content is None and isinstance(result, dict):
+        html_content = result.get("html")
+
+    if markdown and markdown_content:
+        return markdown_content
+    elif html_content:
+        return _parse_html(html_content, markdown=markdown)
     else:
         raise ValueError("Firecrawl API did not return expected content format")
